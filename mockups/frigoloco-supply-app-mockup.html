@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FrigoLoco Supply — Web App Mockup</title>
+<style>
+  :root {
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --ink-1: #0b0b0b;
+    --ink-2: #52514e;
+    --ink-3: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;   /* blue  */
+    --series-2: #1baf7a;   /* aqua  */
+    --series-3: #eda100;   /* yellow*/
+    --pos: #2a78d6;        /* diverging + pole */
+    --neg: #e34948;        /* diverging − pole */
+    --good: #0ca30c;
+    --good-text: #006300;
+    --warning: #fab219;
+    --critical: #d03b3b;
+    --seq-150: #b7d3f6;
+    --seq-250: #86b6ef;
+    --sidebar-bg: #14202e;
+    --sidebar-ink: #c7d2de;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-1: #1a1a19;
+      --page: #0d0d0d;
+      --ink-1: #ffffff;
+      --ink-2: #c3c2b7;
+      --ink-3: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5;
+      --series-2: #199e70;
+      --series-3: #c98500;
+      --pos: #3987e5;
+      --neg: #e66767;
+      --good-text: #0ca30c;
+      --seq-150: #184f95;
+      --seq-250: #1c5cab;
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--ink-1);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .app { display: flex; min-height: 100vh; }
+
+  /* ── Sidebar ─────────────────────────────── */
+  .sidebar {
+    width: 218px; flex-shrink: 0;
+    background: var(--sidebar-bg);
+    color: var(--sidebar-ink);
+    padding: 18px 0;
+    position: sticky; top: 0; height: 100vh;
+    display: flex; flex-direction: column;
+  }
+  .logo { padding: 4px 20px 18px; border-bottom: 1px solid rgba(255,255,255,.08); margin-bottom: 12px; }
+  .logo .name { font-size: 17px; font-weight: 700; color: #fff; letter-spacing: .2px; }
+  .logo .name span { color: #5fa8f5; }
+  .logo .sub { font-size: 11px; color: #7d8b9a; margin-top: 2px; }
+  .nav-section { font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; color: #647181; padding: 12px 20px 6px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 20px; cursor: pointer; font-size: 13.5px;
+    border-left: 3px solid transparent; user-select: none;
+  }
+  .nav-item:hover { background: rgba(255,255,255,.05); color: #fff; }
+  .nav-item.active { background: rgba(57,135,229,.16); color: #fff; border-left-color: #3987e5; font-weight: 600; }
+  .nav-item .ico { width: 18px; text-align: center; opacity: .85; }
+  .nav-item .pill {
+    margin-left: auto; font-size: 10.5px; font-weight: 700;
+    background: var(--critical); color: #fff; border-radius: 999px; padding: 1px 7px;
+  }
+  .sidebar .foot { margin-top: auto; padding: 14px 20px 4px; font-size: 11px; color: #647181; border-top: 1px solid rgba(255,255,255,.08); }
+  .sidebar .foot b { color: #9db0c2; display:block; }
+
+  /* ── Main ────────────────────────────────── */
+  .main { flex: 1; min-width: 0; padding: 22px 28px 60px; }
+  .page-view { display: none; }
+  .page-view.active { display: block; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+  h1 { font-size: 21px; font-weight: 700; }
+  .topbar .crumb { font-size: 12px; color: var(--ink-3); margin-bottom: 3px; }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  select, input[type=text], input[type=number], input[type=date], textarea {
+    font: inherit; color: var(--ink-1);
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 10px;
+  }
+  .btn {
+    font: inherit; font-weight: 600; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 14px; background: var(--surface-1); color: var(--ink-1);
+  }
+  .btn.primary { background: var(--series-1); border-color: transparent; color: #fff; }
+  .btn.ghost { background: transparent; }
+  .btn.danger { color: var(--critical); }
+  .btn.sm { padding: 3px 10px; font-size: 12px; }
+
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .card h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 2px; }
+  .card .sub { font-size: 12px; color: var(--ink-3); margin-bottom: 12px; }
+  .grid { display: grid; gap: 14px; }
+  .kpis { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 14px; }
+  .two-col { grid-template-columns: 1.45fr 1fr; }
+  .two-even { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 1100px){ .two-col, .two-even { grid-template-columns: 1fr; } }
+
+  /* stat tiles */
+  .tile .label { font-size: 12px; color: var(--ink-2); }
+  .tile .value { font-size: 26px; font-weight: 650; margin: 2px 0 1px; }
+  .tile .delta { font-size: 12px; color: var(--ink-3); }
+  .tile .delta.up   { color: var(--good-text); font-weight: 600; }
+  .tile .delta.down { color: var(--critical);  font-weight: 600; }
+
+  /* tables */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .4px;
+    color: var(--ink-3); font-weight: 600; padding: 8px 10px;
+    border-bottom: 1px solid var(--baseline); white-space: nowrap;
+  }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:hover td { background: rgba(42,120,214,.05); }
+  tr.total td { font-weight: 700; border-top: 2px solid var(--baseline); background: transparent; }
+  tr.rowsel td { background: rgba(42,120,214,.09); }
+  tr.below td { background: rgba(208,59,59,.06); }
+  .neg { color: var(--critical); font-weight: 600; }
+  .posv { color: var(--good-text); font-weight: 600; }
+  .table-scroll { overflow-x: auto; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 9px;
+  }
+  .badge.ok   { background: rgba(12,163,12,.12);  color: var(--good-text); }
+  .badge.warn { background: rgba(250,178,25,.16); color: #8a6100; }
+  .badge.crit { background: rgba(208,59,59,.12);  color: var(--critical); }
+  .badge.info { background: rgba(42,120,214,.12); color: var(--series-1); }
+  .badge.mut  { background: rgba(137,135,129,.14); color: var(--ink-3); }
+  @media (prefers-color-scheme: dark) { .badge.warn { color: #fab219; } }
+
+  /* filter chips */
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    font-size: 12px; font-weight: 600; cursor: pointer; user-select: none;
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 4px 12px; background: var(--surface-1); color: var(--ink-2);
+  }
+  .chip:hover { border-color: var(--series-1); }
+  .chip.active { background: var(--series-1); border-color: transparent; color: #fff; }
+  .chip.amber.active { background: var(--warning); color: #3d2c00; }
+  .chip.green.active { background: var(--good); color: #fff; }
+  .chip.gray.active  { background: var(--ink-3); color: #fff; }
+
+  /* forms */
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .field label { display: block; font-size: 11.5px; font-weight: 600; color: var(--ink-2); margin-bottom: 4px; }
+  .field .hint { font-size: 11px; color: var(--ink-3); margin-top: 3px; }
+  .field input, .field select, .field textarea { width: 100%; }
+  .field.auto input { background: var(--page); color: var(--ink-3); }
+  .form-actions { display: flex; gap: 10px; margin-top: 16px; align-items: center; flex-wrap: wrap; }
+  .callout {
+    border-left: 3px solid var(--series-1); background: rgba(42,120,214,.06);
+    padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 12.5px; color: var(--ink-2); margin: 12px 0;
+  }
+  .callout.warn { border-left-color: var(--warning); background: rgba(250,178,25,.08); }
+  .callout.crit { border-left-color: var(--critical); background: rgba(208,59,59,.06); }
+
+  /* qty-received input in line table */
+  input.qty { width: 72px; text-align: right; padding: 4px 8px; font-variant-numeric: tabular-nums; }
+
+  /* modal */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.45);
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 14px; padding: 20px 22px; width: 460px; max-width: 100%;
+    box-shadow: 0 18px 50px rgba(0,0,0,.35);
+  }
+  .modal h3 { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+  .modal .sub { font-size: 12px; color: var(--ink-3); margin-bottom: 14px; }
+
+  /* PDF preview */
+  .pdf-paper {
+    background: #fff; color: #1a1a1a;
+    border: 1px solid var(--border); border-radius: 6px;
+    box-shadow: 0 3px 14px rgba(0,0,0,.12);
+    padding: 22px 24px; font-size: 11.5px; line-height: 1.5;
+  }
+  .pdf-paper .pdf-head { display: flex; justify-content: space-between; border-bottom: 2px solid #14202e; padding-bottom: 10px; margin-bottom: 12px; }
+  .pdf-paper .pdf-logo { font-size: 15px; font-weight: 800; color: #14202e; }
+  .pdf-paper .pdf-logo span { color: #2a78d6; }
+  .pdf-paper h5 { font-size: 12px; margin: 10px 0 4px; color: #14202e; }
+  .pdf-paper table { font-size: 10.5px; }
+  .pdf-paper th { color: #666; border-bottom: 1px solid #999; padding: 4px 6px; }
+  .pdf-paper td { padding: 4px 6px; border-bottom: 1px solid #e4e4e4; }
+  .pdf-paper tr:hover td { background: transparent; }
+  .pdf-paper .pdf-tot { text-align: right; margin-top: 8px; font-size: 11px; }
+  .pdf-paper .pdf-tot b { font-size: 12.5px; }
+
+  /* alerts */
+  .sev { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .sev.crit { background: var(--critical); }
+  .sev.warn { background: var(--warning); }
+  .sev.info { background: var(--series-1); }
+  .alert-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 4px; border-bottom: 1px solid var(--grid);
+  }
+  .alert-row:last-child { border-bottom: none; }
+  .alert-row .msg { flex: 1; min-width: 0; }
+  .alert-row .msg b { font-size: 13px; }
+  .alert-row .msg .meta { font-size: 11.5px; color: var(--ink-3); }
+  .alert-row.acked { opacity: .5; }
+
+  /* client master-detail */
+  .client-list .cl-item {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 10px 12px; border-radius: 8px; cursor: pointer; user-select: none;
+  }
+  .client-list .cl-item:hover { background: rgba(42,120,214,.06); }
+  .client-list .cl-item.active { background: rgba(42,120,214,.12); }
+  .client-list .cl-item b { font-size: 13.5px; display: block; }
+  .client-list .cl-item .meta { font-size: 11.5px; color: var(--ink-3); }
+
+  /* sliders */
+  input[type=range] { width: 100%; accent-color: var(--series-1); }
+  .weight-row { display: grid; grid-template-columns: 150px 1fr 58px; gap: 12px; align-items: center; padding: 6px 0; }
+  .weight-row .lbl { font-size: 12.5px; color: var(--ink-2); font-weight: 600; }
+  .weight-row .val { font-size: 13px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+
+  code, .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .mt { margin-top: 14px; }
+  .note-src { font-size: 11px; color: var(--ink-3); margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ═══════════ SIDEBAR ═══════════ -->
+  <nav class="sidebar">
+    <div class="logo">
+      <div class="name">Frigo<span>Loco</span></div>
+      <div class="sub">Supply &amp; Stock</div>
+    </div>
+    <div class="nav-section">Operations</div>
+    <div class="nav-item active" data-page="orders"><span class="ico">▤</span> Purchase Orders</div>
+    <div class="nav-item" data-page="stock"><span class="ico">▦</span> Stock</div>
+    <div class="nav-section">Master Data</div>
+    <div class="nav-item" data-page="clients"><span class="ico">▧</span> Clients &amp; Fridges</div>
+    <div class="nav-item" data-page="products"><span class="ico">◨</span> Products</div>
+    <div class="nav-section">System</div>
+    <div class="nav-item" data-page="alerts"><span class="ico">⚑</span> Alerts &amp; Settings <span class="pill">7</span></div>
+    <div class="foot"><b>ismail@alliedchb.com</b>Admin · v0.1 mockup</div>
+  </nav>
+
+  <main class="main">
+
+  <!-- ═══════════ PAGE: PURCHASE ORDERS ═══════════ -->
+  <section class="page-view active" id="page-orders">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Operations / Purchase Orders</div>
+        <h1>Purchase Orders</h1>
+      </div>
+      <div class="controls">
+        <button class="btn">⇲ Draft from dispatch</button>
+        <button class="btn primary">+ New manual PO</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <div class="chips" id="po-status-chips">
+          <span class="chip active" data-status="all">All</span>
+          <span class="chip amber" data-status="Pending">● Pending</span>
+          <span class="chip green" data-status="Received">● Received</span>
+          <span class="chip gray" data-status="Cancelled">● Cancelled</span>
+        </div>
+        <div class="controls">
+          <select id="po-date-filter">
+            <option value="all">All delivery dates</option>
+            <option value="today">Arriving today</option>
+            <option value="week">Arriving this week</option>
+          </select>
+          <input type="text" placeholder="Search order no / supplier…" style="width:220px">
+        </div>
+      </div>
+      <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>Order no</th><th>Supplier</th><th>Order date</th><th>Expected delivery</th>
+          <th class="num">Total incl. VAT</th><th>Status</th><th></th>
+        </tr></thead>
+        <tbody id="po-table"></tbody>
+      </table>
+      </div>
+      <div class="note-src" id="po-count"></div>
+    </div>
+
+    <!-- ── PO detail drawer ── -->
+    <div class="grid two-col mt">
+      <div class="card">
+        <h3>PO 2026-00364 — Croc&amp;Go <span class="badge warn" style="margin-left:6px">● Pending</span></h3>
+        <div class="sub">Drafted from dispatch run of 01 Jul 2026 · created by ismail@alliedchb.com</div>
+        <div class="form-grid">
+          <div class="field"><label>Supplier</label>
+            <select><option>Croc&amp;Go</option><option>La Cantine de Géraldine</option><option>Gourmart</option><option>Seppe's</option><option>Big Bag</option><option>Tastyfood</option><option>Bon - With Love</option><option>MadLab</option><option>Gaufrine</option></select>
+            <div class="hint">orders@crocandgo.be</div>
+          </div>
+          <div class="field"><label>Order date</label><input type="date" value="2026-07-01"></div>
+          <div class="field"><label>Expected delivery</label><input type="date" value="2026-07-03"></div>
+          <div class="field auto"><label>Deliver to (warehouse)</label><input type="text" value="FrigoLoco Depot — Rue de l'Industrie 12, 1400 Nivelles" readonly></div>
+          <div class="field" style="grid-column: 1 / -1"><label>Comment to supplier</label><input type="text" value="Please deliver before 09:00 — cold chain dock 2."></div>
+        </div>
+
+        <div class="table-scroll mt">
+        <table>
+          <thead><tr>
+            <th>Product</th><th>Code</th><th class="num">Unit price</th><th class="num">VAT</th>
+            <th class="num">Qty ordered</th><th class="num">Qty received</th>
+          </tr></thead>
+          <tbody id="po-lines"></tbody>
+        </table>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;margin-top:12px">
+          <table style="width:auto;min-width:260px">
+            <tbody>
+              <tr><td style="border:none;color:var(--ink-2)">Total ex VAT</td><td class="num" style="border:none" id="tot-ex">€0.00</td></tr>
+              <tr><td style="border:none;color:var(--ink-2)">VAT 6%</td><td class="num" style="border:none" id="tot-vat">€0.00</td></tr>
+              <tr class="total"><td>Total incl. VAT</td><td class="num" id="tot-inc">€0.00</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout warn">Receiving fewer units than ordered? Enter the actual qty received per line — the difference is logged and stock is only increased by the received amount.</div>
+        <div class="form-actions">
+          <button class="btn primary">✉ Send to supplier</button>
+          <button class="btn">✓ Mark received</button>
+          <button class="btn ghost danger">✕ Cancel with reversal</button>
+          <span class="badge info" style="margin-left:auto">Not yet sent</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>PDF preview</h3>
+        <div class="sub">Document attached to the "Send to supplier" email — generated server-side</div>
+        <div class="pdf-paper">
+          <div class="pdf-head">
+            <div>
+              <div class="pdf-logo">Frigo<span>Loco</span></div>
+              <div style="color:#666">Rue de l'Industrie 12 · 1400 Nivelles · BE 0123.456.789</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-weight:800;font-size:13px">PURCHASE ORDER</div>
+              <div>No. <b>2026-00364</b></div>
+              <div>Date: 01 Jul 2026</div>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:space-between;gap:16px">
+            <div>
+              <h5>Supplier</h5>
+              Croc&amp;Go<br>Chaussée de Wavre 210<br>1160 Auderghem<br>orders@crocandgo.be
+            </div>
+            <div style="text-align:right">
+              <h5>Deliver to</h5>
+              FrigoLoco Depot<br>Rue de l'Industrie 12<br>1400 Nivelles<br><b>Expected: 03 Jul 2026</b>
+            </div>
+          </div>
+          <h5 style="margin-top:14px">Order lines</h5>
+          <table>
+            <thead><tr><th>Product</th><th>Code</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit €</th><th style="text-align:right">Total €</th></tr></thead>
+            <tbody id="pdf-lines"></tbody>
+          </table>
+          <div class="pdf-tot">
+            Total ex VAT: <span id="pdf-ex">—</span> · VAT 6%: <span id="pdf-vat">—</span><br>
+            <b>Total incl. VAT: <span id="pdf-inc">—</span></b>
+          </div>
+          <div style="margin-top:14px;color:#666;border-top:1px solid #ddd;padding-top:8px">
+            Comment: Please deliver before 09:00 — cold chain dock 2.<br>
+            Questions? supply@frigoloco.be · +32 2 555 01 20
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note-src">Replaces the Excel PO workflow → tables <span class="mono">purchase_orders</span>, <span class="mono">purchase_order_lines</span> · PDF via <span class="mono">GET /api/pos/2026-00364/pdf</span></div>
+  </section>
+
+  <!-- ═══════════ PAGE: STOCK ═══════════ -->
+  <section class="page-view" id="page-stock">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Operations / Stock</div>
+        <h1>Stock</h1>
+      </div>
+      <div class="controls">
+        <select><option>All suppliers</option><option>Croc&amp;Go</option><option>La Cantine de Géraldine</option><option>Gourmart</option><option>Seppe's</option><option>Big Bag</option><option>Tastyfood</option><option>Bon - With Love</option><option>MadLab</option><option>Gaufrine</option></select>
+        <button class="btn" id="open-adjust">± Manual adjustment</button>
+      </div>
+    </div>
+
+    <div class="grid kpis">
+      <div class="card tile">
+        <div class="label">SKUs in stock</div>
+        <div class="value">312</div>
+        <div class="delta">of 540 catalogue products</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Units on order</div>
+        <div class="value">1,483</div>
+        <div class="delta">across 4 pending POs</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Units in warehouse</div>
+        <div class="value">5,214</div>
+        <div class="delta up">▲ +6.2% vs last week</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Blocked operations this week</div>
+        <div class="value" style="color:var(--critical)">4</div>
+        <div class="delta">dispatches stopped — stock would go negative</div>
+      </div>
+    </div>
+
+    <div class="grid two-col">
+      <div class="card">
+        <h3>Stock levels</h3>
+        <div class="sub">Available = on order + received − dispatched · stock can never go negative · click a row for movement history</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th>Product</th><th>Category</th><th>Supplier</th>
+            <th class="num">On order</th><th class="num">In warehouse</th><th class="num">Available</th>
+            <th class="num">Low-stock threshold</th><th>Status</th>
+          </tr></thead>
+          <tbody id="stock-table"></tbody>
+        </table>
+        </div>
+        <div class="note-src">Showing 10 of 312 SKUs · sorted by status</div>
+      </div>
+
+      <div class="card">
+        <h3 id="mov-title">Movement history — Chicken Caesar Wrap</h3>
+        <div class="sub">Code <span class="mono">0000040385884</span> · every stock change traces to a PO, dispatch or manual adjustment</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>When</th><th>Movement</th><th class="num">Qty</th><th>User</th><th>Reference</th></tr></thead>
+          <tbody id="movement-table"></tbody>
+        </table>
+        </div>
+        <div class="callout" style="margin-bottom:0">Running balance is recomputed on each movement. A movement that would push <b>available below 0</b> is rejected and logged as a blocked operation.</div>
+      </div>
+    </div>
+    <div class="note-src">Tables <span class="mono">stock_levels</span> (view), <span class="mono">stock_movements</span>, <span class="mono">blocked_operations</span></div>
+  </section>
+
+  <!-- ═══════════ PAGE: CLIENTS & FRIDGES ═══════════ -->
+  <section class="page-view" id="page-clients">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Master Data / Clients &amp; Fridges</div>
+        <h1>Clients &amp; Fridges</h1>
+      </div>
+      <div class="controls">
+        <input type="text" placeholder="Search clients…" style="width:200px">
+        <button class="btn primary">+ New client</button>
+      </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 280px 1fr">
+      <div class="card client-list" style="padding:8px" id="client-list">
+        <div class="cl-item active" data-client="abb"><div><b>ABB Zaventem</b><span class="meta">1 fridge · contract to Oct 2027</span></div><span class="badge ok">✓</span></div>
+        <div class="cl-item" data-client="rtbf"><div><b>RTBF</b><span class="meta">2 fridges · contract to Mar 2027</span></div><span class="badge ok">✓</span></div>
+        <div class="cl-item" data-client="zoetis"><div><b>Zoetis LLN</b><span class="meta">1 fridge · renewal due</span></div><span class="badge crit">⚠</span></div>
+        <div class="cl-item" data-client="abb" style="opacity:.55"><div><b>Allianz Brussels</b><span class="meta">1 fridge</span></div><span class="badge ok">✓</span></div>
+        <div class="cl-item" data-client="abb" style="opacity:.55"><div><b>Brussels Airlines Airport</b><span class="meta">1 fridge</span></div><span class="badge ok">✓</span></div>
+        <div class="note-src" style="padding:8px 12px">45 clients · showing 5</div>
+      </div>
+
+      <div>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+            <div>
+              <h3 style="font-size:16px" id="cd-name">ABB Zaventem</h3>
+              <div class="sub" id="cd-fridge" style="margin-bottom:0">Fridge <span class="mono">if-0001120</span> · Husky POS linked</div>
+            </div>
+            <div class="controls"><button class="btn">Edit</button><button class="btn ghost">＋ Add fridge</button></div>
+          </div>
+          <div class="form-grid mt">
+            <div class="field auto"><label>Delivery address</label><input type="text" id="cd-addr" value="Hoge Wei 27, 1930 Zaventem" readonly></div>
+            <div class="field auto"><label>Yearly fee</label><input type="text" id="cd-fee" value="€7,787" readonly></div>
+            <div class="field auto"><label>Contract end</label><input type="text" id="cd-end" value="10 Oct 2027" readonly></div>
+          </div>
+          <div class="callout" id="cd-instr"><b>Delivery instructions:</b> Badge required at reception — ask for the facilities desk. Deliver before 10:30, use loading bay B.</div>
+          <div class="callout warn" id="cd-pref" style="margin-bottom:0"><b>Preferences:</b> No fish products in this fridge.</div>
+        </div>
+
+        <div class="grid two-even mt">
+          <div class="card">
+            <h3>Delivery days</h3>
+            <div class="sub">Feeds the forecasting tool: minimum qty to trigger a drop + days of demand to fill</div>
+            <div class="table-scroll">
+            <table>
+              <thead><tr><th>Weekday</th><th class="num">Min qty</th><th class="num">Days to fill</th></tr></thead>
+              <tbody id="cd-days"></tbody>
+            </table>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Intervention log</h3>
+            <div class="sub">Timestamped entries — visits, repairs, incidents</div>
+            <div class="table-scroll">
+            <table>
+              <thead><tr><th>When</th><th>Entry</th><th>By</th></tr></thead>
+              <tbody id="cd-log"></tbody>
+            </table>
+            </div>
+            <div class="form-actions" style="margin-top:10px"><input type="text" placeholder="Add log entry…" style="flex:1"><button class="btn sm">Add</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note-src">Tables <span class="mono">clients</span>, <span class="mono">fridges</span>, <span class="mono">delivery_days</span>, <span class="mono">intervention_log</span></div>
+  </section>
+
+  <!-- ═══════════ PAGE: PRODUCTS ═══════════ -->
+  <section class="page-view" id="page-products">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Master Data / Products</div>
+        <h1>Products</h1>
+      </div>
+      <div class="controls">
+        <input type="text" placeholder="Search name / code…" style="width:200px">
+        <button class="btn primary">+ New product</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <div class="chips" id="prod-chips">
+          <span class="chip active" data-f="all">All · 540</span>
+          <span class="chip amber" data-f="noshelf">⚠ Missing shelf life · 218</span>
+          <span class="chip" data-f="all2">Active in fridges · 486</span>
+        </div>
+        <span class="badge info">⟳ Husky sync: last synced 02:00 · 540 products · 0 errors</span>
+      </div>
+      <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>Product</th><th>Code</th><th>Category</th><th>Supplier</th>
+          <th class="num">Buy €</th><th class="num">Sell €</th><th class="num">VAT</th>
+          <th class="num">Shelf life (days)</th><th class="num">Score</th><th></th>
+        </tr></thead>
+        <tbody id="prod-table"></tbody>
+      </table>
+      </div>
+      <div class="note-src" id="prod-count"></div>
+      <div class="callout warn">218 products have no shelf life — expiry alerts cannot be computed for them. Bulk-edit or import shelf lives to clear this backlog.</div>
+    </div>
+
+    <!-- per-fridge price override drawer -->
+    <div class="card mt" id="override-drawer">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <h3>Price overrides — Chicken Caesar Wrap</h3>
+          <div class="sub">Default sell price €3.90 · overrides pushed to Husky per fridge at next sync</div>
+        </div>
+        <button class="btn ghost sm" onclick="document.getElementById('override-drawer').style.display='none'">✕ Close</button>
+      </div>
+      <div class="table-scroll">
+      <table>
+        <thead><tr><th>Fridge</th><th class="num">Default €</th><th class="num">Override €</th><th class="num">Δ</th><th>Since</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><b>ABB Zaventem</b> <span class="mono" style="color:var(--ink-3)">if-0001120</span></td><td class="num">3.90</td><td class="num"><input class="qty" type="number" step="0.05" value="4.20"></td><td class="num posv">+0.30</td><td>14 Mar 2026</td><td><a href="#">Remove</a></td></tr>
+          <tr><td><b>RTBF</b> <span class="mono" style="color:var(--ink-3)">if-0001094</span></td><td class="num">3.90</td><td class="num"><input class="qty" type="number" step="0.05" value="4.00"></td><td class="num posv">+0.10</td><td>02 May 2026</td><td><a href="#">Remove</a></td></tr>
+          <tr><td><b>Zoetis LLN</b> <span class="mono" style="color:var(--ink-3)">if-0001132</span></td><td class="num">3.90</td><td class="num"><input class="qty" type="number" step="0.05" value="3.70"></td><td class="num neg">−0.20</td><td>02 May 2026</td><td><a href="#">Remove</a></td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="form-actions"><button class="btn primary">Save overrides</button><button class="btn ghost">+ Add fridge override</button></div>
+    </div>
+    <div class="note-src">Tables <span class="mono">products</span>, <span class="mono">fridge_price_overrides</span> · nightly push <span class="mono">POST husky/api/products</span></div>
+  </section>
+
+  <!-- ═══════════ PAGE: ALERTS & SETTINGS ═══════════ -->
+  <section class="page-view" id="page-alerts">
+    <div class="topbar">
+      <div>
+        <div class="crumb">System / Alerts &amp; Settings</div>
+        <h1>Alerts &amp; Settings</h1>
+      </div>
+      <div class="controls">
+        <select><option>All severities</option><option>Critical only</option><option>Warning only</option></select>
+        <button class="btn">✓ Acknowledge all</button>
+      </div>
+    </div>
+
+    <div class="grid two-col">
+      <div>
+        <div class="card">
+          <h3>Alert inbox</h3>
+          <div class="sub">7 open · grouped by type · acknowledged alerts drop out of the sidebar counter</div>
+          <div id="alert-groups"></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <h3>Scoring weights</h3>
+          <div class="sub">Product score used by forecasting — the three weights must sum to 1.00</div>
+          <div class="weight-row"><span class="lbl">Sales velocity</span><input type="range" min="0" max="100" value="50" id="w1"><span class="val" id="w1v">0.50</span></div>
+          <div class="weight-row"><span class="lbl">Margin</span><input type="range" min="0" max="100" value="30" id="w2"><span class="val" id="w2v">0.30</span></div>
+          <div class="weight-row"><span class="lbl">Freshness / waste</span><input type="range" min="0" max="100" value="20" id="w3"><span class="val" id="w3v">0.20</span></div>
+          <div class="form-actions">
+            <span class="badge ok" id="w-sum">Σ = 1.00 ✓</span>
+            <button class="btn primary" style="margin-left:auto">Save</button>
+          </div>
+        </div>
+
+        <div class="card mt">
+          <h3>Forecast margin % per category</h3>
+          <div class="sub">Safety buffer added on top of forecast demand</div>
+          <div class="table-scroll">
+          <table>
+            <thead><tr><th>Category</th><th class="num">Margin %</th></tr></thead>
+            <tbody>
+              <tr><td>1. Cold Dishes</td><td class="num"><input class="qty" type="number" value="10"></td></tr>
+              <tr><td>2. Wraps &amp; Sandwiches</td><td class="num"><input class="qty" type="number" value="15"></td></tr>
+              <tr><td>4. Warm Dishes</td><td class="num"><input class="qty" type="number" value="10"></td></tr>
+              <tr><td>5. Desserts</td><td class="num"><input class="qty" type="number" value="20"></td></tr>
+              <tr><td>7. Drinks</td><td class="num"><input class="qty" type="number" value="25"></td></tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+
+        <div class="card mt">
+          <h3>Fees &amp; alert thresholds</h3>
+          <div class="sub">Versioned with effective dates — historical weeks keep old rates</div>
+          <div class="table-scroll">
+          <table>
+            <thead><tr><th>Key</th><th class="num">Value</th><th>Unit</th><th></th></tr></thead>
+            <tbody>
+              <tr><td class="mono">pos_software_percent</td><td class="num">9.00%</td><td>of sales</td><td><a href="#">Edit</a></td></tr>
+              <tr><td class="mono">rfid_tag_transaction</td><td class="num">€0.10</td><td>per item sold</td><td><a href="#">Edit</a></td></tr>
+              <tr><td class="mono">vat_rate_food</td><td class="num">6.00%</td><td>of gross sales</td><td><a href="#">Edit</a></td></tr>
+              <tr><td class="mono">expiry_alert_days</td><td class="num">2</td><td>days before expiry</td><td><a href="#">Edit</a></td></tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+
+        <div class="card mt">
+          <h3>Discount providers</h3>
+          <div class="sub">Provider names treated as internal discount in the Wix sales export</div>
+          <div class="chips">
+            <span class="chip">Frigo Loco Depot ✕</span>
+            <span class="chip">Discount ✕</span>
+            <span class="chip">Too Good To Go ✕</span>
+            <span class="chip" style="border-style:dashed">+ Add provider</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note-src">Tables <span class="mono">alerts</span>, <span class="mono">settings</span> · alert evaluation runs every 15 min</div>
+  </section>
+
+  </main>
+</div>
+
+<!-- ═══════════ MODAL: MANUAL STOCK ADJUSTMENT ═══════════ -->
+<div class="modal-overlay" id="adjust-modal">
+  <div class="modal">
+    <h3>Manual stock adjustment</h3>
+    <div class="sub">Corrections for breakage, counting errors, samples — fully audited</div>
+    <div class="form-grid" style="grid-template-columns:1fr 1fr">
+      <div class="field" style="grid-column:1 / -1"><label>Product</label>
+        <select>
+          <option>Chicken Caesar Wrap — 0000040385884</option>
+          <option>Poke Bowl Salmon — 1001</option>
+          <option>Soupe Butternut — 1004</option>
+          <option>Gaufre de Liège — 0000040311158</option>
+        </select>
+      </div>
+      <div class="field"><label>Direction</label><select><option>Remove (−)</option><option>Add (+)</option></select></div>
+      <div class="field"><label>Quantity</label><input type="number" value="2" min="1"></div>
+      <div class="field" style="grid-column:1 / -1"><label>Reason (required)</label>
+        <textarea rows="3" placeholder="e.g. 2 units damaged during unloading — packaging torn" required></textarea>
+        <div class="hint">Stored on the movement record and shown in the history panel.</div>
+      </div>
+    </div>
+    <div class="callout crit"><b>Stock can never go negative.</b> Removing more units than currently available will be rejected — current available for Chicken Caesar Wrap: <b>384</b>.</div>
+    <div class="form-actions">
+      <button class="btn primary" id="adjust-save">Save adjustment</button>
+      <button class="btn ghost" id="adjust-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── data ─────────────────────────────── */
+const poRows = [
+  { no: "2026-00364", sup: "Croc&Go",                od: "01 Jul 2026", ed: "03 Jul 2026", edISO: "2026-07-03", total: 1780.27, status: "Pending" },
+  { no: "2026-00363", sup: "La Cantine de Géraldine",od: "30 Jun 2026", ed: "04 Jul 2026", edISO: "2026-07-04", total: 486.10,  status: "Pending" },
+  { no: "2026-00362", sup: "Gaufrine",               od: "29 Jun 2026", ed: "02 Jul 2026", edISO: "2026-07-02", total: 312.70,  status: "Received" },
+  { no: "2026-00361", sup: "Seppe's",                od: "29 Jun 2026", ed: "01 Jul 2026", edISO: "2026-07-01", total: 654.24,  status: "Received" },
+  { no: "2026-00360", sup: "Gourmart",               od: "28 Jun 2026", ed: "30 Jun 2026", edISO: "2026-06-30", total: 228.96,  status: "Received" },
+  { no: "2026-00359", sup: "Big Bag",                od: "27 Jun 2026", ed: "30 Jun 2026", edISO: "2026-06-30", total: 189.10,  status: "Cancelled" },
+  { no: "2026-00358", sup: "Tastyfood",              od: "26 Jun 2026", ed: "29 Jun 2026", edISO: "2026-06-29", total: 534.51,  status: "Received" },
+  { no: "2026-00357", sup: "Bon - With Love",        od: "25 Jun 2026", ed: "27 Jun 2026", edISO: "2026-06-27", total: 412.86,  status: "Received" },
+  { no: "2026-00356", sup: "MadLab",                 od: "24 Jun 2026", ed: "26 Jun 2026", edISO: "2026-06-26", total: 148.40,  status: "Cancelled" },
+];
+const poLines = [
+  { p: "Chicken Caesar Wrap",       code: "0000040385884", price: 3.05, qty: 120, rec: 0 },
+  { p: "Poke Bowl Salmon",          code: "1001",          price: 4.10, qty: 90,  rec: 0 },
+  { p: "Pasta Pesto Jar",           code: "1002",          price: 3.35, qty: 110, rec: 0 },
+  { p: "Greek Yoghurt & Granola",   code: "0000040311158", price: 1.95, qty: 160, rec: 0 },
+  { p: "Brownie Chocolat",          code: "1010",          price: 1.20, qty: 220, rec: 0 },
+];
+const stockRows = [
+  { p: "Quiche Lorraine",      cat: "4. Warm Dishes",        sup: "Gourmart",                oo: 0,   wh: 0,   av: 0,   th: 25, below: true },
+  { p: "Big Bag Nuts Mix",     cat: "6. Snacks",             sup: "Big Bag",                 oo: 0,   wh: 8,   av: 8,   th: 30, below: true },
+  { p: "Soupe Butternut",      cat: "9. Soup",               sup: "La Cantine de Géraldine", oo: 0,   wh: 12,  av: 12,  th: 40, below: true },
+  { p: "Gaufre de Liège",      cat: "5. Desserts",           sup: "Gaufrine",                oo: 0,   wh: 18,  av: 18,  th: 60, below: true },
+  { p: "Overnight Oats",       cat: "8. Breakfast",          sup: "Seppe's",                 oo: 0,   wh: 44,  av: 44,  th: 50, below: true },
+  { p: "Chicken Caesar Wrap",  cat: "2. Wraps & Sandwiches", sup: "Croc&Go",                 oo: 120, wh: 264, av: 384, th: 150, below: false },
+  { p: "Poke Bowl Salmon",     cat: "1. Cold Dishes",        sup: "Croc&Go",                 oo: 90,  wh: 41,  av: 131, th: 80,  below: false },
+  { p: "Brownie Chocolat",     cat: "5. Desserts",           sup: "Bon - With Love",         oo: 220, wh: 95,  av: 315, th: 100, below: false },
+  { p: "Lasagne Bolognese",    cat: "4. Warm Dishes",        sup: "Tastyfood",               oo: 60,  wh: 130, av: 190, th: 90,  below: false },
+  { p: "Kombucha Ginger",      cat: "7. Drinks",             sup: "MadLab",                  oo: 48,  wh: 26,  av: 74,  th: 40,  below: false },
+];
+const movements = [
+  { at: "02 Jul 2026 14:32", t: "Dispatch",          q: -36, u: "system (forecast run)",   ref: "DSP-2026-1187" },
+  { at: "02 Jul 2026 09:15", t: "PO received",       q: 120, u: "warehouse@frigoloco.be",  ref: "PO 2026-00355" },
+  { at: "01 Jul 2026 16:40", t: "Manual adjustment", q: -2,  u: "ismail@alliedchb.com",    ref: "Damaged packaging" },
+  { at: "30 Jun 2026 14:05", t: "Dispatch",          q: -41, u: "system (forecast run)",   ref: "DSP-2026-1163" },
+  { at: "29 Jun 2026 08:52", t: "PO received",       q: 90,  u: "warehouse@frigoloco.be",  ref: "PO 2026-00352" },
+];
+const products = [
+  { p: "Chicken Caesar Wrap",     code: "0000040385884", cat: "2. Wraps & Sandwiches", sup: "Croc&Go",                buy: 3.05, sell: 3.90, shelf: 4,    score: 0.91 },
+  { p: "Poke Bowl Salmon",        code: "1001",          cat: "1. Cold Dishes",        sup: "Croc&Go",                buy: 4.10, sell: 6.50, shelf: 3,    score: 0.87 },
+  { p: "Pasta Pesto Jar",         code: "1002",          cat: "3. Warm Dishes Jar",    sup: "Croc&Go",                buy: 3.35, sell: 5.20, shelf: 5,    score: 0.74 },
+  { p: "Soupe Butternut",         code: "1004",          cat: "9. Soup",               sup: "La Cantine de Géraldine",buy: 2.10, sell: 3.50, shelf: null, score: 0.66 },
+  { p: "Quiche Lorraine",         code: "1005",          cat: "4. Warm Dishes",        sup: "Gourmart",               buy: 2.85, sell: 4.60, shelf: null, score: 0.71 },
+  { p: "Overnight Oats",          code: "1007",          cat: "8. Breakfast",          sup: "Seppe's",                buy: 1.75, sell: 2.95, shelf: 4,    score: 0.62 },
+  { p: "Big Bag Nuts Mix",        code: "1008",          cat: "6. Snacks",             sup: "Big Bag",                buy: 1.10, sell: 2.20, shelf: null, score: 0.58 },
+  { p: "Lasagne Bolognese",       code: "1009",          cat: "4. Warm Dishes",        sup: "Tastyfood",              buy: 3.20, sell: 5.40, shelf: 6,    score: 0.83 },
+  { p: "Brownie Chocolat",        code: "1010",          cat: "5. Desserts",           sup: "Bon - With Love",        buy: 1.20, sell: 2.40, shelf: null, score: 0.79 },
+  { p: "Kombucha Ginger",         code: "1011",          cat: "7. Drinks",             sup: "MadLab",                 buy: 1.60, sell: 3.20, shelf: 30,   score: 0.55 },
+  { p: "Gaufre de Liège",         code: "0000040311158", cat: "5. Desserts",           sup: "Gaufrine",               buy: 0.95, sell: 1.90, shelf: null, score: 0.69 },
+  { p: "Greek Yoghurt & Granola", code: "1013",          cat: "8. Breakfast",          sup: "Croc&Go",                buy: 1.95, sell: 3.10, shelf: 7,    score: 0.76 },
+];
+const alertGroups = [
+  { type: "Expiry (≤ 2 days)", sev: "crit", items: [
+    { msg: "Poke Bowl Salmon — 14 units expire 04 Jul", meta: "ABB Zaventem (if-0001120) · detected 03 Jul 06:00" },
+    { msg: "Chicken Caesar Wrap — 9 units expire 05 Jul", meta: "RTBF (if-0001094) · detected 03 Jul 06:00" },
+  ]},
+  { type: "Negative-blocked", sev: "crit", items: [
+    { msg: "Dispatch DSP-2026-1191 blocked — Quiche Lorraine would go to −12", meta: "Warehouse · 03 Jul 07:41 · dispatch line skipped" },
+  ]},
+  { type: "RFID offline", sev: "crit", items: [
+    { msg: "Fridge if-0001132 (Zoetis LLN) — no RFID heartbeat for 3h 20m", meta: "Last seen 03 Jul 04:55 · sales not registering" },
+  ]},
+  { type: "Low stock", sev: "warn", items: [
+    { msg: "Soupe Butternut — available 12 < threshold 40", meta: "La Cantine de Géraldine · no open PO" },
+    { msg: "Big Bag Nuts Mix — available 8 < threshold 30", meta: "Big Bag · no open PO" },
+  ]},
+  { type: "Below target", sev: "warn", items: [
+    { msg: "Gaufre de Liège — fridge fill at 62% of target across 6 fridges", meta: "Suggest adding to next Gaufrine PO" },
+  ]},
+];
+const clientData = {
+  abb: {
+    name: "ABB Zaventem", fridge: 'Fridge <span class="mono">if-0001120</span> · Husky POS linked',
+    addr: "Hoge Wei 27, 1930 Zaventem", fee: "€7,787", end: "10 Oct 2027",
+    instr: "<b>Delivery instructions:</b> Badge required at reception — ask for the facilities desk. Deliver before 10:30, use loading bay B.",
+    pref: "<b>Preferences:</b> No fish products in this fridge.",
+    days: [["Monday", 40, 3], ["Wednesday", 30, 2], ["Friday", 35, 3]],
+    log: [
+      ["28 Jun 2026 11:20", "Replaced door gasket — fridge holding 3.8 °C again", "K. Mertens"],
+      ["12 May 2026 09:05", "Client asked to remove fish products from assortment", "G. Laurent"],
+      ["03 Feb 2026 15:40", "RFID antenna recalibrated after misreads", "Husky support"],
+    ],
+  },
+  rtbf: {
+    name: "RTBF", fridge: 'Fridges <span class="mono">if-0001094</span> + <span class="mono">if-0001095</span> (cafeteria & newsroom) · Husky POS linked',
+    addr: "Boulevard Reyers 52, 1044 Bruxelles", fee: "€10,800", end: "15 Mar 2027",
+    instr: "<b>Delivery instructions:</b> Announce at Reyers gatehouse, permit on dashboard. Both fridges restocked in one visit.",
+    pref: "<b>Preferences:</b> High turnover site — prioritise wraps & desserts; double dessert facing on Fridays.",
+    days: [["Monday", 60, 2], ["Tuesday", 45, 2], ["Thursday", 60, 2], ["Friday", 50, 3]],
+    log: [
+      ["25 Jun 2026 08:15", "Second fridge (newsroom) installed and synced to Husky", "Install team"],
+      ["18 Apr 2026 13:30", "Compressor noise reported — technician visit booked", "G. Laurent"],
+    ],
+  },
+  zoetis: {
+    name: "Zoetis LLN", fridge: 'Fridge <span class="mono">if-0001132</span> · Husky POS linked · <span style="color:var(--critical);font-weight:600">RFID offline 3h 20m</span>',
+    addr: "Rue Laid Burniat 1, 1348 Louvain-la-Neuve", fee: "€9,600", end: "30 Sep 2026",
+    instr: "<b>Delivery instructions:</b> Science park entrance 2, visitor parking P4. Contact facilities on +32 10 47 xx xx before arrival.",
+    pref: "<b>Preferences:</b> Vegetarian-heavy assortment requested; contract renewal discussion due — end date 30 Sep 2026.",
+    days: [["Tuesday", 35, 3], ["Friday", 30, 3]],
+    log: [
+      ["03 Jul 2026 08:10", "RFID offline alert — remote reboot failed, on-site visit planned", "system"],
+      ["06 Jun 2026 10:45", "Quarterly cleaning + planogram refresh", "K. Mertens"],
+    ],
+  },
+};
+
+/* ── helpers ─────────────────────────────── */
+const eur = (v, dec = 2) => "€" + v.toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+const statusBadge = s => s === "Pending" ? '<span class="badge warn">● Pending</span>'
+  : s === "Received" ? '<span class="badge ok">● Received</span>'
+  : '<span class="badge mut">● Cancelled</span>';
+
+/* ── nav ─────────────────────────────── */
+document.querySelectorAll(".nav-item").forEach(item => {
+  item.addEventListener("click", () => {
+    document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
+    document.querySelectorAll(".page-view").forEach(p => p.classList.remove("active"));
+    item.classList.add("active");
+    document.getElementById("page-" + item.dataset.page).classList.add("active");
+    window.scrollTo(0, 0);
+  });
+});
+const hashPage = location.hash.replace("#", "");
+if (hashPage) {
+  const target = document.querySelector(`.nav-item[data-page="${hashPage}"]`);
+  if (target) target.click();
+}
+
+/* ── PO list + filters ─────────────────────────────── */
+const TODAY = "2026-07-03", WEEK_START = "2026-06-29", WEEK_END = "2026-07-05";
+let poStatus = "all", poDate = "all";
+function renderPoTable() {
+  const rows = poRows.filter(r =>
+    (poStatus === "all" || r.status === poStatus) &&
+    (poDate === "all" || (poDate === "today" ? r.edISO === TODAY : r.edISO >= WEEK_START && r.edISO <= WEEK_END))
+  );
+  document.getElementById("po-table").innerHTML = rows.map(r => `
+    <tr class="${r.no === "2026-00364" ? "rowsel" : ""}">
+      <td><b>${r.no}</b></td><td>${r.sup}</td>
+      <td>${r.od}</td><td>${r.ed}${r.edISO === TODAY ? ' <span class="badge info">today</span>' : ""}</td>
+      <td class="num">${eur(r.total)}</td>
+      <td>${statusBadge(r.status)}</td>
+      <td><a href="#">Open</a></td>
+    </tr>`).join("");
+  document.getElementById("po-count").textContent =
+    `${rows.length} of ${poRows.length} orders shown · detail below shows PO 2026-00364`;
+}
+document.querySelectorAll("#po-status-chips .chip").forEach(chip => {
+  chip.addEventListener("click", () => {
+    document.querySelectorAll("#po-status-chips .chip").forEach(c => c.classList.remove("active"));
+    chip.classList.add("active");
+    poStatus = chip.dataset.status;
+    renderPoTable();
+  });
+});
+document.getElementById("po-date-filter").addEventListener("change", e => {
+  poDate = e.target.value;
+  renderPoTable();
+});
+renderPoTable();
+
+/* ── PO detail lines + totals + PDF ─────────────────────────────── */
+document.getElementById("po-lines").innerHTML = poLines.map(l => `
+  <tr>
+    <td><b>${l.p}</b></td><td class="mono">${l.code}</td>
+    <td class="num">${eur(l.price)}</td><td class="num">6%</td>
+    <td class="num">${l.qty}</td>
+    <td class="num"><input class="qty" type="number" value="${l.rec}" min="0" max="${l.qty}"></td>
+  </tr>`).join("");
+const exVat = poLines.reduce((a, l) => a + l.price * l.qty, 0);
+const vat = exVat * 0.06;
+document.getElementById("tot-ex").textContent  = eur(exVat);
+document.getElementById("tot-vat").textContent = eur(vat);
+document.getElementById("tot-inc").textContent = eur(exVat + vat);
+document.getElementById("pdf-lines").innerHTML = poLines.map(l => `
+  <tr><td>${l.p}</td><td>${l.code}</td>
+  <td style="text-align:right">${l.qty}</td>
+  <td style="text-align:right">${l.price.toFixed(2)}</td>
+  <td style="text-align:right">${(l.price * l.qty).toFixed(2)}</td></tr>`).join("");
+document.getElementById("pdf-ex").textContent  = eur(exVat);
+document.getElementById("pdf-vat").textContent = eur(vat);
+document.getElementById("pdf-inc").textContent = eur(exVat + vat);
+
+/* ── stock table + movement panel ─────────────────────────────── */
+document.getElementById("stock-table").innerHTML = stockRows.map(r => `
+  <tr class="${r.below ? "below" : ""}" data-p="${r.p}" style="cursor:pointer">
+    <td><b>${r.p}</b></td><td style="color:var(--ink-3)">${r.cat}</td><td>${r.sup}</td>
+    <td class="num">${r.oo}</td><td class="num">${r.wh}</td>
+    <td class="num"><b>${r.av}</b></td><td class="num">${r.th}</td>
+    <td>${r.below ? '<span class="badge crit">▼ Below threshold</span>' : '<span class="badge ok">✓ OK</span>'}</td>
+  </tr>`).join("");
+document.querySelectorAll("#stock-table tr").forEach(tr => {
+  tr.addEventListener("click", () => {
+    document.getElementById("mov-title").textContent = "Movement history — " + tr.dataset.p;
+  });
+});
+document.getElementById("movement-table").innerHTML = movements.map(m => `
+  <tr>
+    <td style="white-space:nowrap">${m.at}</td>
+    <td>${m.t === "Manual adjustment" ? '<span class="badge warn">± Manual</span>'
+        : m.t === "Dispatch" ? '<span class="badge info">⇢ Dispatch</span>'
+        : '<span class="badge ok">⇠ PO received</span>'}</td>
+    <td class="num ${m.q < 0 ? "neg" : "posv"}">${m.q > 0 ? "+" : "−"}${Math.abs(m.q)}</td>
+    <td style="color:var(--ink-3)">${m.u}</td><td class="mono">${m.ref}</td>
+  </tr>`).join("");
+
+/* ── manual adjustment modal ─────────────────────────────── */
+const adjustModal = document.getElementById("adjust-modal");
+document.getElementById("open-adjust").addEventListener("click", () => adjustModal.classList.add("open"));
+document.getElementById("adjust-cancel").addEventListener("click", () => adjustModal.classList.remove("open"));
+document.getElementById("adjust-save").addEventListener("click", () => adjustModal.classList.remove("open"));
+adjustModal.addEventListener("click", e => { if (e.target === adjustModal) adjustModal.classList.remove("open"); });
+
+/* ── clients master-detail ─────────────────────────────── */
+function renderClient(key) {
+  const c = clientData[key];
+  document.getElementById("cd-name").textContent = c.name;
+  document.getElementById("cd-fridge").innerHTML = c.fridge;
+  document.getElementById("cd-addr").value = c.addr;
+  document.getElementById("cd-fee").value  = c.fee;
+  document.getElementById("cd-end").value  = c.end;
+  document.getElementById("cd-instr").innerHTML = c.instr;
+  document.getElementById("cd-pref").innerHTML  = c.pref;
+  document.getElementById("cd-days").innerHTML = c.days.map(d =>
+    `<tr><td><b>${d[0]}</b></td><td class="num">${d[1]}</td><td class="num">${d[2]}</td></tr>`).join("");
+  document.getElementById("cd-log").innerHTML = c.log.map(l =>
+    `<tr><td style="white-space:nowrap">${l[0]}</td><td>${l[1]}</td><td style="color:var(--ink-3)">${l[2]}</td></tr>`).join("");
+}
+document.querySelectorAll("#client-list .cl-item").forEach(item => {
+  item.addEventListener("click", () => {
+    document.querySelectorAll("#client-list .cl-item").forEach(i => i.classList.remove("active"));
+    item.classList.add("active");
+    renderClient(item.dataset.client);
+  });
+});
+renderClient("abb");
+
+/* ── products table + chips ─────────────────────────────── */
+let prodFilter = "all";
+function renderProducts() {
+  const rows = products.filter(p => prodFilter !== "noshelf" || p.shelf == null);
+  document.getElementById("prod-table").innerHTML = rows.map(p => `
+    <tr>
+      <td><b>${p.p}</b></td><td class="mono">${p.code}</td>
+      <td style="color:var(--ink-3)">${p.cat}</td><td>${p.sup}</td>
+      <td class="num">${p.buy.toFixed(2)}</td><td class="num">${p.sell.toFixed(2)}</td>
+      <td class="num">6%</td>
+      <td class="num">${p.shelf == null ? '<span class="badge warn">⚠ missing</span>' : p.shelf}</td>
+      <td class="num">${p.score.toFixed(2)}</td>
+      <td><a href="#" onclick="document.getElementById('override-drawer').style.display='block';return false">Overrides</a></td>
+    </tr>`).join("");
+  document.getElementById("prod-count").textContent =
+    prodFilter === "noshelf"
+      ? `${rows.length} of 218 flagged products shown`
+      : `${rows.length} of 540 products shown`;
+}
+document.querySelectorAll("#prod-chips .chip").forEach(chip => {
+  chip.addEventListener("click", () => {
+    document.querySelectorAll("#prod-chips .chip").forEach(c => c.classList.remove("active"));
+    chip.classList.add("active");
+    prodFilter = chip.dataset.f;
+    renderProducts();
+  });
+});
+renderProducts();
+
+/* ── alerts inbox ─────────────────────────────── */
+document.getElementById("alert-groups").innerHTML = alertGroups.map(g => `
+  <div style="margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:8px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;color:var(--ink-3);padding:6px 4px;border-bottom:1px solid var(--baseline)">
+      <span class="sev ${g.sev}"></span> ${g.type} · ${g.items.length}
+    </div>
+    ${g.items.map(i => `
+      <div class="alert-row">
+        <span class="sev ${g.sev}"></span>
+        <div class="msg"><b>${i.msg}</b><div class="meta">${i.meta}</div></div>
+        <button class="btn sm ack-btn">Ack</button>
+      </div>`).join("")}
+  </div>`).join("");
+document.querySelectorAll(".ack-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    btn.closest(".alert-row").classList.add("acked");
+    btn.outerHTML = '<span class="badge mut">✓ Acked</span>';
+    const pill = document.querySelector(".nav-item .pill");
+    const n = parseInt(pill.textContent, 10) - 1;
+    if (n > 0) pill.textContent = n; else pill.remove();
+  });
+});
+
+/* ── scoring weight sliders ─────────────────────────────── */
+function updateWeights() {
+  const w = ["w1", "w2", "w3"].map(id => +document.getElementById(id).value / 100);
+  ["w1v", "w2v", "w3v"].forEach((id, i) => document.getElementById(id).textContent = w[i].toFixed(2));
+  const sum = w.reduce((a, b) => a + b, 0);
+  const sumEl = document.getElementById("w-sum");
+  const ok = Math.abs(sum - 1) < 0.005;
+  sumEl.textContent = `Σ = ${sum.toFixed(2)} ${ok ? "✓" : "— must equal 1.00"}`;
+  sumEl.className = "badge " + (ok ? "ok" : "crit");
+}
+["w1", "w2", "w3"].forEach(id => document.getElementById(id).addEventListener("input", updateWeights));
+updateWeights();
+</script>
+</body>
+</html>

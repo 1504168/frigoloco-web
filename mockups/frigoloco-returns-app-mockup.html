@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FrigoLoco Returns — Web App Mockup</title>
+<style>
+  :root {
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --ink-1: #0b0b0b;
+    --ink-2: #52514e;
+    --ink-3: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;   /* blue  */
+    --series-2: #1baf7a;   /* aqua  */
+    --series-3: #eda100;   /* yellow*/
+    --pos: #2a78d6;        /* diverging + pole */
+    --neg: #e34948;        /* diverging − pole */
+    --good: #0ca30c;
+    --good-text: #006300;
+    --warning: #fab219;
+    --critical: #d03b3b;
+    --seq-150: #b7d3f6;
+    --seq-250: #86b6ef;
+    --sidebar-bg: #14202e;
+    --sidebar-ink: #c7d2de;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-1: #1a1a19;
+      --page: #0d0d0d;
+      --ink-1: #ffffff;
+      --ink-2: #c3c2b7;
+      --ink-3: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5;
+      --series-2: #199e70;
+      --series-3: #c98500;
+      --pos: #3987e5;
+      --neg: #e66767;
+      --good-text: #0ca30c;
+      --seq-150: #184f95;
+      --seq-250: #1c5cab;
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--ink-1);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .app { display: flex; min-height: 100vh; }
+
+  /* ── Sidebar ─────────────────────────────── */
+  .sidebar {
+    width: 218px; flex-shrink: 0;
+    background: var(--sidebar-bg);
+    color: var(--sidebar-ink);
+    padding: 18px 0;
+    position: sticky; top: 0; height: 100vh;
+    display: flex; flex-direction: column;
+  }
+  .logo { padding: 4px 20px 18px; border-bottom: 1px solid rgba(255,255,255,.08); margin-bottom: 12px; }
+  .logo .name { font-size: 17px; font-weight: 700; color: #fff; letter-spacing: .2px; }
+  .logo .name span { color: #5fa8f5; }
+  .logo .sub { font-size: 11px; color: #7d8b9a; margin-top: 2px; }
+  .nav-section { font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; color: #647181; padding: 12px 20px 6px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 20px; cursor: pointer; font-size: 13.5px;
+    border-left: 3px solid transparent; user-select: none;
+  }
+  .nav-item:hover { background: rgba(255,255,255,.05); color: #fff; }
+  .nav-item.active { background: rgba(57,135,229,.16); color: #fff; border-left-color: #3987e5; font-weight: 600; }
+  .nav-item .ico { width: 18px; text-align: center; opacity: .85; }
+  .sidebar .foot { margin-top: auto; padding: 14px 20px 4px; font-size: 11px; color: #647181; border-top: 1px solid rgba(255,255,255,.08); }
+  .sidebar .foot b { color: #9db0c2; display:block; }
+
+  /* ── Main ────────────────────────────────── */
+  .main { flex: 1; min-width: 0; padding: 22px 28px 60px; }
+  .page-view { display: none; }
+  .page-view.active { display: block; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+  h1 { font-size: 21px; font-weight: 700; }
+  .topbar .crumb { font-size: 12px; color: var(--ink-3); margin-bottom: 3px; }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  select, input[type=text], input[type=number], input[type=date], textarea {
+    font: inherit; color: var(--ink-1);
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 10px;
+  }
+  .btn {
+    font: inherit; font-weight: 600; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 14px; background: var(--surface-1); color: var(--ink-1);
+  }
+  .btn.primary { background: var(--series-1); border-color: transparent; color: #fff; }
+  .btn.ghost { background: transparent; }
+
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .card h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 2px; }
+  .card .sub { font-size: 12px; color: var(--ink-3); margin-bottom: 12px; }
+  .grid { display: grid; gap: 14px; }
+  .kpis { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 14px; }
+  .two-col { grid-template-columns: 1.45fr 1fr; }
+  .two-even { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 1100px){ .two-col, .two-even { grid-template-columns: 1fr; } }
+
+  /* stat tiles */
+  .tile .label { font-size: 12px; color: var(--ink-2); }
+  .tile .value { font-size: 26px; font-weight: 650; margin: 2px 0 1px; }
+  .tile .delta { font-size: 12px; color: var(--ink-3); }
+  .tile .delta.up   { color: var(--good-text); font-weight: 600; }
+  .tile .delta.down { color: var(--critical);  font-weight: 600; }
+  .hero .value { font-size: 38px; letter-spacing: -.5px; }
+
+  /* tables */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .4px;
+    color: var(--ink-3); font-weight: 600; padding: 8px 10px;
+    border-bottom: 1px solid var(--baseline); white-space: nowrap;
+  }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:hover td { background: rgba(42,120,214,.05); }
+  tr.total td { font-weight: 700; border-top: 2px solid var(--baseline); background: transparent; }
+  .neg { color: var(--critical); font-weight: 600; }
+  .posv { color: var(--good-text); font-weight: 600; }
+  .table-scroll { overflow-x: auto; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 9px;
+  }
+  .badge.ok   { background: rgba(12,163,12,.12);  color: var(--good-text); }
+  .badge.warn { background: rgba(250,178,25,.16); color: #8a6100; }
+  .badge.crit { background: rgba(208,59,59,.12);  color: var(--critical); }
+  .badge.info { background: rgba(42,120,214,.12); color: var(--series-1); }
+  @media (prefers-color-scheme: dark) { .badge.warn { color: #fab219; } }
+
+  /* tabs */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--baseline); margin-bottom: 16px; }
+  .tab {
+    padding: 8px 16px; cursor: pointer; font-weight: 600; font-size: 13.5px;
+    color: var(--ink-3); border-bottom: 2px solid transparent; margin-bottom: -1px; user-select: none;
+  }
+  .tab.active { color: var(--ink-1); border-bottom-color: var(--series-1); }
+  .subview { display: none; }
+  .subview.active { display: block; }
+
+  /* charts */
+  .chart-wrap { position: relative; }
+  .hbar-row { display: grid; grid-template-columns: 172px 1fr 64px; align-items: center; gap: 8px; padding: 3px 0; }
+  .hbar-row .lbl { font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+  .hbar-row .val { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .hbar-track { position: relative; height: 16px; }
+  .hbar-track .zero { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--baseline); }
+  .hbar {
+    position: absolute; top: 0; height: 16px; max-height: 16px;
+    border-radius: 0 4px 4px 0; cursor: pointer;
+  }
+  .hbar.negbar { border-radius: 4px 0 0 4px; }
+  .hbar:hover { filter: brightness(1.12); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); margin-top: 10px; }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .line-key { width: 16px; height: 2px; border-radius: 2px; display: inline-block; }
+
+  .tooltip {
+    position: fixed; z-index: 50; pointer-events: none; display: none;
+    background: var(--ink-1); color: var(--page);
+    font-size: 12px; padding: 6px 10px; border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.25); white-space: nowrap;
+  }
+  .tooltip b { display: block; }
+
+  /* forms */
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .field label { display: block; font-size: 11.5px; font-weight: 600; color: var(--ink-2); margin-bottom: 4px; }
+  .field .hint { font-size: 11px; color: var(--ink-3); margin-top: 3px; }
+  .field input, .field select, .field textarea { width: 100%; }
+  .field.auto input { background: var(--page); color: var(--ink-3); }
+  .form-actions { display: flex; gap: 10px; margin-top: 16px; align-items: center; }
+  .callout {
+    border-left: 3px solid var(--series-1); background: rgba(42,120,214,.06);
+    padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 12.5px; color: var(--ink-2); margin: 12px 0;
+  }
+
+  /* system design */
+  .flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+  .flow .node {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; min-width: 150px; flex: 1;
+  }
+  .flow .node b { display: block; font-size: 13px; }
+  .flow .node span { font-size: 11.5px; color: var(--ink-3); }
+  .flow .arrow { display: flex; align-items: center; padding: 0 10px; color: var(--ink-3); font-size: 18px; }
+  .erd { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+  .ent { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .ent h4 { background: rgba(42,120,214,.10); color: var(--series-1); font-size: 12.5px; padding: 8px 12px; font-family: ui-monospace, Menlo, monospace; }
+  .ent.dim h4 { background: rgba(27,175,122,.10); color: var(--series-2); }
+  .ent.vw h4 { background: rgba(237,161,0,.12); color: #8a6100; }
+  @media (prefers-color-scheme: dark) { .ent.vw h4 { color: var(--series-3); } }
+  .ent ul { list-style: none; padding: 6px 12px 10px; font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--ink-2); }
+  .ent li { padding: 2px 0; }
+  .ent li .pk { color: var(--series-1); font-weight: 700; }
+  .ent li .fk { color: var(--series-2); font-weight: 700; }
+  .ent li .ty { color: var(--ink-3); }
+  code, .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .method { font-family: ui-monospace, Menlo, monospace; font-weight: 700; font-size: 11px; border-radius: 6px; padding: 2px 7px; }
+  .method.get  { background: rgba(42,120,214,.12); color: var(--series-1); }
+  .method.post { background: rgba(12,163,12,.12);  color: var(--good-text); }
+  .method.put  { background: rgba(237,161,0,.16);  color: #8a6100; }
+  @media (prefers-color-scheme: dark) { .method.put { color: var(--series-3); } }
+
+  .mt { margin-top: 14px; }
+  .note-src { font-size: 11px; color: var(--ink-3); margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ═══════════ SIDEBAR ═══════════ -->
+  <nav class="sidebar">
+    <div class="logo">
+      <div class="name">Frigo<span>Loco</span></div>
+      <div class="sub">Weekly &amp; Monthly Returns</div>
+    </div>
+    <div class="nav-section">Analytics</div>
+    <div class="nav-item active" data-page="dashboard"><span class="ico">◧</span> Dashboard</div>
+    <div class="nav-item" data-page="weekly"><span class="ico">▤</span> Weekly Returns</div>
+    <div class="nav-item" data-page="monthly"><span class="ico">▥</span> Monthly Analysis</div>
+    <div class="nav-section">Data</div>
+    <div class="nav-item" data-page="master"><span class="ico">▦</span> Master Data</div>
+    <div class="nav-item" data-page="imports"><span class="ico">⇅</span> Data Imports</div>
+    <div class="nav-section">System</div>
+    <div class="nav-item" data-page="system"><span class="ico">⚙</span> Backend &amp; Data Model</div>
+    <div class="foot"><b>ismail@alliedchb.com</b>Admin · v0.1 mockup</div>
+  </nav>
+
+  <main class="main">
+
+  <!-- ═══════════ PAGE: DASHBOARD ═══════════ -->
+  <section class="page-view active" id="page-dashboard">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Analytics / Dashboard</div>
+        <h1>Weekly Dashboard</h1>
+      </div>
+      <div class="controls">
+        <select><option>2026</option><option>2025</option></select>
+        <select><option>Week 26 · Jun 22 – Jun 28</option><option>Week 25 · Jun 15 – Jun 21</option><option>Week 24 · Jun 8 – Jun 14</option></select>
+        <span class="badge ok">✓ In history</span>
+        <button class="btn ghost">Export</button>
+      </div>
+    </div>
+
+    <div class="grid kpis">
+      <div class="card tile hero">
+        <div class="label">Sales turnover (ex VAT)</div>
+        <div class="value">€16,904</div>
+        <div class="delta up">▲ +10.2% vs W25</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Food margin</div>
+        <div class="value">27.2%</div>
+        <div class="delta">€4,603 on €12,239 food cost</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Net margin</div>
+        <div class="value">9.0%</div>
+        <div class="delta up">▲ €1,554 · +5.6 pts vs W25</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Active fridges</div>
+        <div class="value">41</div>
+        <div class="delta">€412 turnover / fridge</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Logistics</div>
+        <div class="value">€1,712</div>
+        <div class="delta">10.1% of turnover · 120 drops</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Unsold items</div>
+        <div class="value">0</div>
+        <div class="delta up">▲ 0.0% waste</div>
+      </div>
+    </div>
+
+    <div class="grid two-col">
+      <div class="card">
+        <h3>Sales turnover &amp; net margin — W18 to W26</h3>
+        <div class="sub">Weekly turnover ex VAT; W21 had no recorded activity (public holiday week)</div>
+        <div class="chart-wrap" id="trend-chart"></div>
+        <div class="legend">
+          <span class="key"><span class="line-key" style="background:var(--series-1)"></span> Sales turnover (€)</span>
+          <span class="key"><span class="line-key" style="background:var(--series-2)"></span> Margin post-logistics (%, lower panel)</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Week 26 food margin by category</h3>
+        <div class="sub">Net sale − food cost per category · € · blue = positive, red = negative</div>
+        <div id="cat-margin-chart"></div>
+      </div>
+    </div>
+
+    <div class="grid two-even mt">
+      <div class="card">
+        <h3>Week 26 food margin by fridge — bottom 6</h3>
+        <div class="sub">Fridges losing money on food this week — restock review candidates</div>
+        <div id="fridge-bottom-chart"></div>
+      </div>
+      <div class="card">
+        <h3>Week 26 food margin by fridge — top 6</h3>
+        <div class="sub">Best performing fridges by absolute food margin</div>
+        <div id="fridge-top-chart"></div>
+      </div>
+    </div>
+    <div class="note-src">Source: <span class="mono">Weekly View</span> + <span class="mono">Weekly Data</span> sheets → served by <span class="mono">GET /api/dashboard/weekly?year=2026&amp;week=26</span></div>
+  </section>
+
+  <!-- ═══════════ PAGE: WEEKLY RETURNS ═══════════ -->
+  <section class="page-view" id="page-weekly">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Analytics / Weekly Returns</div>
+        <h1>Weekly Returns</h1>
+      </div>
+      <div class="controls">
+        <select><option>All weeks</option><option>2026 only</option><option>2025 only</option></select>
+        <button class="btn primary">+ Add / update week</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Week entry — manual inputs</h3>
+      <div class="sub">Replaces the entry row on the <span class="mono">Weekly View</span> sheet. Grey fields are pulled automatically; white fields are typed in, exactly like today.</div>
+      <div class="form-grid">
+        <div class="field"><label>Year</label><select><option>2026</option><option>2025</option></select></div>
+        <div class="field"><label>Week no</label><input type="number" value="26"></div>
+        <div class="field auto"><label>Start date (auto)</label><input type="text" value="22 Jun 2026" readonly></div>
+        <div class="field auto"><label>End date (auto)</label><input type="text" value="28 Jun 2026" readonly></div>
+        <div class="field"><label>Business lunch CA (€)</label><input type="number" placeholder="0.00"><div class="hint">Catering turnover</div></div>
+        <div class="field"><label>TGTG CA (€)</label><input type="number" value="55"><div class="hint">Too Good To Go</div></div>
+        <div class="field"><label>Business lunch food cost (€)</label><input type="number" placeholder="0.00"></div>
+        <div class="field"><label>Logistics cost (€)</label><input type="number" value="1711.60"></div>
+        <div class="field"><label># of drops</label><input type="number" value="120"></div>
+        <div class="field"><label>Unsold items</label><input type="number" value="0"></div>
+        <div class="field" style="grid-column: span 2"><label>Remarks</label><input type="text" placeholder="e.g. Friday refill @Neuhaus, panne electricité…"></div>
+      </div>
+      <div class="callout">
+        <b>Pulled automatically on save:</b> total sales, refunds, FrigoLoco discount &amp; customer credit (Wix sales import) · fridge food cost (dispatch import) · POS &amp; software fee 9% and RFID €0.10/item (Settings). All margin fields are calculated by the backend — no formulas to maintain.
+      </div>
+      <div class="form-actions">
+        <button class="btn primary">Save week 26</button>
+        <button class="btn ghost">Recalculate from imports</button>
+        <span class="badge info">Last saved: 29 Jun 2026 07:52</span>
+      </div>
+    </div>
+
+    <div class="card mt">
+      <h3>Weekly history</h3>
+      <div class="sub">39 weeks recorded · W34 2025 → W26 2026 · calculated fields shown with a ƒ</div>
+      <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>Week</th><th>Dates</th>
+          <th class="num">Turnover ƒ</th><th class="num">Fridges</th>
+          <th class="num">Food cost</th><th class="num">Food margin ƒ</th><th class="num">FM % ƒ</th>
+          <th class="num">Logistics</th><th class="num">Net margin ƒ</th><th class="num">NM % ƒ</th>
+          <th>Remarks</th><th></th>
+        </tr></thead>
+        <tbody id="weekly-table"></tbody>
+      </table>
+      </div>
+    </div>
+    <div class="note-src">Source: <span class="mono">Weekly Data</span> sheet (34 input + calculated columns) → table <span class="mono">weekly_returns</span> + SQL view <span class="mono">v_weekly_kpis</span></div>
+  </section>
+
+  <!-- ═══════════ PAGE: MONTHLY ANALYSIS ═══════════ -->
+  <section class="page-view" id="page-monthly">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Analytics / Monthly Analysis</div>
+        <h1>Monthly Analysis</h1>
+      </div>
+      <div class="controls">
+        <select id="month-select">
+          <option>April 2026</option><option>March 2026</option><option>February 2026</option>
+          <option>January 2026</option><option>December 2025</option><option>November 2025</option>
+        </select>
+        <select><option>Compare: none</option><option>Compare: previous month</option><option>Compare: same month last year</option></select>
+        <button class="btn ghost">Export</button>
+      </div>
+    </div>
+
+    <div class="tabs" id="monthly-tabs">
+      <div class="tab active" data-sub="clients">By client (fridge)</div>
+      <div class="tab" data-sub="suppliers">By supplier</div>
+      <div class="tab" data-sub="categories">By category</div>
+    </div>
+
+    <div class="subview active" id="sub-clients">
+      <div class="callout" style="margin-top:0">
+        <b>Net margin per fridge</b> = client fee (yearly ÷ 12) + food margin + service additionals − fraction-allocated logistics − POS &amp; software (9%). In the database this is one SQL view — the month columns pasted side-by-side in Excel become a simple month filter, and year-over-year comparison finally becomes possible.
+      </div>
+      <div class="card">
+        <h3>Client P&amp;L — April 2026</h3>
+        <div class="sub">45 fridges · showing 10 · sorted A–Z</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th>Fridge</th><th class="num">Food cost</th><th class="num">Sales turnover</th>
+            <th class="num">Food margin</th><th class="num">FM %</th>
+            <th class="num">Service add.</th><th class="num">Fraction</th>
+            <th class="num">Logistics</th><th class="num">POS &amp; SW</th>
+            <th class="num">Client fee /mo</th><th class="num">Net margin</th>
+          </tr></thead>
+          <tbody id="client-table"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="subview" id="sub-suppliers">
+      <div class="card">
+        <h3>Supplier P&amp;L — April 2026</h3>
+        <div class="sub">27 suppliers · net margin = food margin − RFID tag &amp; transaction fees (€0.10 / item sold)</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th>Supplier</th><th class="num">Food cost</th><th class="num">Sales turnover</th>
+            <th class="num">Food margin</th><th class="num">FM %</th>
+            <th class="num">RFID &amp; transaction</th><th class="num">Net margin</th>
+          </tr></thead>
+          <tbody id="supplier-table"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="subview" id="sub-categories">
+      <div class="card">
+        <h3>Category P&amp;L — April 2026</h3>
+        <div class="sub">10 menu categories</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th>Category</th><th class="num">Food cost</th><th class="num">Sales turnover</th>
+            <th class="num">Food margin</th><th class="num">FM %</th>
+            <th class="num">RFID &amp; transaction</th><th class="num">Net margin</th>
+          </tr></thead>
+          <tbody id="category-table"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+    <div class="note-src">Source: <span class="mono">Monthly Client / Supplier / Category Analysis</span> sheets → SQL views <span class="mono">v_monthly_client_pnl</span>, <span class="mono">v_monthly_supplier_pnl</span>, <span class="mono">v_monthly_category_pnl</span></div>
+  </section>
+
+  <!-- ═══════════ PAGE: MASTER DATA ═══════════ -->
+  <section class="page-view" id="page-master">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Data / Master Data</div>
+        <h1>Master Data</h1>
+      </div>
+      <div class="controls"><button class="btn primary">+ New fridge</button></div>
+    </div>
+
+    <div class="tabs" id="master-tabs">
+      <div class="tab active" data-sub="fridges">Fridges &amp; contracts</div>
+      <div class="tab" data-sub="supp">Suppliers</div>
+      <div class="tab" data-sub="cats">Categories</div>
+      <div class="tab" data-sub="settings">Settings</div>
+    </div>
+
+    <div class="subview active" id="sub-fridges">
+      <div class="card">
+        <h3>Fridges — contract fees, fractions &amp; service additionals</h3>
+        <div class="sub">Merges the <span class="mono">Fee List</span>, <span class="mono">Fraction List</span> (891 rows) and <span class="mono">Service Additionals</span> sheets into one screen. Fraction = share of logistics cost allocated to this fridge for the selected month.</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th>Fridge</th><th class="num">Yearly fee</th><th class="num">Monthly fee ƒ</th>
+            <th>Contract end</th><th>Contract status ƒ</th>
+            <th class="num">Fraction (Jun 2026)</th><th class="num">Service add. (Jun 2026)</th><th></th>
+          </tr></thead>
+          <tbody id="fridge-table"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="subview" id="sub-supp">
+      <div class="card">
+        <h3>Suppliers</h3>
+        <div class="sub">27 active suppliers · linked to dispatch &amp; sales facts</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Supplier</th><th class="num">Apr 2026 turnover</th><th class="num">Apr 2026 net margin</th><th>Status</th><th></th></tr></thead>
+          <tbody id="supplier-master-table"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="subview" id="sub-cats">
+      <div class="card">
+        <h3>Menu categories</h3>
+        <div class="sub">Fixed taxonomy used across dispatch, sales and analysis. “Unknown” rows in imports get flagged for mapping instead of silently polluting reports.</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th class="num">Sort</th><th>Category</th><th>Mapping health</th></tr></thead>
+          <tbody id="cats-table"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="subview" id="sub-settings">
+      <div class="card">
+        <h3>Business settings</h3>
+        <div class="sub">From the <span class="mono">Settings</span> sheet — versioned with effective dates so historical weeks keep the rate that applied at the time.</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Key</th><th class="num">Value</th><th>Unit</th><th>Effective from</th><th>Comment</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="mono">pos_software_percent</td><td class="num">9.00%</td><td>of sales</td><td>01 Jan 2025</td><td>Husky fee on sales</td><td><a href="#">Edit</a></td></tr>
+            <tr><td class="mono">rfid_tag_transaction</td><td class="num">€0.10</td><td>per item sold</td><td>01 Jan 2025</td><td>RFID tag on each item</td><td><a href="#">Edit</a></td></tr>
+            <tr><td class="mono">vat_rate_food</td><td class="num">6.00%</td><td>of gross sales</td><td>01 Jan 2025</td><td>Deducted to get turnover ex VAT</td><td><a href="#">Edit</a></td></tr>
+            <tr><td class="mono">discount_providers</td><td class="num">—</td><td>list</td><td>01 Jan 2025</td><td>“Frigo Loco Depot”, “Discount” — provider names treated as internal discount in Wix export</td><td><a href="#">Edit</a></td></tr>
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+    <div class="note-src">Source: <span class="mono">Fee List</span>, <span class="mono">Fraction List</span>, <span class="mono">Service Additionals</span>, <span class="mono">Settings</span>, <span class="mono">DV List</span> sheets → tables <span class="mono">fridges</span>, <span class="mono">fridge_fractions</span>, <span class="mono">service_additionals</span>, <span class="mono">suppliers</span>, <span class="mono">categories</span>, <span class="mono">settings</span></div>
+  </section>
+
+  <!-- ═══════════ PAGE: IMPORTS ═══════════ -->
+  <section class="page-view" id="page-imports">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Data / Imports</div>
+        <h1>Data Imports</h1>
+      </div>
+      <div class="controls"><button class="btn primary">⇅ Run sync now</button></div>
+    </div>
+
+    <div class="grid kpis">
+      <div class="card tile">
+        <div class="label">Dispatch data</div>
+        <div class="value">16,884<span style="font-size:14px;color:var(--ink-3)"> rows</span></div>
+        <div class="delta">From Forecasting Tool · last sync 29 Jun 07:52</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Sales data (Wix)</div>
+        <div class="value">2,205<span style="font-size:14px;color:var(--ink-3)"> rows</span></div>
+        <div class="delta">Weekly + monthly, 3 grains each</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Added data</div>
+        <div class="value">1,947<span style="font-size:14px;color:var(--ink-3)"> rows</span></div>
+        <div class="delta">Restock additions by fridge / supplier / category</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Unmapped names</div>
+        <div class="value" style="color:var(--critical)">3</div>
+        <div class="delta">e.g. “Colors kitchen” vs “Colors Kitchen”</div>
+      </div>
+    </div>
+
+    <div class="grid two-col">
+      <div class="card">
+        <h3>Import runs</h3>
+        <div class="sub">Each run is validated before it lands: entity names must resolve against master data, weeks must exist, duplicates are rejected.</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>When</th><th>Source</th><th>Scope</th><th class="num">Rows</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>29 Jun 2026 07:52</td><td>Forecasting Tool push</td><td>Dispatch · W26</td><td class="num">418</td><td><span class="badge ok">✓ Imported</span></td><td><a href="#">Log</a></td></tr>
+            <tr><td>29 Jun 2026 07:51</td><td>Wix export</td><td>Sales · W26</td><td class="num">1,032</td><td><span class="badge ok">✓ Imported</span></td><td><a href="#">Log</a></td></tr>
+            <tr><td>29 Jun 2026 07:51</td><td>Forecasting Tool push</td><td>Added · W26</td><td class="num">56</td><td><span class="badge warn">⚠ 3 unmapped names</span></td><td><a href="#">Review</a></td></tr>
+            <tr><td>22 Jun 2026 08:04</td><td>Wix export</td><td>Sales · W25</td><td class="num">1,014</td><td><span class="badge ok">✓ Imported</span></td><td><a href="#">Log</a></td></tr>
+            <tr><td>15 Jun 2026 08:10</td><td>Excel backfill</td><td>Full history W34-25 → W24-26</td><td class="num">20,984</td><td><span class="badge ok">✓ Imported</span></td><td><a href="#">Log</a></td></tr>
+          </tbody>
+        </table>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Name mapping review</h3>
+        <div class="sub">Replaces the “Not Found” VLOOKUP column on <span class="mono">Sheet1</span> — mismatches become an explicit task, not a silent gap.</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Incoming name</th><th>Suggested match</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="mono">Colors kitchen</td><td>Colors Kitchen <span class="badge info">98%</span></td><td><button class="btn" style="padding:3px 10px">Map</button></td></tr>
+            <tr><td class="mono">Full-iz</td><td>Full-Iz <span class="badge info">97%</span></td><td><button class="btn" style="padding:3px 10px">Map</button></td></tr>
+            <tr><td class="mono">Frozen Warm dishes</td><td>10. Frozen Warm Dishes <span class="badge info">91%</span></td><td><button class="btn" style="padding:3px 10px">Map</button></td></tr>
+          </tbody>
+        </table>
+        </div>
+        <div class="callout mt">Weekly sales rows arrive at three grains (fridge, supplier, category). In the database they are stored once per grain in <span class="mono">sales_facts</span> and cross-checked: the three grains must sum to the same weekly total, or the run is flagged.</div>
+      </div>
+    </div>
+
+    <div class="card mt">
+      <h3>Raw sales sample — week 44, 2025 (fridge grain)</h3>
+      <div class="table-scroll">
+      <table>
+        <thead><tr><th class="num">Week</th><th>Start date</th><th>Fridge</th><th class="num">Items</th><th class="num">Sales turnover</th><th class="num">Refund</th><th class="num">FL discount</th><th class="num">Customer credit</th><th class="num">Net sale ƒ</th></tr></thead>
+        <tbody>
+          <tr><td class="num">44</td><td>27 Oct 2025</td><td>Brussels Airlines Airport</td><td class="num">58</td><td class="num">€181.27</td><td class="num">€0.00</td><td class="num">€0.97</td><td class="num">€0.00</td><td class="num">€181.27</td></tr>
+          <tr><td class="num">44</td><td>27 Oct 2025</td><td>Police Tubize</td><td class="num">83</td><td class="num">€364.15</td><td class="num">€0.00</td><td class="num">€10.31</td><td class="num">€0.00</td><td class="num">€364.15</td></tr>
+          <tr><td class="num">44</td><td>27 Oct 2025</td><td>RTBF</td><td class="num">477</td><td class="num">€1,936.39</td><td class="num">€0.00</td><td class="num">€0.00</td><td class="num">€1.86</td><td class="num">€1,938.25</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+    <div class="note-src">Source: <span class="mono">Dispatch Data</span> (16,886 rows), <span class="mono">Sales Data</span> (2,208), <span class="mono">Added Data</span> (1,949) sheets → tables <span class="mono">dispatch_facts</span>, <span class="mono">sales_facts</span>, <span class="mono">added_facts</span>, <span class="mono">import_runs</span></div>
+  </section>
+
+  <!-- ═══════════ PAGE: SYSTEM DESIGN ═══════════ -->
+  <section class="page-view" id="page-system">
+    <div class="topbar">
+      <div>
+        <div class="crumb">System / Backend &amp; Data Model</div>
+        <h1>Backend &amp; Data Model</h1>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Architecture</h3>
+      <div class="sub">The Excel workbook splits into three layers: raw facts land via imports, business rules live in SQL views + a FastAPI service, and this web UI replaces the sheets.</div>
+      <div class="flow mt">
+        <div class="node"><b>Sources</b><span>Wix POS export · Forecasting Tool (Office Scripts push) · manual weekly inputs</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>Import layer</b><span>Validation, name mapping, dedupe, 3-grain cross-check · <code>import_runs</code> audit</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>PostgreSQL</b><span>Master data + fact tables · calculated fields as SQL views (no cell formulas)</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>FastAPI backend</b><span>REST endpoints, auth, Excel export, recalculation jobs</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>Web frontend</b><span>Dashboard · weekly entry · monthly P&amp;L · master data · import review</span></div>
+      </div>
+      <div class="callout mt"><b>What this buys over the workbook:</b> months are rows, not pasted column blocks — so “compare April 2026 vs April 2025” is a query, not a copy-paste; settings are versioned so old weeks keep old rates; name mismatches surface as tasks; and every number traces back to an import run.</div>
+    </div>
+
+    <div class="card mt">
+      <h3>Database schema</h3>
+      <div class="sub"><span style="color:var(--series-2);font-weight:600">green</span> = master data (dimensions) · <span style="color:var(--series-1);font-weight:600">blue</span> = facts &amp; inputs · <span style="color:#8a6100;font-weight:600">amber</span> = calculated SQL views</div>
+      <div class="erd mt">
+        <div class="ent dim"><h4>fridges</h4><ul>
+          <li><span class="pk">id</span> <span class="ty">serial PK</span></li>
+          <li>name <span class="ty">text unique</span></li>
+          <li>yearly_fee <span class="ty">numeric</span></li>
+          <li>contract_end_date <span class="ty">date</span></li>
+          <li>is_active <span class="ty">bool</span></li>
+        </ul></div>
+        <div class="ent dim"><h4>suppliers</h4><ul>
+          <li><span class="pk">id</span> <span class="ty">serial PK</span></li>
+          <li>name <span class="ty">text unique</span></li>
+          <li>aliases <span class="ty">text[]</span></li>
+        </ul></div>
+        <div class="ent dim"><h4>categories</h4><ul>
+          <li><span class="pk">id</span> <span class="ty">serial PK</span></li>
+          <li>name <span class="ty">text unique</span></li>
+          <li>sort_order <span class="ty">int</span></li>
+        </ul></div>
+        <div class="ent dim"><h4>settings</h4><ul>
+          <li><span class="pk">id</span> <span class="ty">serial PK</span></li>
+          <li>key <span class="ty">text</span></li>
+          <li>value <span class="ty">numeric/text</span></li>
+          <li>effective_from <span class="ty">date</span></li>
+        </ul></div>
+        <div class="ent"><h4>weeks</h4><ul>
+          <li><span class="pk">id</span> <span class="ty">serial PK</span></li>
+          <li>year, week_no <span class="ty">int, unique</span></li>
+          <li>start_date, end_date <span class="ty">date</span></li>
+        </ul></div>
+        <div class="ent"><h4>weekly_returns</h4><ul>
+          <li><span class="pk">id</span> · <span class="fk">week_id → weeks</span></li>
+          <li>catering_turnover, tgtg_turnover</li>
+          <li>catering_food_cost</li>
+          <li>logistics_cost, num_drops</li>
+          <li>unsold_items, remarks</li>
+          <li><span class="ty">manual inputs only — the rest is derived</span></li>
+        </ul></div>
+        <div class="ent"><h4>sales_facts</h4><ul>
+          <li><span class="pk">id</span> · <span class="fk">week_id → weeks</span></li>
+          <li>grain <span class="ty">fridge|supplier|category</span></li>
+          <li><span class="fk">entity_id</span> <span class="ty">→ per grain</span></li>
+          <li>total_items, sales_turnover</li>
+          <li>refund, fl_discount, customer_credit</li>
+        </ul></div>
+        <div class="ent"><h4>dispatch_facts</h4><ul>
+          <li><span class="pk">id</span> · <span class="fk">week_id → weeks</span></li>
+          <li>grain + <span class="fk">entity_id</span></li>
+          <li>foodcost_value <span class="ty">numeric</span></li>
+        </ul></div>
+        <div class="ent"><h4>added_facts</h4><ul>
+          <li><span class="pk">id</span> · <span class="fk">week_id → weeks</span></li>
+          <li>grain + <span class="fk">entity_id</span></li>
+          <li>added_value <span class="ty">numeric</span></li>
+        </ul></div>
+        <div class="ent"><h4>fridge_fractions</h4><ul>
+          <li><span class="fk">fridge_id → fridges</span></li>
+          <li>month <span class="ty">date (1st)</span></li>
+          <li>fraction <span class="ty">numeric</span></li>
+        </ul></div>
+        <div class="ent"><h4>service_additionals</h4><ul>
+          <li><span class="fk">fridge_id → fridges</span></li>
+          <li>month <span class="ty">date (1st)</span></li>
+          <li>amount <span class="ty">numeric</span></li>
+        </ul></div>
+        <div class="ent"><h4>import_runs</h4><ul>
+          <li><span class="pk">id</span> · source, scope</li>
+          <li>row_count, status</li>
+          <li>unmapped_names <span class="ty">jsonb</span></li>
+          <li>created_at <span class="ty">timestamptz</span></li>
+        </ul></div>
+        <div class="ent vw"><h4>v_weekly_kpis (view)</h4><ul>
+          <li>turnover ex VAT, POS fee, RFID fee</li>
+          <li>food margin €/%, per-fridge turnover</li>
+          <li>logistics %, net margin €/%</li>
+          <li><span class="ty">= all 12 “Calculated Fields” columns</span></li>
+        </ul></div>
+        <div class="ent vw"><h4>v_monthly_client_pnl (view)</h4><ul>
+          <li>per fridge × month</li>
+          <li>food cost, turnover, food margin</li>
+          <li>fraction logistics, POS &amp; SW</li>
+          <li>client fee /12, net margin</li>
+        </ul></div>
+        <div class="ent vw"><h4>v_monthly_supplier_pnl · v_monthly_category_pnl</h4><ul>
+          <li>per supplier / category × month</li>
+          <li>food cost, turnover, margin</li>
+          <li>RFID fees, net margin</li>
+        </ul></div>
+      </div>
+    </div>
+
+    <div class="card mt">
+      <h3>API surface (FastAPI)</h3>
+      <div class="table-scroll">
+      <table>
+        <thead><tr><th>Endpoint</th><th>Purpose</th><th>Replaces</th></tr></thead>
+        <tbody>
+          <tr><td><span class="method get">GET</span> <code>/api/dashboard/weekly?year=&amp;week=</code></td><td>KPIs + trend + margin-by-fridge/category</td><td><span class="mono">Weekly View</span> sheet + charts</td></tr>
+          <tr><td><span class="method get">GET</span> <code>/api/weeks</code> · <span class="method put">PUT</span> <code>/api/weeks/{year}/{week}</code></td><td>Weekly history; save manual inputs, recalc</td><td><span class="mono">Weekly Data</span> + “Add Or Update Weekly Data” script</td></tr>
+          <tr><td><span class="method get">GET</span> <code>/api/analysis/monthly/clients?month=2026-04</code></td><td>Client P&amp;L, any month or range, YoY compare</td><td><span class="mono">Monthly Client Analysis</span> pasted blocks</td></tr>
+          <tr><td><span class="method get">GET</span> <code>/api/analysis/monthly/suppliers</code> · <code>/categories</code></td><td>Supplier / category P&amp;L</td><td><span class="mono">Monthly Supplier / Category Analysis</span></td></tr>
+          <tr><td><span class="method post">POST</span> <code>/api/imports/dispatch</code> · <code>/sales</code> · <code>/added</code></td><td>Receive pushes from Forecasting Tool / Wix export upload</td><td>“Send Dispatch Data To Return File” Office Script</td></tr>
+          <tr><td><span class="method get">GET</span> <span class="method post">POST</span> <code>/api/fridges</code> · <code>/suppliers</code> · <code>/settings</code> …</td><td>Master data CRUD, fee &amp; fraction management</td><td><span class="mono">Fee / Fraction / Service Additionals / Settings</span> sheets</td></tr>
+          <tr><td><span class="method get">GET</span> <code>/api/export/monthly.xlsx?month=</code></td><td>Formatted Excel export for sharing</td><td>“COPY PASTE FOR AN EXPORT” workflow</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </section>
+
+  </main>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+/* ── data (sampled from Weekly & Monthly Return V2.xlsx) ─────────────── */
+const trend = [
+  { w: 18, turnover: 13519, marginPct: 0.7 },
+  { w: 19, turnover: 14729, marginPct: 6.3 },
+  { w: 20, turnover: 12398, marginPct: -9.1 },
+  { w: 21, turnover: null,  marginPct: null },
+  { w: 22, turnover: 13074, marginPct: 2.8 },
+  { w: 23, turnover: 16621, marginPct: 9.2 },
+  { w: 24, turnover: 16094, marginPct: 3.3 },
+  { w: 25, turnover: 15332, marginPct: 3.4 },
+  { w: 26, turnover: 16904, marginPct: 9.0 },
+];
+const catMargin = [
+  { name: "2. Wraps & Sandwiches", v: 1904 },
+  { name: "1. Cold Dishes", v: 1019 },
+  { name: "5. Desserts", v: 880 },
+  { name: "7. Drinks", v: 561 },
+  { name: "8. Breakfast", v: 540 },
+  { name: "6. Snacks", v: 386 },
+  { name: "4. Warm Dishes", v: 336 },
+  { name: "3. Warm Dishes Jar", v: 146 },
+  { name: "10. Frozen Warm Dishes", v: -97 },
+];
+const fridgeBottom = [
+  { name: "Allnex Freezer", v: -96.8 },
+  { name: "Spadel Brussels", v: -30.3 },
+  { name: "Lhoist Corbais", v: -28.1 },
+  { name: "Atelier rue du Cerf", v: -10.6 },
+  { name: "Velux", v: -6.5 },
+  { name: "Brussels Airlines Vilvoorde", v: -0.6 },
+];
+const fridgeTop = [
+  { name: "GSV Huppertz Wilrijk", v: 150.4 },
+  { name: "Lhoist Limelette", v: 111.8 },
+  { name: "Bia Group Overijse", v: 110.2 },
+  { name: "Interparking", v: 107.4 },
+  { name: "Police Tubize", v: 103.3 },
+  { name: "Greenhouse Collection Links", v: 103.3 },
+];
+const weeklyRows = [
+  { wk: "W26 ’26", dates: "22–28 Jun", turn: 16904, fr: 41, fc: 12267, fm: 4664, fmp: 27.6, log: 1712, nm: 1554, nmp: 9.0, rem: "" },
+  { wk: "W25 ’26", dates: "15–21 Jun", turn: 15332, fr: 41, fc: 10814, fm: 4518, fmp: 29.5, log: 1689, nm: 519, nmp: 3.4, rem: "" },
+  { wk: "W24 ’26", dates: "8–14 Jun",  turn: 16094, fr: 41, fc: 12315, fm: 3780, fmp: 23.5, log: 1741, nm: 529, nmp: 3.3, rem: "" },
+  { wk: "W23 ’26", dates: "1–7 Jun",   turn: 16621, fr: 41, fc: 12099, fm: 4522, fmp: 27.2, log: 1983, nm: 1521, nmp: 9.2, rem: "" },
+  { wk: "W22 ’26", dates: "25–31 May", turn: 13074, fr: 40, fc: 9993,  fm: 3080, fmp: 23.6, log: 1583, nm: 362, nmp: 2.8, rem: "" },
+  { wk: "W20 ’26", dates: "11–17 May", turn: 12398, fr: 40, fc: 10474, fm: 1924, fmp: 15.5, log: 1514, nm: -1134, nmp: -9.1, rem: "Ascension week — low traffic" },
+  { wk: "W50 ’25", dates: "8–14 Dec",  turn: 14903, fr: 37, fc: 12033, fm: 2870, fmp: 19.3, log: 1617, nm: 618, nmp: 4.1, rem: "3 livreurs absents lundi" },
+  { wk: "W44 ’25", dates: "27 Oct–2 Nov", turn: 12117, fr: 35, fc: 10395, fm: 1722, fmp: 14.2, log: 1689, nm: -488, nmp: -4.0, rem: "Panne électricité chez Neuhaus" },
+  { wk: "W40 ’25", dates: "29 Sep–5 Oct", turn: 10632, fr: 33, fc: 8597, fm: 2035, fmp: 19.1, log: 1528, nm: -221, nmp: -2.0, rem: "Friday refill @Neuhaus" },
+  { wk: "W34 ’25", dates: "18–24 Aug", turn: 9325, fr: 31, fc: 7091, fm: 2234, fmp: 24.0, log: 1572, nm: -74, nmp: -0.8, rem: "First week tracked" },
+];
+const clientRows = [
+  { n: "ABB Zaventem",             fc: 680.54, st: 783.73,  fm: 103.19,  fmp: 13.2,  sa: 0, fr: 2.70, lg: 208.28, pos: 70.54,  fee: 648.92, nm: 473.29 },
+  { n: "Abbott Wavre",             fc: 285.71, st: 273.05,  fm: -12.66,  fmp: -4.6,  sa: 0, fr: 2.70, lg: 208.28, pos: 24.57,  fee: 900.00, nm: 654.48 },
+  { n: "Allianz Brussels",         fc: 830.72, st: 1260.12, fm: 429.40,  fmp: 34.1,  sa: 0, fr: 2.70, lg: 208.28, pos: 113.41, fee: 900.00, nm: 1007.71 },
+  { n: "Allnex",                   fc: 1295.44, st: 2048.29, fm: 752.85, fmp: 36.8,  sa: 0, fr: 2.70, lg: 208.28, pos: 184.35, fee: 684.00, nm: 1044.22 },
+  { n: "Allnex Freezer",           fc: 186.52, st: 591.00,  fm: 404.48,  fmp: 68.4,  sa: 0, fr: 0.00, lg: 0.00,   pos: 53.19,  fee: 600.00, nm: 951.29 },
+  { n: "Bank Degroof",             fc: 415.11, st: 472.74,  fm: 57.63,   fmp: 12.2,  sa: 0, fr: 2.70, lg: 208.28, pos: 42.55,  fee: 888.00, nm: 694.80 },
+  { n: "Bia Group Overijse",       fc: 985.02, st: 1308.51, fm: 323.49,  fmp: 24.7,  sa: 0, fr: 2.70, lg: 208.28, pos: 117.77, fee: 824.00, nm: 821.44 },
+  { n: "Brussels Airlines Airport",fc: 660.42, st: 876.39,  fm: 215.97,  fmp: 24.6,  sa: 0, fr: 2.70, lg: 208.28, pos: 78.88,  fee: 814.00, nm: 742.81 },
+  { n: "Brussels Airlines Be house",fc: 1485.63, st: 2180.47, fm: 694.84, fmp: 31.9, sa: 0, fr: 2.70, lg: 208.28, pos: 196.24, fee: 814.00, nm: 1104.31 },
+  { n: "Brussels Airlines TFC",    fc: 370.95, st: 355.90,  fm: -15.05,  fmp: -4.2,  sa: 0, fr: 2.70, lg: 208.28, pos: 32.03,  fee: 814.00, nm: 558.64 },
+];
+const supplierRows = [
+  { n: "Croc&Go",           fc: 18827.38, st: 27827.26, fm: 8999.88, fmp: 32.3, rf: 387.30, nm: 8612.58 },
+  { n: "Bon - With Love",   fc: 2793.95,  st: 3994.20,  fm: 1200.25, fmp: 30.0, rf: 63.60,  nm: 1136.65 },
+  { n: "Gaufrine",          fc: 1234.90,  st: 2237.40,  fm: 1002.50, fmp: 44.8, rf: 105.10, nm: 897.40 },
+  { n: "Gourmart",          fc: 686.01,   st: 1250.30,  fm: 564.29,  fmp: 45.1, rf: 13.90,  nm: 550.39 },
+  { n: "Colors Kitchen",    fc: 1852.91,  st: 2086.67,  fm: 233.76,  fmp: 11.2, rf: 21.90,  nm: 211.86 },
+  { n: "GENEROUS",          fc: 0.00,     st: 7.50,     fm: 7.50,    fmp: 100.0, rf: 0.20,  nm: 7.30 },
+  { n: "Boulangerie Louise",fc: 0.00,     st: 0.00,     fm: 0.00,    fmp: 0.0,  rf: 0.00,   nm: 0.00 },
+  { n: "Full-Iz",           fc: 8.80,     st: 0.00,     fm: -8.80,   fmp: 0.0,  rf: 0.00,   nm: -8.80 },
+];
+const categoryRows = [
+  { n: "2. Wraps & Sandwiches", fc: 13208.74, st: 19367.63, fm: 6158.89, fmp: 31.8, rf: 323.60, nm: 5835.29 },
+  { n: "1. Cold Dishes",        fc: 8975.71,  st: 13036.38, fm: 4060.67, fmp: 31.1, rf: 132.50, nm: 3928.17 },
+  { n: "5. Desserts",           fc: 7668.27,  st: 12732.77, fm: 5064.50, fmp: 39.8, rf: 489.40, nm: 4575.10 },
+  { n: "4. Warm Dishes",        fc: 6971.35,  st: 10012.69, fm: 3041.34, fmp: 30.4, rf: 128.20, nm: 2913.14 },
+  { n: "8. Breakfast",          fc: 3641.31,  st: 5506.58,  fm: 1865.27, fmp: 33.9, rf: 108.60, nm: 1756.67 },
+  { n: "7. Drinks",             fc: 2274.44,  st: 4067.53,  fm: 1793.09, fmp: 44.1, rf: 169.60, nm: 1623.49 },
+  { n: "6. Snacks",             fc: 2225.64,  st: 3996.36,  fm: 1770.72, fmp: 44.3, rf: 174.40, nm: 1596.32 },
+  { n: "3. Warm Dishes Jar",    fc: 686.01,   st: 1250.30,  fm: 564.29,  fmp: 45.1, rf: 13.90,  nm: 550.39 },
+  { n: "9. Soup",               fc: 0, st: 0, fm: 0, fmp: 0, rf: 0, nm: 0 },
+];
+const fridgeMaster = [
+  { n: "ABB Zaventem",      fee: 7787,  end: "10 Oct 2027", st: "ok",   fr: 2.70, sa: 0 },
+  { n: "Abbott Wavre",      fee: 10800, end: "15 Dec 2025", st: "crit", fr: 2.70, sa: 0 },
+  { n: "Allianz Brussels",  fee: 10800, end: "09 Jan 2026", st: "crit", fr: 2.70, sa: 0 },
+  { n: "Allnex",            fee: 8208,  end: "02 Mar 2026", st: "crit", fr: 2.70, sa: 0 },
+  { n: "Allnex Freezer",    fee: 7200,  end: "04 Jun 2028", st: "ok",   fr: 0.00, sa: 0 },
+  { n: "Bank Degroof",      fee: 10656, end: "08 Jun 2025", st: "crit", fr: 2.70, sa: 0 },
+  { n: "Bia Group Overijse",fee: 9888,  end: "12 Jan 2025", st: "crit", fr: 2.70, sa: 0 },
+  { n: "Brussels Airlines Airport", fee: 9768, end: "24 Feb 2027", st: "ok", fr: 2.70, sa: 0 },
+  { n: "Neuhaus Sint-Pieters", fee: 9768, end: "24 Feb 2027", st: "ok", fr: 2.70, sa: 600 },
+];
+const categoriesMaster = [
+  "1. Cold Dishes","2. Wraps & Sandwiches","3. Warm Dishes Jar","4. Warm Dishes",
+  "5. Desserts","6. Snacks","7. Drinks","8. Breakfast","9. Soup","10. Frozen Warm Dishes"
+];
+
+/* ── helpers ─────────────────────────────── */
+const eur = (v, dec = 0) => "€" + v.toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+const pct = v => v.toFixed(1) + "%";
+const cls = v => v < 0 ? "num neg" : "num";
+const tooltip = document.getElementById("tooltip");
+function showTip(e, html) {
+  tooltip.innerHTML = html;
+  tooltip.style.display = "block";
+  tooltip.style.left = (e.clientX + 14) + "px";
+  tooltip.style.top = (e.clientY - 12) + "px";
+}
+function hideTip() { tooltip.style.display = "none"; }
+
+/* ── nav & tabs ─────────────────────────────── */
+document.querySelectorAll(".nav-item").forEach(item => {
+  item.addEventListener("click", () => {
+    document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
+    document.querySelectorAll(".page-view").forEach(p => p.classList.remove("active"));
+    item.classList.add("active");
+    document.getElementById("page-" + item.dataset.page).classList.add("active");
+    window.scrollTo(0, 0);
+  });
+});
+function wireTabs(tabsId, prefix) {
+  const tabs = document.getElementById(tabsId);
+  tabs.querySelectorAll(".tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      tabs.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      tabs.parentElement.querySelectorAll(".subview").forEach(s => s.classList.remove("active"));
+      document.getElementById("sub-" + tab.dataset.sub).classList.add("active");
+    });
+  });
+}
+wireTabs("monthly-tabs");
+wireTabs("master-tabs");
+const hashPage = location.hash.replace("#", "");
+if (hashPage) {
+  const target = document.querySelector(`.nav-item[data-page="${hashPage}"]`);
+  if (target) target.click();
+}
+
+/* ── horizontal diverging bar chart ─────────────────────────────── */
+function renderHBars(elId, data, unit = "€") {
+  const el = document.getElementById(elId);
+  const maxPos = Math.max(0, ...data.map(d => d.v));
+  const maxNeg = Math.max(0, ...data.map(d => -d.v));
+  const total = (maxPos + maxNeg) || 1;
+  const hasNeg = maxNeg > 0;
+  const zeroPct = (maxNeg / total) * 96;
+  el.innerHTML = data.map(d => {
+    const wPct = (Math.abs(d.v) / total) * 96;
+    const neg = d.v < 0;
+    const left = neg ? zeroPct - wPct : zeroPct;
+    return `<div class="hbar-row">
+      <div class="lbl" title="${d.name}">${d.name}</div>
+      <div class="hbar-track">
+        ${hasNeg ? `<div class="zero" style="left:${zeroPct}%"></div>` : ""}
+        <div class="hbar ${neg ? "negbar" : ""}" data-name="${d.name}" data-v="${d.v}"
+             style="left:${left}%; width:${wPct}%; background:${neg ? "var(--neg)" : "var(--pos)"}"></div>
+      </div>
+      <div class="val" style="${neg ? "color:var(--critical);font-weight:600" : ""}">${neg ? "−" : ""}${unit}${Math.abs(d.v).toLocaleString("en-US", {maximumFractionDigits: 0})}</div>
+    </div>`;
+  }).join("");
+  el.querySelectorAll(".hbar").forEach(bar => {
+    bar.addEventListener("mousemove", e => showTip(e, `<b>${bar.dataset.name}</b>Food margin: ${eur(+bar.dataset.v, 2)}`));
+    bar.addEventListener("mouseleave", hideTip);
+  });
+}
+renderHBars("cat-margin-chart", catMargin);
+renderHBars("fridge-bottom-chart", fridgeBottom);
+renderHBars("fridge-top-chart", fridgeTop);
+
+/* ── trend line chart (SVG) ─────────────────────────────── */
+(function renderTrend() {
+  const el = document.getElementById("trend-chart");
+  const W = 640, H = 240, padL = 52, padR = 26, padT = 14, padB = 28;
+  const pts = trend;
+  const yMax = 18000, yMin = 0;
+  const x = i => padL + (i / (pts.length - 1)) * (W - padL - padR);
+  const y = v => padT + (1 - (v - yMin) / (yMax - yMin)) * (H - padT - padB);
+  const gridVals = [0, 6000, 12000, 18000];
+  let grid = gridVals.map(v =>
+    `<line x1="${padL}" x2="${W - padR}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)" stroke-width="1"/>
+     <text x="${padL - 8}" y="${y(v) + 4}" text-anchor="end" font-size="10.5" fill="var(--ink-3)" style="font-variant-numeric:tabular-nums">${(v/1000)}k</text>`
+  ).join("");
+  let ticks = pts.map((p, i) =>
+    `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">W${p.w}</text>`
+  ).join("");
+  // build line path with gap at null (W21)
+  let path = "", segs = [];
+  let cur = [];
+  pts.forEach((p, i) => {
+    if (p.turnover == null) { if (cur.length) segs.push(cur); cur = []; }
+    else cur.push([x(i), y(p.turnover)]);
+  });
+  if (cur.length) segs.push(cur);
+  path = segs.map(seg => "M" + seg.map(c => c[0].toFixed(1) + "," + c[1].toFixed(1)).join(" L")).join(" ");
+  const dots = pts.map((p, i) => p.turnover == null ? "" :
+    `<circle cx="${x(i)}" cy="${y(p.turnover)}" r="4.5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2"
+      data-w="${p.w}" data-t="${p.turnover}" data-m="${p.marginPct}" class="dot"/>`).join("");
+  const last = pts[pts.length - 1];
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">
+    ${grid}${ticks}
+    <line x1="${padL}" x2="${W - padR}" y1="${y(0)}" y2="${y(0)}" stroke="var(--baseline)" stroke-width="1"/>
+    <path d="${path}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}
+    <text x="${x(pts.length-1)}" y="${y(last.turnover) - 12}" text-anchor="end" font-size="11.5" font-weight="600" fill="var(--ink-1)">€16,904</text>
+  </svg>
+  <div style="display:flex;gap:6px;align-items:flex-end;height:64px;margin-top:6px;padding-left:${(padL/W*100)}%">
+    ${pts.map(p => {
+      if (p.marginPct == null) return `<div style="flex:1"></div>`;
+      const hMax = 40, h = Math.abs(p.marginPct) / 10 * hMax;
+      const neg = p.marginPct < 0;
+      return `<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center" >
+        <div class="mbar" data-w="${p.w}" data-m="${p.marginPct}" style="width:60%;max-width:22px;height:${Math.max(h,2)}px;border-radius:${neg?"0 0 4px 4px":"4px 4px 0 0"};background:${neg?"var(--neg)":"var(--series-2)"};cursor:pointer"></div>
+      </div>`;
+    }).join("")}
+  </div>`;
+  el.querySelectorAll(".dot").forEach(d => {
+    d.addEventListener("mousemove", e => showTip(e, `<b>Week ${d.dataset.w}</b>Turnover: ${eur(+d.dataset.t)}<br>Margin post-logistics: ${(+d.dataset.m).toFixed(1)}%`));
+    d.addEventListener("mouseleave", hideTip);
+  });
+  el.querySelectorAll(".mbar").forEach(d => {
+    d.addEventListener("mousemove", e => showTip(e, `<b>Week ${d.dataset.w}</b>Margin post-logistics: ${(+d.dataset.m).toFixed(1)}%`));
+    d.addEventListener("mouseleave", hideTip);
+  });
+})();
+
+/* ── tables ─────────────────────────────── */
+document.getElementById("weekly-table").innerHTML = weeklyRows.map(r => `
+  <tr>
+    <td><b>${r.wk}</b></td><td style="color:var(--ink-3)">${r.dates}</td>
+    <td class="num">${eur(r.turn)}</td><td class="num">${r.fr}</td>
+    <td class="num">${eur(r.fc)}</td>
+    <td class="${cls(r.fm)}">${eur(r.fm)}</td><td class="${cls(r.fmp)}">${pct(r.fmp)}</td>
+    <td class="num">${eur(r.log)}</td>
+    <td class="${cls(r.nm)}">${eur(r.nm)}</td><td class="${cls(r.nmp)}">${pct(r.nmp)}</td>
+    <td style="color:var(--ink-3);max-width:220px">${r.rem}</td>
+    <td><a href="#">Open</a></td>
+  </tr>`).join("");
+
+const ct = clientRows.map(r => `
+  <tr>
+    <td><b>${r.n}</b></td>
+    <td class="num">${eur(r.fc, 2)}</td><td class="num">${eur(r.st, 2)}</td>
+    <td class="${cls(r.fm)}">${eur(r.fm, 2)}</td><td class="${cls(r.fmp)}">${pct(r.fmp)}</td>
+    <td class="num">${r.sa ? eur(r.sa, 2) : "—"}</td><td class="num">${pct(r.fr)}</td>
+    <td class="num">${eur(r.lg, 2)}</td><td class="num">${eur(r.pos, 2)}</td>
+    <td class="num">${eur(r.fee, 2)}</td>
+    <td class="${cls(r.nm)}"><b>${eur(r.nm, 2)}</b></td>
+  </tr>`).join("");
+const cTot = clientRows.reduce((a, r) => ({ fc: a.fc + r.fc, st: a.st + r.st, fm: a.fm + r.fm, lg: a.lg + r.lg, pos: a.pos + r.pos, fee: a.fee + r.fee, nm: a.nm + r.nm }), { fc:0, st:0, fm:0, lg:0, pos:0, fee:0, nm:0 });
+document.getElementById("client-table").innerHTML = ct + `
+  <tr class="total"><td>Total (10 shown)</td>
+    <td class="num">${eur(cTot.fc)}</td><td class="num">${eur(cTot.st)}</td>
+    <td class="num">${eur(cTot.fm)}</td><td class="num">${pct(cTot.fm / cTot.st * 100)}</td>
+    <td class="num">—</td><td class="num">—</td>
+    <td class="num">${eur(cTot.lg)}</td><td class="num">${eur(cTot.pos)}</td>
+    <td class="num">${eur(cTot.fee)}</td><td class="num">${eur(cTot.nm)}</td></tr>`;
+
+function pnlRows(rows) {
+  return rows.map(r => `
+    <tr>
+      <td><b>${r.n}</b></td>
+      <td class="num">${eur(r.fc, 2)}</td><td class="num">${eur(r.st, 2)}</td>
+      <td class="${cls(r.fm)}">${eur(r.fm, 2)}</td><td class="${cls(r.fmp)}">${pct(r.fmp)}</td>
+      <td class="num">${eur(r.rf, 2)}</td>
+      <td class="${cls(r.nm)}"><b>${eur(r.nm, 2)}</b></td>
+    </tr>`).join("");
+}
+document.getElementById("supplier-table").innerHTML = pnlRows(supplierRows);
+document.getElementById("category-table").innerHTML = pnlRows(categoryRows);
+
+document.getElementById("fridge-table").innerHTML = fridgeMaster.map(r => `
+  <tr>
+    <td><b>${r.n}</b></td>
+    <td class="num">${eur(r.fee)}</td><td class="num">${eur(r.fee / 12, 2)}</td>
+    <td>${r.end}</td>
+    <td>${r.st === "ok" ? '<span class="badge ok">✓ Active</span>' : '<span class="badge crit">⚠ Expired / renewal due</span>'}</td>
+    <td class="num">${pct(r.fr)}</td>
+    <td class="num">${r.sa ? eur(r.sa) : "—"}</td>
+    <td><a href="#">Edit</a></td>
+  </tr>`).join("");
+
+document.getElementById("supplier-master-table").innerHTML = supplierRows.map(r => `
+  <tr><td><b>${r.n}</b></td>
+    <td class="num">${eur(r.st, 2)}</td>
+    <td class="${cls(r.nm)}">${eur(r.nm, 2)}</td>
+    <td>${r.st > 0 ? '<span class="badge ok">✓ Active</span>' : '<span class="badge warn">Inactive this month</span>'}</td>
+    <td><a href="#">Edit</a></td></tr>`).join("");
+
+document.getElementById("cats-table").innerHTML = categoriesMaster.map((c, i) => `
+  <tr><td class="num">${i + 1}</td><td><b>${c}</b></td>
+  <td>${c === "10. Frozen Warm Dishes" ? '<span class="badge warn">⚠ 1 alias to merge (“Frozen Warm dishes”)</span>' : '<span class="badge ok">✓ Clean</span>'}</td></tr>`).join("");
+</script>
+</body>
+</html>

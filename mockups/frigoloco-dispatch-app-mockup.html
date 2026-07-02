@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FrigoLoco Dispatch — Web App Mockup</title>
+<style>
+  :root {
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --ink-1: #0b0b0b;
+    --ink-2: #52514e;
+    --ink-3: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;   /* blue  */
+    --series-2: #1baf7a;   /* aqua  */
+    --series-3: #eda100;   /* yellow*/
+    --pos: #2a78d6;        /* diverging + pole */
+    --neg: #e34948;        /* diverging − pole */
+    --good: #0ca30c;
+    --good-text: #006300;
+    --warning: #fab219;
+    --critical: #d03b3b;
+    --seq-150: #b7d3f6;
+    --seq-250: #86b6ef;
+    --sidebar-bg: #14202e;
+    --sidebar-ink: #c7d2de;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-1: #1a1a19;
+      --page: #0d0d0d;
+      --ink-1: #ffffff;
+      --ink-2: #c3c2b7;
+      --ink-3: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5;
+      --series-2: #199e70;
+      --series-3: #c98500;
+      --pos: #3987e5;
+      --neg: #e66767;
+      --good-text: #0ca30c;
+      --seq-150: #184f95;
+      --seq-250: #1c5cab;
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--ink-1);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .app { display: flex; min-height: 100vh; }
+
+  /* ── Sidebar ─────────────────────────────── */
+  .sidebar {
+    width: 218px; flex-shrink: 0;
+    background: var(--sidebar-bg);
+    color: var(--sidebar-ink);
+    padding: 18px 0;
+    position: sticky; top: 0; height: 100vh;
+    display: flex; flex-direction: column;
+  }
+  .logo { padding: 4px 20px 18px; border-bottom: 1px solid rgba(255,255,255,.08); margin-bottom: 12px; }
+  .logo .name { font-size: 17px; font-weight: 700; color: #fff; letter-spacing: .2px; }
+  .logo .name span { color: #5fa8f5; }
+  .logo .sub { font-size: 11px; color: #7d8b9a; margin-top: 2px; }
+  .nav-section { font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; color: #647181; padding: 12px 20px 6px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 20px; cursor: pointer; font-size: 13.5px;
+    border-left: 3px solid transparent; user-select: none;
+  }
+  .nav-item:hover { background: rgba(255,255,255,.05); color: #fff; }
+  .nav-item.active { background: rgba(57,135,229,.16); color: #fff; border-left-color: #3987e5; font-weight: 600; }
+  .nav-item .ico { width: 18px; text-align: center; opacity: .85; }
+  .sidebar .foot { margin-top: auto; padding: 14px 20px 4px; font-size: 11px; color: #647181; border-top: 1px solid rgba(255,255,255,.08); }
+  .sidebar .foot b { color: #9db0c2; display: block; }
+
+  /* ── Main ────────────────────────────────── */
+  .main { flex: 1; min-width: 0; padding: 22px 28px 60px; }
+  .page-view { display: none; }
+  .page-view.active { display: block; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+  h1 { font-size: 21px; font-weight: 700; }
+  .topbar .crumb { font-size: 12px; color: var(--ink-3); margin-bottom: 3px; }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  select, input[type=text], input[type=number], input[type=date], input[type=search] {
+    font: inherit; color: var(--ink-1);
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 10px;
+  }
+  .btn {
+    font: inherit; font-weight: 600; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 14px; background: var(--surface-1); color: var(--ink-1);
+  }
+  .btn.primary { background: var(--series-1); border-color: transparent; color: #fff; }
+  .btn.ghost { background: transparent; }
+  .btn.danger { background: var(--critical); border-color: transparent; color: #fff; }
+
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .card h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 2px; }
+  .card .sub { font-size: 12px; color: var(--ink-3); margin-bottom: 12px; }
+  .grid { display: grid; gap: 14px; }
+  .kpis { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 14px; }
+  .two-col { grid-template-columns: 1.45fr 1fr; }
+  .two-even { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 1100px){ .two-col, .two-even { grid-template-columns: 1fr; } }
+
+  /* stat tiles */
+  .tile .label { font-size: 12px; color: var(--ink-2); }
+  .tile .value { font-size: 26px; font-weight: 650; margin: 2px 0 1px; }
+  .tile .delta { font-size: 12px; color: var(--ink-3); }
+  .tile .delta.up   { color: var(--good-text); font-weight: 600; }
+  .tile .delta.down { color: var(--critical);  font-weight: 600; }
+  .hero .value { font-size: 38px; letter-spacing: -.5px; }
+  .value.negv { color: var(--critical); }
+  .value.warnv { color: #8a6100; }
+  @media (prefers-color-scheme: dark) { .value.warnv { color: var(--series-3); } }
+
+  /* meter (sell-through bars) */
+  .meter { display: flex; align-items: center; gap: 8px; min-width: 130px; }
+  .meter .track { flex: 1; height: 8px; background: var(--grid); border-radius: 999px; overflow: hidden; }
+  .meter .fill { height: 100%; border-radius: 999px; background: var(--series-2); }
+  .meter .fill.warn { background: var(--warning); }
+  .meter .fill.crit { background: var(--critical); }
+  .meter .pct { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-2); min-width: 36px; text-align: right; font-weight: 600; }
+
+  /* tables */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .4px;
+    color: var(--ink-3); font-weight: 600; padding: 8px 10px;
+    border-bottom: 1px solid var(--baseline); white-space: nowrap;
+  }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:hover td { background: rgba(42,120,214,.05); }
+  tr.total td { font-weight: 700; border-top: 2px solid var(--baseline); background: transparent; }
+  .neg { color: var(--critical); font-weight: 600; }
+  .posv { color: var(--good-text); font-weight: 600; }
+  .table-scroll { overflow-x: auto; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 9px;
+  }
+  .badge.ok   { background: rgba(12,163,12,.12);  color: var(--good-text); }
+  .badge.warn { background: rgba(250,178,25,.16); color: #8a6100; }
+  .badge.crit { background: rgba(208,59,59,.12);  color: var(--critical); }
+  .badge.info { background: rgba(42,120,214,.12); color: var(--series-1); }
+  @media (prefers-color-scheme: dark) { .badge.warn { color: #fab219; } }
+
+  /* tabs */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--baseline); margin-bottom: 16px; flex-wrap: wrap; }
+  .tab {
+    padding: 8px 16px; cursor: pointer; font-weight: 600; font-size: 13.5px;
+    color: var(--ink-3); border-bottom: 2px solid transparent; margin-bottom: -1px; user-select: none;
+  }
+  .tab.active { color: var(--ink-1); border-bottom-color: var(--series-1); }
+
+  .callout {
+    border-left: 3px solid var(--series-1); background: rgba(42,120,214,.06);
+    padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 12.5px; color: var(--ink-2); margin: 12px 0;
+  }
+  .callout.warn { border-left-color: var(--warning); background: rgba(250,178,25,.10); }
+  .callout.crit { border-left-color: var(--critical); background: rgba(208,59,59,.08); }
+  code, .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .mt { margin-top: 14px; }
+  .note-src { font-size: 11px; color: var(--ink-3); margin-top: 10px; }
+
+  /* ── Dispatch matrix ─────────────────────── */
+  .matrix-legend { display: flex; gap: 18px; align-items: center; font-size: 12px; color: var(--ink-2); margin-bottom: 10px; flex-wrap: wrap; }
+  .matrix-legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .cell-demo { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; padding: 1px 6px; border-radius: 6px; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+  .cell-demo.fc  { color: var(--ink-2); }
+  .cell-demo.man { background: rgba(42,120,214,.12); color: var(--series-1); font-weight: 700; }
+
+  .matrix-scroll { overflow: auto; max-height: 62vh; border: 1px solid var(--border); border-radius: 10px; }
+  table.matrix { border-collapse: separate; border-spacing: 0; font-size: 12.5px; min-width: 1180px; }
+  .matrix th, .matrix td { border-bottom: 1px solid var(--grid); padding: 6px 8px; }
+  .matrix thead th { background: var(--surface-1); position: sticky; z-index: 3; }
+  /* cat row is exactly 29px tall (5+18+5 padding/line + 1 border) so prod row can pin at top:29px with no bleed */
+  .matrix thead tr.cat-row th { top: 0; height: 29px; padding: 5px 8px; line-height: 18px; font-size: 11px; letter-spacing: .4px; border-bottom: 1px solid var(--baseline); }
+  .matrix thead tr.cat-row th.cat-a { color: var(--series-1); box-shadow: inset 0 3px 0 var(--series-1); background: var(--surface-1); }
+  .matrix thead tr.cat-row th.cat-b { color: var(--series-2); box-shadow: inset 0 3px 0 var(--series-2); background: var(--surface-1); }
+  .matrix thead tr.prod-row th { top: 29px; font-size: 10.5px; text-transform: none; letter-spacing: 0; min-width: 84px; max-width: 96px; white-space: normal; vertical-align: bottom; line-height: 1.25; box-shadow: 0 4px 6px -4px rgba(0,0,0,.14); }
+  .matrix thead tr.prod-row th .price { display: block; color: var(--ink-3); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .matrix .cat-start { border-left: 1px solid var(--baseline); }
+  .matrix th.fridge-col, .matrix td.fridge-col {
+    position: sticky; left: 0; z-index: 2; background: var(--surface-1);
+    min-width: 168px; text-align: left; font-weight: 600; border-right: 1px solid var(--baseline);
+    box-shadow: 6px 0 8px -6px rgba(0,0,0,.12);
+  }
+  .matrix thead th.fridge-col { z-index: 4; }
+  .matrix td.qty { text-align: center; font-variant-numeric: tabular-nums; cursor: pointer; }
+  .matrix td.qty:hover { background: rgba(42,120,214,.10); }
+  .matrix td.qty .q { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; padding: 1px 6px; border-radius: 6px; }
+  .matrix td.qty.fc .q { color: var(--ink-2); }
+  .matrix td.qty.man .q { background: rgba(42,120,214,.14); color: var(--series-1); font-weight: 700; }
+  .matrix td.qty .src { font-size: 8.5px; color: var(--ink-3); display: block; line-height: 1; margin-top: 1px; }
+  .matrix td.qty.man .src { color: var(--series-1); font-weight: 700; }
+  .matrix td.qty.zero { color: var(--baseline); }
+  .matrix td.rowtotal { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; border-left: 1px solid var(--baseline); background: var(--surface-1); position: sticky; right: 0; box-shadow: -6px 0 8px -6px rgba(0,0,0,.12); }
+  .matrix th.rowtotal-h { position: sticky; right: 0; z-index: 4; border-left: 1px solid var(--baseline); text-align: right; background: var(--surface-1); box-shadow: -6px 0 8px -6px rgba(0,0,0,.12); }
+  /* footer: stock row is exactly 29px (5+18+5+1) so the totals row pins at bottom:29px with no gap */
+  .matrix tfoot td, .matrix tfoot th { position: sticky; background: var(--surface-1); z-index: 3; border-top: 1px solid var(--baseline); font-variant-numeric: tabular-nums; text-align: center; padding: 5px 8px; line-height: 18px; }
+  .matrix tfoot tr.t-total td, .matrix tfoot tr.t-total th { bottom: 29px; font-weight: 700; box-shadow: 0 -4px 6px -4px rgba(0,0,0,.14); }
+  .matrix tfoot tr.t-stock td, .matrix tfoot tr.t-stock th { bottom: 0; color: var(--ink-2); border-top: none; }
+  .matrix tfoot th { text-align: left; z-index: 4; }
+  .matrix tfoot td.over { color: var(--critical); font-weight: 700; background: rgba(208,59,59,.10); }
+  .matrix tr.more-row td { color: var(--ink-3); background: transparent; text-align: center; font-size: 12px; padding: 9px 8px; }
+  .matrix tr.more-row td.fridge-col { text-align: left; font-weight: 500; font-style: italic; }
+
+  /* ── Modal ───────────────────────────────── */
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 100; display: none;
+    background: rgba(9,14,20,.55); align-items: flex-start; justify-content: center;
+    padding: 48px 16px; overflow: auto;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--surface-1); color: var(--ink-1);
+    border: 1px solid var(--border); border-radius: 14px;
+    width: 100%; max-width: 620px; padding: 20px 22px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.35);
+  }
+  .modal h2 { font-size: 17px; margin-bottom: 2px; }
+  .modal .sub { font-size: 12px; color: var(--ink-3); margin-bottom: 14px; }
+  .modal-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .modal-summary .item { background: var(--page); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+  .modal-summary .item .k { font-size: 11px; color: var(--ink-3); }
+  .modal-summary .item .v { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+  .check-line { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--ink-2); margin-top: 8px; }
+
+  /* ── Menu planner ────────────────────────── */
+  .picker { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .picker .search { padding: 10px; border-bottom: 1px solid var(--grid); display: flex; gap: 8px; }
+  .picker .search input { flex: 1; }
+  .pick-list { max-height: 380px; overflow-y: auto; }
+  .pick-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--grid); font-size: 13px; }
+  .pick-row:hover { background: rgba(42,120,214,.05); }
+  .pick-row .p-name { flex: 1; min-width: 0; }
+  .pick-row .p-name b { display: block; font-weight: 600; }
+  .pick-row .p-name span { font-size: 11.5px; color: var(--ink-3); }
+  .pick-row .p-price { font-variant-numeric: tabular-nums; color: var(--ink-2); width: 56px; text-align: right; }
+  .score-chip { font-family: ui-monospace, Menlo, monospace; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 2px 7px; }
+  .score-chip.hi  { background: rgba(12,163,12,.12);  color: var(--good-text); }
+  .score-chip.mid { background: rgba(250,178,25,.16); color: #8a6100; }
+  .score-chip.lo  { background: rgba(208,59,59,.12);  color: var(--critical); }
+  @media (prefers-color-scheme: dark) { .score-chip.mid { color: #fab219; } }
+  .cap-input { width: 62px; text-align: right; padding: 4px 8px; }
+  .chip-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .cat-chip { font-size: 11.5px; font-weight: 600; border: 1px solid var(--border); border-radius: 999px; padding: 3px 11px; color: var(--ink-2); background: var(--page); cursor: pointer; user-select: none; }
+  .cat-chip b { color: var(--ink-1); }
+  .cat-chip.active { border-color: var(--series-1); color: var(--series-1); background: rgba(42,120,214,.08); }
+  .cat-chip.active b { color: var(--series-1); }
+
+  /* residual stock (green panel — slide 5) */
+  .callout.green { border-left-color: var(--series-2); background: rgba(27,175,122,.08); }
+  .residual-line { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 4px 0; }
+  .residual-line .nm { flex: 1; }
+  .residual-line .dlc { font-size: 11px; font-weight: 600; color: var(--good-text); }
+  .residual-line .qy { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--good-text); }
+
+  /* ── Driver view (phone frame) ───────────── */
+  .phone-wrap { display: flex; justify-content: center; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+  .phone {
+    width: 392px; max-width: 100%;
+    border: 10px solid #101a26; border-radius: 38px;
+    background: var(--page); overflow: hidden;
+    box-shadow: 0 22px 55px rgba(0,0,0,.30);
+  }
+  .phone .statusbar { display: flex; justify-content: space-between; padding: 8px 20px 4px; font-size: 11px; color: var(--ink-3); }
+  .phone .p-head { padding: 10px 16px 12px; background: var(--sidebar-bg); color: #fff; }
+  .phone .p-head .route { font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; color: #7d8b9a; }
+  .phone .p-head h4 { font-size: 17px; margin: 2px 0; }
+  .phone .p-head .addr { font-size: 12px; color: #c7d2de; }
+  .phone .p-head .instr { font-size: 11.5px; color: #9db0c2; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,.12); }
+  .phone .p-body { padding: 12px 14px 18px; }
+  .p-cat { font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--series-1); font-weight: 700; margin: 12px 2px 4px; }
+  .p-line { display: flex; align-items: center; gap: 10px; padding: 7px 8px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 9px; margin-bottom: 5px; font-size: 13px; }
+  .p-line .nm { flex: 1; }
+  .p-line .qy { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; }
+  .p-line input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--series-1); }
+  .withdraw { border-left: 3px solid var(--critical); background: rgba(208,59,59,.08); border-radius: 0 10px 10px 0; padding: 10px 12px; margin-top: 14px; }
+  .withdraw h5 { font-size: 12px; color: var(--critical); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+  .withdraw .p-line { background: transparent; border-color: rgba(208,59,59,.25); }
+  .phone .p-foot { padding: 0 14px 16px; }
+  .phone .p-foot .btn { width: 100%; text-align: center; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ═══════════ SIDEBAR ═══════════ -->
+  <nav class="sidebar">
+    <div class="logo">
+      <div class="name">Frigo<span>Loco</span></div>
+      <div class="sub">Dispatch &amp; Forecasting</div>
+    </div>
+    <div class="nav-section">Operations</div>
+    <div class="nav-item active" data-page="matrix"><span class="ico">▦</span> Dispatch Matrix</div>
+    <div class="nav-item" data-page="menu"><span class="ico">▤</span> Menu Planner</div>
+    <div class="nav-item" data-page="forecast"><span class="ico">◔</span> Forecast</div>
+    <div class="nav-item" data-page="verify"><span class="ico">⇄</span> Restock Verification</div>
+    <div class="nav-section">Field</div>
+    <div class="nav-item" data-page="driver"><span class="ico">▯</span> Driver View</div>
+    <div class="foot"><b>ismail@alliedchb.com</b>Ops manager · v0.1 mockup</div>
+  </nav>
+
+  <main class="main">
+
+  <!-- ═══════════ PAGE 1: DISPATCH MATRIX ═══════════ -->
+  <section class="page-view active" id="page-matrix">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Operations / Dispatch Matrix</div>
+        <h1>Dispatch Matrix — Vue globale</h1>
+      </div>
+      <div class="controls">
+        <input type="date" value="2026-06-30">
+        <span class="badge info">Week 27 — Tuesday</span>
+        <span class="badge warn">Draft · unsaved edits</span>
+        <button class="btn ghost">＋ Add product</button>
+        <button class="btn ghost">Apply forecast</button>
+        <button class="btn">Save draft</button>
+        <button class="btn primary" id="btn-confirm">Confirm dispatch</button>
+      </div>
+    </div>
+
+    <div class="grid kpis">
+      <div class="card tile">
+        <div class="label">Fridges to serve</div>
+        <div class="value">42</div>
+        <div class="delta">Tuesday delivery day</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Dispatch lines</div>
+        <div class="value">428</div>
+        <div class="delta">386 forecast · 42 manual</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Total units</div>
+        <div class="value">1,912</div>
+        <div class="delta up">▲ +4.1% vs last Tuesday</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Food cost (snapshot)</div>
+        <div class="value">€8,941</div>
+        <div class="delta">At today's purchase prices</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Stock conflicts</div>
+        <div class="value negv">2</div>
+        <div class="delta down">▼ Resolve before confirm</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Fridges × products — Tuesday 30 Jun 2026</h3>
+      <div class="sub">Replaces the <span class="mono">Dispatch View</span> grid. Click a cell to edit; forecast fills are recalculated per fridge × category, then split by product score. <b>＋ Add product</b> inserts a product outside the weekly menu (slide 10).</div>
+      <div class="matrix-legend">
+        <span class="key"><span class="cell-demo fc">4</span> forecast-filled <span class="mono">ƒ</span></span>
+        <span class="key"><span class="cell-demo man">6</span> manual override <span class="mono">m</span></span>
+        <span class="key"><span class="badge crit">stock exceeded</span> column total &gt; warehouse stock</span>
+        <span class="key" style="margin-left:auto; color: var(--ink-3)">Showing 2 of 10 categories · 12 of 540 products · 10 of 42 fridges</span>
+      </div>
+      <div class="matrix-scroll">
+        <table class="matrix" id="matrix-table"></table>
+      </div>
+      <div class="note-src">Totals include all 42 fridges. Source: <span class="mono">GET /api/v1/dispatches/{id}/matrix</span> · bulk edits via <span class="mono">PUT /api/v1/dispatches/{id}/lines</span> · confirm via <span class="mono">POST /api/v1/dispatches/{id}/confirm</span></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ PAGE 2: MENU PLANNER ═══════════ -->
+  <section class="page-view" id="page-menu">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Operations / Menu Planner</div>
+        <h1>Weekly Menu</h1>
+      </div>
+      <div class="controls">
+        <span class="badge ok">S27 · Active</span>
+        <button class="btn">Copy previous week</button>
+        <button class="btn primary">Save menu</button>
+      </div>
+    </div>
+
+    <div class="tabs" id="week-tabs">
+      <div class="tab" data-week="S25">S25</div>
+      <div class="tab" data-week="S26">S26</div>
+      <div class="tab active" data-week="S27">S27</div>
+      <div class="tab" data-week="S28">S28</div>
+      <div class="tab" data-week="S29">S29</div>
+    </div>
+
+    <div class="chip-strip">
+      <span class="cat-chip active">1. Cold Dishes <b>8</b></span>
+      <span class="cat-chip">2. Wraps &amp; Sandwiches <b>9</b></span>
+      <span class="cat-chip">3. Warm Dishes Jar <b>4</b></span>
+      <span class="cat-chip">4. Warm Dishes <b>6</b></span>
+      <span class="cat-chip">5. Desserts <b>7</b></span>
+      <span class="cat-chip">6. Snacks <b>12</b></span>
+      <span class="cat-chip">7. Drinks <b>14</b></span>
+      <span class="cat-chip">8. Breakfast <b>5</b></span>
+      <span class="cat-chip">9. Soups <b>3</b></span>
+      <span class="cat-chip">10. Frozen Warm Dishes <b>4</b></span>
+    </div>
+
+    <div class="grid two-col">
+      <div class="card">
+        <h3>Product picker — 1. Cold Dishes</h3>
+        <div class="sub">Search-dropdown across the 540-product Husky catalogue (slides 6 &amp; 19 — replaces checkboxes at scale) · filter by brand · sorted by score</div>
+        <div class="picker">
+          <div class="search">
+            <input type="search" placeholder="Search 540 products by name…" value="salade" style="flex:1.4">
+            <select><option>All brands</option><option>Croc&amp;Go</option><option>La Cantine de Géraldine</option><option>Gourmart</option><option>Tastyfood</option><option>Seppe's</option><option>Big Bag</option></select>
+            <button class="btn primary">Add</button>
+          </div>
+          <div class="pick-list">
+            <div class="pick-row"><span class="p-name"><b>Salade Cesar C&amp;G</b><span>Croc&amp;Go · 1001</span></span><span class="p-price">€9.60</span><span class="score-chip hi">0.69</span><span class="badge ok">✓ on menu</span></div>
+            <div class="pick-row"><span class="p-name"><b>Salade Poulet Curry</b><span>Gourmart · 1199</span></span><span class="p-price">€8.90</span><span class="score-chip hi">0.63</span><span class="badge ok">✓ on menu</span></div>
+            <div class="pick-row"><span class="p-name"><b>Salade Grecque</b><span>Tastyfood · 1042</span></span><span class="p-price">€8.40</span><span class="score-chip mid">0.55</span><span class="badge ok">✓ on menu</span></div>
+            <div class="pick-row"><span class="p-name"><b>Salade Quinoa Feta</b><span>La Cantine de Géraldine · 0000071204418</span></span><span class="p-price">€8.90</span><span class="score-chip mid">0.52</span><span class="badge ok">✓ on menu</span></div>
+            <div class="pick-row"><span class="p-name"><b>Salade Pâtes Pesto</b><span>Big Bag · 1310</span></span><span class="p-price">€7.90</span><span class="score-chip mid">0.47</span><span class="badge ok">✓ on menu</span></div>
+            <div class="pick-row"><span class="p-name"><b>Salade Mozzarella</b><span>Croc&amp;Go · 1025</span></span><span class="p-price">€9.50</span><span class="score-chip mid">0.51</span><button class="btn ghost" style="padding:3px 10px">＋ Add</button></div>
+            <div class="pick-row"><span class="p-name"><b>Salade falafels C&amp;G</b><span>Croc&amp;Go · 1000</span></span><span class="p-price">€9.50</span><span class="score-chip mid">0.61</span><button class="btn ghost" style="padding:3px 10px">＋ Add</button></div>
+            <div class="pick-row"><span class="p-name"><b>Salade Niçoise</b><span>Tastyfood · 1058</span></span><span class="p-price">€8.60</span><span class="score-chip lo">0.34</span><button class="btn ghost" style="padding:3px 10px">＋ Add</button></div>
+          </div>
+        </div>
+        <div class="callout">7 of 540 products match "salade" in <b>1. Cold Dishes</b>. New products (≤ 250 lifetime sales) get the average global score as a baseline so they still receive forecast allocation (slide 8).</div>
+      </div>
+
+      <div class="card">
+        <h3>Selected — 1. Cold Dishes (8 products)</h3>
+        <div class="sub">Forecast is split across these by score · <b>Max / fridge</b> caps the allocation per fridge per delivery</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Product</th><th>Supplier</th><th class="num">Price</th><th class="num">Score</th><th class="num">Max / fridge</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>Salade Cesar C&amp;G</td><td>Croc&amp;Go</td><td class="num">€9.60</td><td class="num"><span class="score-chip hi">0.69</span></td><td class="num"><input class="cap-input" type="number" value="4"></td><td><a href="#">✕</a></td></tr>
+            <tr><td>Poke Bowl Saumon</td><td>La Cantine de Géraldine</td><td class="num">€10.90</td><td class="num"><span class="score-chip hi">0.66</span></td><td class="num"><input class="cap-input" type="number" value="3"></td><td><a href="#">✕</a></td></tr>
+            <tr><td>Salade Poulet Curry</td><td>Gourmart</td><td class="num">€8.90</td><td class="num"><span class="score-chip hi">0.63</span></td><td class="num"><input class="cap-input" type="number" value="4"></td><td><a href="#">✕</a></td></tr>
+            <tr><td>Taboulé Oriental</td><td>Gourmart</td><td class="num">€7.50</td><td class="num"><span class="score-chip mid">0.57</span></td><td class="num"><input class="cap-input" type="number" value="3"></td><td><a href="#">✕</a></td></tr>
+            <tr><td>Salade Grecque</td><td>Tastyfood</td><td class="num">€8.40</td><td class="num"><span class="score-chip mid">0.55</span></td><td class="num"><input class="cap-input" type="number" value="3"></td><td><a href="#">✕</a></td></tr>
+            <tr><td>Salade Quinoa Feta</td><td>La Cantine de Géraldine</td><td class="num">€8.90</td><td class="num"><span class="score-chip mid">0.52</span></td><td class="num"><input class="cap-input" type="number" value="2"></td><td><a href="#">✕</a></td></tr>
+            <tr><td>Bowl Falafel Houmous</td><td>Seppe's</td><td class="num">€9.20</td><td class="num"><span class="score-chip mid">0.49</span></td><td class="num"><input class="cap-input" type="number" value="2"></td><td><a href="#">✕</a></td></tr>
+            <tr><td>Salade Pâtes Pesto</td><td>Big Bag</td><td class="num">€7.90</td><td class="num"><span class="score-chip mid">0.47</span></td><td class="num"><input class="cap-input" type="number" value="2"></td><td><a href="#">✕</a></td></tr>
+          </tbody>
+        </table>
+        </div>
+        <div class="callout warn"><b>Snacks &amp; Drinks are target-based:</b> those two categories skip score allocation — restock = target − live RFID stock per fridge × product (3,522 targets).</div>
+      </div>
+    </div>
+    <div class="note-src">Source: <span class="mono">Menu</span> sheet + Update Menu script → <span class="mono">weekly_menus</span> / <span class="mono">menu_products</span> / <span class="mono">menu_product_caps</span> · <span class="mono">POST /api/v1/menus/{id}/copy</span></div>
+  </section>
+
+  <!-- ═══════════ PAGE 3: FORECAST ═══════════ -->
+  <section class="page-view" id="page-forecast">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Operations / Forecast</div>
+        <h1>Forecast</h1>
+      </div>
+      <div class="controls">
+        <select><option>ABB Zaventem</option><option>RTBF</option><option>DPG Media Antwerpen</option><option>Zoetis LLN</option><option>Interparking</option></select>
+        <input type="date" value="2026-06-30">
+        <span class="badge info">Run: 29 Jun 07:41</span>
+        <button class="btn primary">Re-run forecast</button>
+      </div>
+    </div>
+
+    <div class="callout" style="margin-top:0"><b>Rule R1:</b> per fridge × category, 3-week window anchored on the delivery weekday. <span class="mono">forecast = (units sold ÷ (valid + no-info days)) × days-to-fill × (1 + category margin %)</span>. Days where the fridge sold ≤ its minimum daily qty are excluded as holidays.</div>
+
+    <div class="grid two-col">
+      <div class="card">
+        <h3>ABB Zaventem — category forecast for Tue 30 Jun</h3>
+        <div class="sub">Days-to-fill: 2 · min daily qty: 6 · window: Tue 9 Jun → Mon 29 Jun</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Category</th><th class="num">Forecast qty</th><th class="num">Valid days</th><th class="num">Holiday-excl.</th><th class="num">Margin %</th><th>Sell-through last wk</th></tr></thead>
+          <tbody>
+            <tr><td>1. Cold Dishes</td><td class="num">13</td><td class="num">18</td><td class="num">2</td><td class="num">+10%</td><td><span class="badge warn">94% · sold-out risk</span></td></tr>
+            <tr><td>2. Wraps &amp; Sandwiches</td><td class="num">20</td><td class="num">18</td><td class="num">2</td><td class="num">+10%</td><td><span class="badge ok">86%</span></td></tr>
+            <tr><td>3. Warm Dishes Jar</td><td class="num">5</td><td class="num">18</td><td class="num">2</td><td class="num">+5%</td><td><span class="badge ok">78%</span></td></tr>
+            <tr><td>4. Warm Dishes</td><td class="num">7</td><td class="num">18</td><td class="num">2</td><td class="num">+5%</td><td><span class="badge crit">64% · overstocked</span></td></tr>
+            <tr><td>5. Desserts</td><td class="num">9</td><td class="num">18</td><td class="num">2</td><td class="num">+10%</td><td><span class="badge ok">81%</span></td></tr>
+            <tr><td>6. Snacks</td><td class="num">target-based</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td><span class="badge info">target − live stock</span></td></tr>
+            <tr><td>7. Drinks</td><td class="num">target-based</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td><span class="badge info">target − live stock</span></td></tr>
+            <tr><td>8. Breakfast</td><td class="num">6</td><td class="num">18</td><td class="num">2</td><td class="num">+5%</td><td><span class="badge warn">92% · sold-out risk</span></td></tr>
+            <tr><td>9. Soups</td><td class="num">4</td><td class="num">18</td><td class="num">2</td><td class="num">+5%</td><td><span class="badge ok">73%</span></td></tr>
+            <tr><td>10. Frozen Warm Dishes</td><td class="num">3</td><td class="num">18</td><td class="num">2</td><td class="num">+0%</td><td><span class="badge crit">58% · overstocked</span></td></tr>
+          </tbody>
+        </table>
+        </div>
+        <div class="callout warn">2 days excluded by the holiday filter in this window: Mon 15 Jun (site closed — 3 items sold) and Fri 19 Jun (bridge day — 4 items sold). Excluded days don't count as valid selling days.</div>
+      </div>
+
+      <div class="card">
+        <h3>Added vs Sold — Week 26 (22–28 Jun)</h3>
+        <div class="sub">ABB Zaventem · restock additions vs RFID sales per category</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Category</th><th class="num">Added</th><th class="num">Sold</th><th class="num">Sell-through</th></tr></thead>
+          <tbody>
+            <tr><td>1. Cold Dishes</td><td class="num">17</td><td class="num">16</td><td class="num"><span class="badge warn">94%</span></td></tr>
+            <tr><td>2. Wraps &amp; Sandwiches</td><td class="num">28</td><td class="num">24</td><td class="num"><span class="badge ok">86%</span></td></tr>
+            <tr><td>3. Warm Dishes Jar</td><td class="num">9</td><td class="num">7</td><td class="num"><span class="badge ok">78%</span></td></tr>
+            <tr><td>4. Warm Dishes</td><td class="num">11</td><td class="num">7</td><td class="num"><span class="badge crit">64%</span></td></tr>
+            <tr><td>5. Desserts</td><td class="num">16</td><td class="num">13</td><td class="num"><span class="badge ok">81%</span></td></tr>
+            <tr><td>6. Snacks</td><td class="num">22</td><td class="num">19</td><td class="num"><span class="badge ok">86%</span></td></tr>
+            <tr><td>7. Drinks</td><td class="num">31</td><td class="num">26</td><td class="num"><span class="badge ok">84%</span></td></tr>
+            <tr><td>8. Breakfast</td><td class="num">12</td><td class="num">11</td><td class="num"><span class="badge warn">92%</span></td></tr>
+            <tr><td>9. Soups</td><td class="num">7</td><td class="num">5</td><td class="num"><span class="badge ok">73%</span></td></tr>
+            <tr><td>10. Frozen Warm Dishes</td><td class="num">6</td><td class="num">3</td><td class="num"><span class="badge crit">58%</span></td></tr>
+            <tr class="total"><td>Total</td><td class="num">159</td><td class="num">131</td><td class="num">82%</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <div class="callout" style="margin-bottom:0">Color coding: <span class="badge warn">≥ 90% sold-out risk</span> — increase forecast margin; <span class="badge crit">&lt; 70% overstocked</span> — reduce or rotate menu; <span class="badge ok">70–89% healthy</span>.</div>
+      </div>
+    </div>
+    <div class="note-src">Source: <span class="mono">Forecast V2</span> sheet + Update Forecast script → <span class="mono">POST /api/v1/forecasts/run</span> · <span class="mono">GET /api/v1/forecasts/performance?week=26</span></div>
+  </section>
+
+  <!-- ═══════════ PAGE 4: RESTOCK VERIFICATION ═══════════ -->
+  <section class="page-view" id="page-verify">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Operations / Restock Verification</div>
+        <h1>Restock Verification</h1>
+      </div>
+      <div class="controls">
+        <select><option>Week 27 — Tuesday 30 Jun (dispatched)</option><option>Week 27 — Monday 29 Jun (reconciled)</option><option>Week 26 — Thursday 25 Jun (reconciled)</option></select>
+        <button class="btn">Re-run reconciliation</button>
+        <button class="btn primary">✉ Email report</button>
+      </div>
+    </div>
+
+    <div class="grid kpis">
+      <div class="card tile">
+        <div class="label">Dispatched units</div>
+        <div class="value">1,912</div>
+        <div class="delta">428 lines · 42 fridges</div>
+      </div>
+      <div class="card tile">
+        <div class="label">RFID-added units</div>
+        <div class="value">1,868</div>
+        <div class="delta">From Husky ADDED events · synced 30 Jun 14:05</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Difference</div>
+        <div class="value" style="color:var(--critical)">−44</div>
+        <div class="delta down">▼ 2.3% of dispatched</div>
+      </div>
+      <div class="card tile">
+        <div class="label">€ difference</div>
+        <div class="value" style="color:var(--critical)">−€212.40</div>
+        <div class="delta">At snapshot purchase prices</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Unreliable tags</div>
+        <div class="value" style="color:#8a6100">17</div>
+        <div class="delta">Excluded from diff · flagged below</div>
+      </div>
+    </div>
+
+    <div class="grid two-col">
+      <div class="card">
+        <h3>Difference by category</h3>
+        <div class="sub">Dispatched vs RFID-added · Week 27 — Tuesday</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Category</th><th class="num">Dispatched</th><th class="num">Added</th><th class="num">Diff</th><th class="num">€ diff</th></tr></thead>
+          <tbody>
+            <tr><td>1. Cold Dishes</td><td class="num">262</td><td class="num">255</td><td class="num neg">−7</td><td class="num neg">−€41.30</td></tr>
+            <tr><td>2. Wraps &amp; Sandwiches</td><td class="num">401</td><td class="num">389</td><td class="num neg">−12</td><td class="num neg">−€49.90</td></tr>
+            <tr><td>3. Warm Dishes Jar</td><td class="num">96</td><td class="num">96</td><td class="num">0</td><td class="num">€0.00</td></tr>
+            <tr><td>4. Warm Dishes</td><td class="num">148</td><td class="num">143</td><td class="num neg">−5</td><td class="num neg">−€31.75</td></tr>
+            <tr><td>5. Desserts</td><td class="num">204</td><td class="num">199</td><td class="num neg">−5</td><td class="num neg">−€14.75</td></tr>
+            <tr><td>6. Snacks</td><td class="num">265</td><td class="num">262</td><td class="num neg">−3</td><td class="num neg">−€4.35</td></tr>
+            <tr><td>7. Drinks</td><td class="num">330</td><td class="num">324</td><td class="num neg">−6</td><td class="num neg">−€7.80</td></tr>
+            <tr><td>8. Breakfast</td><td class="num">104</td><td class="num">102</td><td class="num neg">−2</td><td class="num neg">−€6.10</td></tr>
+            <tr><td>9. Soups</td><td class="num">54</td><td class="num">55</td><td class="num posv">+1</td><td class="num posv">+€2.85</td></tr>
+            <tr><td>10. Frozen Warm Dishes</td><td class="num">48</td><td class="num">43</td><td class="num neg">−5</td><td class="num neg">−€59.30</td></tr>
+            <tr class="total"><td>Total</td><td class="num">1,912</td><td class="num">1,868</td><td class="num neg">−44</td><td class="num neg">−€212.40</td></tr>
+          </tbody>
+        </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Largest product-level gaps</h3>
+        <div class="sub">UNRELIABLE = tag read but not trusted by Husky — investigate before writing off</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Product</th><th>Fridge</th><th class="num">Disp.</th><th class="num">Added</th><th class="num" style="color:#8a6100">Unreliable</th><th class="num">Diff</th><th class="num">€ diff</th></tr></thead>
+          <tbody>
+            <tr><td>Chicken Andalusia Wrap</td><td>RTBF</td><td class="num">8</td><td class="num">4</td><td class="num"><span class="badge warn">3</span></td><td class="num neg">−4</td><td class="num neg">−€16.40</td></tr>
+            <tr><td>Lasagne Bolognese (frozen)</td><td>DPG Media Antwerpen</td><td class="num">6</td><td class="num">2</td><td class="num">0</td><td class="num neg">−4</td><td class="num neg">−€47.60</td></tr>
+            <tr><td>Salade Cesar C&amp;G</td><td>Zoetis LLN</td><td class="num">5</td><td class="num">2</td><td class="num"><span class="badge warn">2</span></td><td class="num neg">−3</td><td class="num neg">−€17.70</td></tr>
+            <tr><td>Poke Bowl Saumon</td><td>Interparking</td><td class="num">4</td><td class="num">2</td><td class="num">0</td><td class="num neg">−2</td><td class="num neg">−€13.40</td></tr>
+            <tr><td>Granola Vanille</td><td>ABB Zaventem</td><td class="num">6</td><td class="num">4</td><td class="num"><span class="badge warn">2</span></td><td class="num neg">−2</td><td class="num neg">−€6.10</td></tr>
+            <tr><td>Coca Zero 33cl</td><td>Police Tubize</td><td class="num">12</td><td class="num">10</td><td class="num">0</td><td class="num neg">−2</td><td class="num neg">−€1.90</td></tr>
+            <tr><td>Regular Brownies</td><td>Allianz Brussels</td><td class="num">7</td><td class="num">5</td><td class="num"><span class="badge warn">1</span></td><td class="num neg">−2</td><td class="num neg">−€3.50</td></tr>
+            <tr><td>Soupe Tomate Basilic</td><td>Spadel Brussels</td><td class="num">3</td><td class="num">4</td><td class="num">0</td><td class="num posv">+1</td><td class="num posv">+€2.85</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <div class="callout warn" style="margin-bottom:0"><b>17 unreliable tag reads</b> across 9 fridges. They count as neither added nor missing; the emailed report lists them separately so warehouse can re-scan on the next drop.</div>
+      </div>
+    </div>
+    <div class="note-src">Source: Send/Update Restock Verification scripts + template → <span class="mono">POST /api/v1/dispatches/{id}/reconcile</span> → <span class="mono">restock_verifications</span> + emailed XLSX report</div>
+  </section>
+
+  <!-- ═══════════ PAGE 5: DRIVER VIEW ═══════════ -->
+  <section class="page-view" id="page-driver">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Field / Driver View</div>
+        <h1>Driver View — mobile preview</h1>
+      </div>
+      <div class="controls">
+        <select><option>Route A — Brussels (14 fridges)</option><option>Route B — Antwerpen (11 fridges)</option><option>Route C — Wallonie (9 fridges)</option></select>
+        <span class="badge info">Stop 3 of 14</span>
+      </div>
+    </div>
+
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="statusbar"><span>09:41</span><span>FrigoLoco Driver · Tue 30 Jun</span><span>▮▮▮</span></div>
+        <div class="p-head">
+          <div class="route">Route A · Stop 3/14 · Week 27 — Tuesday</div>
+          <h4>RTBF</h4>
+          <div class="addr">Boulevard Auguste Reyers 52, 1044 Bruxelles</div>
+          <div class="instr">⚠ Badge à l'accueil · frigo au −1 près de la cafétéria · sonner au 02 737 xx xx si fermé</div>
+        </div>
+        <div class="p-body">
+          <div class="p-cat">1. Cold Dishes — 7 units</div>
+          <label class="p-line"><input type="checkbox" checked><span class="nm">Salade Cesar C&amp;G</span><span class="qy">× 3</span></label>
+          <label class="p-line"><input type="checkbox" checked><span class="nm">Poke Bowl Saumon</span><span class="qy">× 2</span></label>
+          <label class="p-line"><input type="checkbox"><span class="nm">Salade Poulet Curry</span><span class="qy">× 2</span></label>
+
+          <div class="p-cat">2. Wraps &amp; Sandwiches — 9 units</div>
+          <label class="p-line"><input type="checkbox"><span class="nm">Chicken Andalusia Wrap</span><span class="qy">× 4</span></label>
+          <label class="p-line"><input type="checkbox"><span class="nm">Wrap Veggie Falafel</span><span class="qy">× 2</span></label>
+          <label class="p-line"><input type="checkbox"><span class="nm">Club Poulet Croc&amp;Go</span><span class="qy">× 3</span></label>
+
+          <div class="p-cat">5. Desserts — 5 units</div>
+          <label class="p-line"><input type="checkbox"><span class="nm">Regular Brownies</span><span class="qy">× 3</span></label>
+          <label class="p-line"><input type="checkbox"><span class="nm">Tiramisu Speculoos</span><span class="qy">× 2</span></label>
+
+          <div class="p-cat">7. Drinks &amp; 8. Breakfast — 8 units</div>
+          <label class="p-line"><input type="checkbox"><span class="nm">Coca Zero 33cl</span><span class="qy">× 5</span></label>
+          <label class="p-line"><input type="checkbox"><span class="nm">Granola Vanille</span><span class="qy">× 3</span></label>
+
+          <div class="withdraw">
+            <h5>⚠ Withdrawal list — pull from fridge (short DLC)</h5>
+            <label class="p-line"><input type="checkbox"><span class="nm">Salade Grecque <span style="color:var(--critical);font-size:11px">DLC 30 Jun</span></span><span class="qy">× 2</span></label>
+            <label class="p-line"><input type="checkbox"><span class="nm">Sandwich Brie Noix <span style="color:var(--critical);font-size:11px">DLC 30 Jun</span></span><span class="qy">× 1</span></label>
+            <label class="p-line"><input type="checkbox"><span class="nm">Soupe Tomate Basilic <span style="color:var(--critical);font-size:11px">DLC 01 Jul</span></span><span class="qy">× 1</span></label>
+          </div>
+        </div>
+        <div class="p-foot"><button class="btn primary">Mark stop complete → next: Interparking</button></div>
+      </div>
+
+      <div style="max-width:340px">
+        <div class="card">
+          <h3>What the driver gets</h3>
+          <div class="sub">Same content as today's per-fridge PDF sheet</div>
+          <ul style="padding-left:18px; font-size:12.5px; color:var(--ink-2); display:grid; gap:6px">
+            <li>Products in <b>category print order</b> (rule R8) so the sheet matches the fridge shelf layout.</li>
+            <li>Check-off replaces the paper <b>In-box / Missing</b> columns; misses feed the reconciliation view automatically.</li>
+            <li><b>Withdrawal list</b> = products in the fridge whose DLC expires before the next delivery — pulled, counted, logged.</li>
+            <li>Works read-only offline; check-offs sync when back online.</li>
+          </ul>
+        </div>
+        <div class="callout warn mt">Until this view ships, the same data is still emailed as PDF/XLSX sheets on “Confirm dispatch” — the mobile view is additive, not a replacement.</div>
+      </div>
+    </div>
+    <div class="note-src">Source: DispatchTemplate.xlsx per-fridge sheets + Power Automate email → <span class="mono">GET /api/v1/dispatches/{id}/documents</span> · driver role (JWT)</div>
+  </section>
+
+  </main>
+</div>
+
+<!-- ═══════════ CONFIRM DISPATCH MODAL ═══════════ -->
+<div class="modal-backdrop" id="confirm-modal">
+  <div class="modal">
+    <h2>Confirm dispatch — Tuesday 30 Jun 2026</h2>
+    <div class="sub">Week 27 · one atomic transaction: stock deduction, price snapshots, document generation, email</div>
+    <div class="modal-summary">
+      <div class="item"><div class="k">Dispatch lines</div><div class="v">428</div></div>
+      <div class="item"><div class="k">Total units</div><div class="v">1,912</div></div>
+      <div class="item"><div class="k">Fridges served</div><div class="v">42</div></div>
+      <div class="item"><div class="k">Food cost (snapshot)</div><div class="v">€8,941.20</div></div>
+    </div>
+    <table>
+      <thead><tr><th>Step</th><th>Detail</th></tr></thead>
+      <tbody>
+        <tr><td>Stock deduction</td><td>428 negative <span class="mono">stock_movements</span> · 2 products would go <b class="neg">below zero</b> — blocked until quantities are reduced or a PO is received</td></tr>
+        <tr><td>Delivery sheets</td><td>42 per-fridge PDFs (category print order, In-box/Missing, withdrawal list) + 1 warehouse XLSX → Azure Blob</td></tr>
+        <tr><td>Emails</td><td>42 sheets → drivers &amp; warehouse · summary → ops@frigoloco.be</td></tr>
+      </tbody>
+    </table>
+    <div class="callout crit"><b>Stock exceeded:</b> Poke Bowl Saumon (−6) and Wrap Veggie Falafel (−3). Confirm is disabled until resolved — non-negativity is enforced by the database, not just this screen.</div>
+    <div class="callout warn"><b>Past-date variant:</b> if the delivery date is before today, this dialog additionally requires the checkbox below (slide 23 — accidental past-date saves).</div>
+    <label class="check-line"><input type="checkbox"> I confirm I am intentionally dispatching for a past delivery date and understand stock will be deducted as of that date.</label>
+    <div class="modal-actions">
+      <button class="btn ghost" id="btn-cancel">Cancel</button>
+      <button class="btn primary" disabled title="Blocked: stock would go negative">Confirm &amp; send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── dispatch matrix data (sampled) ─────────────────────────────────── */
+const matrixCategories = [
+  { name: "1. Cold Dishes", cls: "cat-a", products: [
+    { n: "Salade Cesar C&G", p: "9.60" },
+    { n: "Poke Bowl Saumon", p: "10.90" },
+    { n: "Salade Poulet Curry", p: "8.90" },
+    { n: "Taboulé Oriental", p: "7.50" },
+    { n: "Salade Grecque", p: "8.40" },
+    { n: "Salade Quinoa Feta", p: "8.90" },
+  ]},
+  { name: "2. Wraps & Sandwiches", cls: "cat-b", products: [
+    { n: "Chicken Andalusia Wrap", p: "6.90" },
+    { n: "Wrap Veggie Falafel", p: "6.50" },
+    { n: "Club Poulet Croc&Go", p: "6.20" },
+    { n: "Sandwich Brie Noix", p: "5.90" },
+    { n: "Panini Mozzarella", p: "6.40" },
+    { n: "Bagel Saumon Seppe's", p: "7.20" },
+  ]},
+];
+/* q: qty per product column (null = not delivered) · man: manually overridden column indexes */
+const matrixFridges = [
+  { n: "ABB Zaventem",              q: [3,2,2,1,2,2, 4,2,3,2,2,1],   man: [6] },
+  { n: "RTBF",                      q: [3,2,2,2,1,1, 4,2,3,2,2,2],   man: [0, 9] },
+  { n: "DPG Media Antwerpen",       q: [2,2,2,1,1,1, 3,2,2,1,2,1],   man: [] },
+  { n: "Zoetis LLN",                q: [5,1,1,1,1,0, 2,1,2,1,1,1],   man: [0] },
+  { n: "Interparking",              q: [2,4,1,1,1,1, 3,1,2,1,1,1],   man: [1] },
+  { n: "Police Tubize",             q: [2,1,2,1,1,1, 3,2,2,1,1,1],   man: [] },
+  { n: "Allianz Brussels",          q: [3,2,2,1,2,1, 3,2,2,2,2,1],   man: [] },
+  { n: "Lhoist Limelette",          q: [2,1,1,1,1,1, 2,1,2,1,1,0],   man: [11] },
+  { n: "Spadel Brussels",           q: [1,1,1,0,1,1, 2,1,1,1,1,1],   man: [] },
+  { n: "Brussels Airlines Airport", q: [2,1,2,1,1,1, 3,2,2,1,2,1],   man: [4] },
+];
+/* contribution of the 32 fridges not shown, per column */
+const hiddenFridgeUnits = [58, 41, 44, 26, 33, 30, 92, 55, 60, 38, 49, 41];
+/* warehouse stock per column = total + delta (negative delta ⇒ exceeded) */
+const stockDelta = [12, -6, 9, 15, 7, 10, 18, -3, 11, 9, 14, 8];
+
+function renderDispatchMatrix() {
+  const allProducts = matrixCategories.flatMap(c => c.products);
+  const colCount = allProducts.length;
+  const columnTotals = new Array(colCount).fill(0);
+  matrixFridges.forEach(f => f.q.forEach((v, i) => { columnTotals[i] += (v || 0); }));
+  const grandTotals = columnTotals.map((v, i) => v + hiddenFridgeUnits[i]);
+  const stock = grandTotals.map((v, i) => v + stockDelta[i]);
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+  let html = "<thead><tr class='cat-row'><th class='fridge-col'>Fridge</th>";
+  matrixCategories.forEach(c => {
+    html += `<th class='${c.cls}' colspan='${c.products.length}'>${esc(c.name)}</th>`;
+  });
+  html += "<th class='rowtotal-h'></th></tr><tr class='prod-row'><th class='fridge-col'></th>";
+  allProducts.forEach(p => {
+    html += `<th>${esc(p.n)}<span class='price'>€${p.p}</span></th>`;
+  });
+  html += "<th class='rowtotal-h'>Fridge total</th></tr></thead><tbody>";
+
+  matrixFridges.forEach(f => {
+    const rowTotal = f.q.reduce((a, b) => a + (b || 0), 0);
+    html += `<tr><td class='fridge-col'>${esc(f.n)}</td>`;
+    f.q.forEach((v, i) => {
+      const isMan = f.man.includes(i);
+      if (v === null || v === 0) {
+        html += "<td class='qty zero'>–</td>";
+      } else {
+        html += `<td class='qty ${isMan ? "man" : "fc"}'><span class='q'>${v}</span><span class='src'>${isMan ? "m" : "ƒ"}</span></td>`;
+      }
+    });
+    html += `<td class='rowtotal'>${rowTotal}</td></tr>`;
+  });
+  html += `<tr class='more-row'><td class='fridge-col'>… 32 more fridges</td><td colspan='${colCount}'>scroll — all 42 fridges load in one grid</td><td class='rowtotal'>…</td></tr></tbody>`;
+
+  html += "<tfoot><tr class='t-total'><th class='fridge-col'>Total (42 fridges)</th>";
+  grandTotals.forEach((v, i) => {
+    html += `<td class='${v > stock[i] ? "over" : ""}'>${v}</td>`;
+  });
+  const grand = grandTotals.reduce((a, b) => a + b, 0);
+  html += `<td class='rowtotal'>${grand.toLocaleString("en-US")}</td></tr>`;
+  html += "<tr class='t-stock'><th class='fridge-col'>Warehouse stock</th>";
+  stock.forEach((v, i) => {
+    const over = grandTotals[i] > v;
+    html += `<td class='${over ? "over" : ""}'>${v}${over ? ` <span style='font-size:10px'>(−${grandTotals[i] - v})</span>` : ""}</td>`;
+  });
+  html += "<td class='rowtotal'></td></tr></tfoot>";
+
+  document.getElementById("matrix-table").innerHTML = html;
+}
+renderDispatchMatrix();
+
+/* ── nav switching ───────────────────────────────────────────────────── */
+document.querySelectorAll(".nav-item").forEach(item => {
+  item.addEventListener("click", () => {
+    document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
+    item.classList.add("active");
+    document.querySelectorAll(".page-view").forEach(p => p.classList.remove("active"));
+    document.getElementById("page-" + item.dataset.page).classList.add("active");
+    window.scrollTo(0, 0);
+  });
+});
+
+/* ── week tabs (visual only) ─────────────────────────────────────────── */
+document.querySelectorAll("#week-tabs .tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll("#week-tabs .tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+  });
+});
+
+/* ── confirm-dispatch modal ──────────────────────────────────────────── */
+const confirmModal = document.getElementById("confirm-modal");
+document.getElementById("btn-confirm").addEventListener("click", () => confirmModal.classList.add("open"));
+document.getElementById("btn-cancel").addEventListener("click", () => confirmModal.classList.remove("open"));
+confirmModal.addEventListener("click", event => {
+  if (event.target === confirmModal) confirmModal.classList.remove("open");
+});
+</script>
+</body>
+</html>

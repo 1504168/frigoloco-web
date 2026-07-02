@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spec Implementation Log — FrigoLoco</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --border: #d1d9e0;
+    --surface: #f6f8fa; --accent: #0969da;
+    --green: #1a7f37; --green-bg: #dafbe1;
+    --yellow: #9a6700; --yellow-bg: #fff8c5;
+    --gray: #656d76; --gray-bg: #eff1f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --border: #30363d;
+      --surface: #161b22; --accent: #4493f8;
+      --green: #3fb950; --green-bg: rgba(63,185,80,.15);
+      --yellow: #d29922; --yellow-bg: rgba(210,153,34,.15);
+      --gray: #8d96a0; --gray-bg: rgba(141,150,160,.15);
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); padding: 32px 24px 80px; max-width: 1100px; margin: 0 auto; font-size: 14px; }
+  h1 { font-size: 24px; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); margin-bottom: 24px; }
+  .cards { display: flex; gap: 14px; margin-bottom: 22px; flex-wrap: wrap; }
+  .card { flex: 1; min-width: 160px; border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; background: var(--surface); }
+  .card .num { font-size: 26px; font-weight: 700; }
+  .card .lbl { color: var(--muted); font-size: 12.5px; }
+  .card.implemented .num { color: var(--green); }
+  .card.pending .num { color: var(--yellow); }
+  .card.superseded .num { color: var(--gray); }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+  .filter-btn { border: 1px solid var(--border); background: var(--bg); color: var(--fg); border-radius: 20px; padding: 5px 14px; cursor: pointer; font-size: 13px; }
+  .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #search { flex: 1; min-width: 200px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); border-radius: 6px; padding: 7px 10px; font-size: 13.5px; }
+  table { width: 100%; border-collapse: collapse; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  thead th { background: var(--surface); text-align: left; padding: 9px 12px; font-size: 12.5px; color: var(--muted); cursor: pointer; user-select: none; position: sticky; top: 0; border-bottom: 1px solid var(--border); }
+  tbody td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tbody tr:hover { background: var(--surface); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; border-radius: 20px; padding: 2px 10px; font-size: 12px; font-weight: 600; }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .badge.implemented { color: var(--green); background: var(--green-bg); } .badge.implemented .dot { background: var(--green); }
+  .badge.pending { color: var(--yellow); background: var(--yellow-bg); } .badge.pending .dot { background: var(--yellow); }
+  .badge.superseded { color: var(--gray); background: var(--gray-bg); } .badge.superseded .dot { background: var(--gray); }
+  .num-cell { font-variant-numeric: tabular-nums; color: var(--muted); }
+</style>
+</head>
+<body>
+  <h1>Spec Implementation Log</h1>
+  <div class="subtitle">FrigoLoco Cloud ERP — specs 0001–0001</div>
+  <div class="cards">
+    <div class="card implemented"><div class="num" id="count-implemented">0</div><div class="lbl">Implemented</div></div>
+    <div class="card pending"><div class="num" id="count-pending">0</div><div class="lbl">Pending</div></div>
+    <div class="card superseded"><div class="num" id="count-superseded">0</div><div class="lbl">Superseded</div></div>
+  </div>
+  <div class="toolbar">
+    <button class="filter-btn active" data-f="all">All</button>
+    <button class="filter-btn" data-f="implemented">Implemented</button>
+    <button class="filter-btn" data-f="pending">Pending</button>
+    <button class="filter-btn" data-f="superseded">Superseded</button>
+    <input id="search" type="text" placeholder="Search specs…">
+  </div>
+  <table>
+    <thead><tr><th data-k="num">#</th><th data-k="title">Title</th><th data-k="status">Status</th><th data-k="date">Created</th><th data-k="notes">Notes</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+<script>
+const SPECS = [
+  { num: "0001", title: "FrigoLoco: Excel to Cloud ERP Port (DB + Backend + Frontend)", status: "pending", date: "2026-07-02", notes: "Companion deliverables in architecture/ and mockups/", file: "specs/0001-frigoloco-excel-to-cloud-erp_2026-07-02_0810PM_UTC/0001-frigoloco-excel-to-cloud-erp_2026-07-02_0810PM_UTC_v1.html" },
+  { num: "0004", title: "Database Setup & Husky (Intelligent Fridges) Historical Data Backfill", status: "pending", date: "2026-07-02", notes: "10 open questions to answer in the HTML; OpenAPI spec preserved in reference-docs/", file: "specs/0004-database-setup-and-husky-historical-backfill_2026-07-02_0810PM_UTC/0004-database-setup-and-husky-historical-backfill_2026-07-02_0810PM_UTC_v1.html" },
+];
+let filter = "all", query = "", sortKey = "num", sortAsc = true;
+function render() {
+  const tb = document.getElementById("rows");
+  let rows = SPECS.filter(s => (filter === "all" || s.status === filter) &&
+    (s.num + " " + s.title + " " + s.notes).toLowerCase().includes(query));
+  rows.sort((a, b) => (a[sortKey] > b[sortKey] ? 1 : -1) * (sortAsc ? 1 : -1));
+  tb.innerHTML = rows.map(s => `<tr>
+    <td class="num-cell">${s.num}</td>
+    <td>${s.file ? `<a href="${s.file}">${s.title}</a>` : s.title}</td>
+    <td><span class="badge ${s.status}"><span class="dot"></span>${s.status[0].toUpperCase() + s.status.slice(1)}</span></td>
+    <td class="num-cell">${s.date}</td>
+    <td>${s.notes || ""}</td>
+  </tr>`).join("");
+  for (const st of ["implemented", "pending", "superseded"])
+    document.getElementById("count-" + st).textContent = SPECS.filter(s => s.status === st).length;
+}
+document.querySelectorAll(".filter-btn").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".filter-btn").forEach(x => x.classList.remove("active"));
+  b.classList.add("active"); filter = b.dataset.f; render();
+}));
+document.getElementById("search").addEventListener("input", e => { query = e.target.value.toLowerCase(); render(); });
+document.querySelectorAll("thead th").forEach(th => th.addEventListener("click", () => {
+  const k = th.dataset.k; if (sortKey === k) sortAsc = !sortAsc; else { sortKey = k; sortAsc = true; } render();
+}));
+render();
+</script>
+</body>
+</html>
