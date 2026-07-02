@@ -1,0 +1,66 @@
+# ── Environment / secrets ────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Office Scripts (contain hardcoded credentials and webhook signatures)
+Office Scripts/*.ts
+Office Scripts/*.osts
+
+# ── Python (backend/) ─────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.ipynb_checkpoints/
+
+# ── Node / React (frontend/) ──────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/build/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.eslintcache
+.turbo/
+coverage/
+
+# ── Docker ────────────────────────────────────────────────────────────
+*.pid
+
+# ── IDE / editors ─────────────────────────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# ── macOS ─────────────────────────────────────────────────────────────
+.DS_Store
+
+# ── Excel temp/lock files ─────────────────────────────────────────────
+~$*
+*.tmp
+
+# ── Logs ──────────────────────────────────────────────────────────────
+logs/
+*.log
