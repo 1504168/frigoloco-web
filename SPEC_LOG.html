@@ -52,7 +52,7 @@
 </head>
 <body>
   <h1>Spec Implementation Log</h1>
-  <div class="subtitle">FrigoLoco Cloud ERP — specs 0001–0001</div>
+  <div class="subtitle">FrigoLoco Cloud ERP — specs 0001–0004</div>
   <div class="cards">
     <div class="card implemented"><div class="num" id="count-implemented">0</div><div class="lbl">Implemented</div></div>
     <div class="card pending"><div class="num" id="count-pending">0</div><div class="lbl">Pending</div></div>
@@ -72,6 +72,8 @@
 <script>
 const SPECS = [
   { num: "0001", title: "FrigoLoco: Excel to Cloud ERP Port (DB + Backend + Frontend)", status: "pending", date: "2026-07-02", notes: "Companion deliverables in architecture/ and mockups/", file: "specs/0001-frigoloco-excel-to-cloud-erp_2026-07-02_0810PM_UTC/0001-frigoloco-excel-to-cloud-erp_2026-07-02_0810PM_UTC_v1.html" },
+  { num: "0002", title: "Port Smart Fridge Forecasting Tool to Web App (DB + Backend + Frontend)", status: "pending", date: "2026-07-02", notes: "Full port spec incl. dev-briefing v5 guidance; companion DDL + backend/cron doc in reference-docs/ and 11+ screen mockup in mockups/", file: "specs/0002-port-forecasting-tool-to-web-app_2026-07-02_0815PM_UTC/0002-port-forecasting-tool-to-web-app_2026-07-02_0815PM_UTC_v1.html" },
+  { num: "0003", title: "Port Weekly & Monthly Return to Web App", status: "pending", date: "2026-07-02", notes: "Finance & returns module (Phase 4 of dev-briefing plan); DB views + FastAPI + React + cron on spec 0004 schema; 10 open questions in the HTML; 5-screen mockup in mockups/frigoloco-returns-app-mockup.html", file: "specs/0003-port-weekly-monthly-return-to-web-app_2026-07-02_0820PM_UTC/0003-port-weekly-monthly-return-to-web-app_2026-07-02_0820PM_UTC_v1.html" },
   { num: "0004", title: "Database Setup & Husky (Intelligent Fridges) Historical Data Backfill", status: "pending", date: "2026-07-02", notes: "10 open questions to answer in the HTML; OpenAPI spec preserved in reference-docs/", file: "specs/0004-database-setup-and-husky-historical-backfill_2026-07-02_0810PM_UTC/0004-database-setup-and-husky-historical-backfill_2026-07-02_0810PM_UTC_v1.html" },
 ];
 let filter = "all", query = "", sortKey = "num", sortAsc = true;

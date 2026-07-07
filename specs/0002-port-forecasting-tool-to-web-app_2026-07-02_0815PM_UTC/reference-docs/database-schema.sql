@@ -1,8 +1,11 @@
 -- ============================================================================
 -- Frigoloco Forecasting Tool — PostgreSQL 16 database layer
 -- Spec: 0002-port-forecasting-tool-to-web-app_2026-07-02_0815PM_UTC
+-- Extended per FrigoLoco_Dev_Presentation_V5_Final.pptx (dev briefing v5):
+-- warehouse stock ledger, per-fridge pricing, dual scoring, clients & add-on
+-- services, dispatch changes, attachments — see Section 14.
 --
--- 34 tables + 2 views + 2 functions (next_order_ref, set_updated_at trigger).
+-- 47 tables + 2 views + 2 functions (next_order_ref, set_updated_at trigger).
 --
 -- Conventions
 --   * PKs        : BIGINT GENERATED ALWAYS AS IDENTITY
@@ -26,7 +29,11 @@ BEGIN;
 CREATE TABLE product_categories (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name        TEXT NOT NULL UNIQUE,           -- e.g. '1. Cold Dishes'
-    sort_order  INT  NOT NULL,
+    sort_order  INT  NOT NULL,                  -- legacy Excel order (kept)
+    -- Dev briefing v5: category order on the printed dispatch sheet
+    -- (Hot -> Frozen -> Salads -> Wraps -> Granolas -> Soups -> Desserts ->
+    --  Drinks -> Snacks). Seeded further below.
+    dispatch_display_order INT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -53,8 +60,14 @@ CREATE TABLE products (
     purchase_price   NUMERIC(10,2),             -- vendor "reference" (buy price)
     sales_price      NUMERIC(10,2),             -- vendor sell price (cents → EUR at sync)
     vat_rate         NUMERIC(6,4),              -- e.g. 0.0600
+    -- shelf_life_days (DLC) stays NULLABLE: 218 of 540 products have no DLC at
+    -- migration. APP-LAYER RULE (dev briefing v5): dispatching a product whose
+    -- shelf_life_days IS NULL is BLOCKED until the value is filled in.
     shelf_life_days  INT,                       -- vendor expiryDays
     active           BOOLEAN NOT NULL DEFAULT TRUE,  -- local override
+    -- Dev briefing v5: 20 'Box n°' test catalog lines — excluded from every
+    -- engine (forecast, scoring, allocation, stock position) when TRUE.
+    is_test          BOOLEAN NOT NULL DEFAULT FALSE,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -226,8 +239,16 @@ CREATE TABLE forecast_results (
 -- ============================================================================
 
 CREATE TABLE score_weights (
-    -- User-editable weights of the Final Score formula (Product Rating B4:C6).
+    -- DUAL SCORING (dev briefing v5) — one weight row per scope:
+    --   'global' : 0.55 sold_pct + 0.30 margin + 0.15 review  (all fridges)
+    --   'fridge' : 0.70 fridge sold_pct + 0.30 fridge review  (margin unused)
+    -- The effective product score per fridge combines the two 50/50:
+    --   combined = 0.5 * global_score + 0.5 * fridge_score   (app layer)
+    -- APP-LAYER RULE: new products with <= 250 lifetime sales use the AVERAGE
+    -- global score as a placeholder until they have enough history.
+    -- (Supersedes the single Excel weight set 0.62/0.33/0.05.)
     id                 BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    scope              TEXT NOT NULL UNIQUE CHECK (scope IN ('global', 'fridge')),
     sold_pct_weight    NUMERIC(6,4) NOT NULL,
     margin_pct_weight  NUMERIC(6,4) NOT NULL,
     review_pct_weight  NUMERIC(6,4) NOT NULL,
@@ -262,6 +283,9 @@ CREATE TABLE product_scores (
 -- ============================================================================
 
 CREATE TABLE menu_plans (
+    -- Weeks planned in advance (dev briefing v5): fully supported by keying on
+    -- week_start_date — any number of future weeks can exist as 'draft' or
+    -- 'allocated' plans; no extra status value is required.
     id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     week_start_date  DATE NOT NULL,
     day_name         TEXT NOT NULL CHECK (day_name IN
@@ -353,13 +377,18 @@ CREATE TABLE dispatch_plans (
     iso_week         INT NOT NULL CHECK (iso_week BETWEEN 1 AND 53),
     day_name         TEXT NOT NULL CHECK (day_name IN
         ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')),
+    -- Dev briefing v5: up to 2 dispatches per day — seq disambiguates them.
+    seq              SMALLINT NOT NULL DEFAULT 1 CHECK (seq >= 1),
     status           TEXT NOT NULL DEFAULT 'draft'
                      CHECK (status IN ('draft', 'saved', 'dispatched', 'verified')),
     dispatched_at    TIMESTAMPTZ,
+    -- Dev briefing v5: saving a plan dated in the past requires an explicit
+    -- user confirmation, recorded here.
+    confirmed_past_date BOOLEAN NOT NULL DEFAULT FALSE,
     created_by       BIGINT REFERENCES users (id) ON DELETE SET NULL,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (week_start_date, day_name)
+    UNIQUE (week_start_date, day_name, seq)
 );
 
 CREATE TABLE dispatch_lines (
@@ -494,6 +523,204 @@ CREATE TABLE audit_log (
 );
 
 -- ============================================================================
+-- SECTION 14 · PRESENTATION-DRIVEN EXTENSIONS (dev briefing v5)
+-- Mandated by FrigoLoco_Dev_Presentation_V5_Final.pptx.
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- 14.1 Warehouse stock (non-negotiable per deck)
+-- One row per product; qty >= 0 is a DB CHECK — "negative stock impossible"
+-- is enforced here, never left to UI validation. Every PO receipt adds,
+-- every dispatch save deducts, a cancellation reverses; each change also
+-- writes a stock_movements row.
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE warehouse_stock (
+    product_id  BIGINT PRIMARY KEY REFERENCES products (id) ON DELETE CASCADE,
+    qty         INT NOT NULL DEFAULT 0 CHECK (qty >= 0),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE stock_movements (
+    -- Append-only ledger of every warehouse_stock change.
+    id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    product_id     BIGINT NOT NULL REFERENCES products (id) ON DELETE RESTRICT,
+    movement_type  TEXT NOT NULL CHECK (movement_type IN
+        ('po_receipt', 'dispatch_deduct', 'manual_adjustment', 'cancellation_reversal')),
+    qty_delta      INT NOT NULL,                 -- signed: receipts +, deductions -
+    reason         TEXT,                         -- mandatory for manual adjustments (CHECK below)
+    reference_entity  TEXT,                      -- e.g. 'purchase_order', 'dispatch_plan'
+    reference_id      BIGINT,
+    user_id        BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (movement_type <> 'manual_adjustment' OR reason IS NOT NULL)
+);
+
+-- ----------------------------------------------------------------------------
+-- 14.2 Per-fridge pricing
+-- The vendor exposes per-fridge sell prices; this maps them onto internal
+-- fridge ids. Falls back to products.sales_price when no row exists.
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE fridge_product_prices (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    fridge_id   BIGINT NOT NULL REFERENCES fridges (id) ON DELETE CASCADE,
+    product_id  BIGINT NOT NULL REFERENCES products (id) ON DELETE CASCADE,
+    price       NUMERIC(10,2) NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (fridge_id, product_id)
+);
+
+-- ----------------------------------------------------------------------------
+-- 14.3 Dual scoring — per-fridge score store
+-- (score_weights in Section 6 now carries scope = 'global' | 'fridge'.)
+-- fridge_score = w_sold * fridge_sold_pct + w_review * fridge_review_pct
+-- combined (app layer) = 0.5 * global + 0.5 * fridge.
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE product_fridge_scores (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    product_id    BIGINT NOT NULL REFERENCES products (id) ON DELETE CASCADE,
+    fridge_id     BIGINT NOT NULL REFERENCES fridges (id) ON DELETE CASCADE,
+    window_start  DATE NOT NULL,
+    window_end    DATE NOT NULL,
+    sold_pct      NUMERIC(6,4),                  -- this fridge's sold/added
+    review_pct    NUMERIC(6,4),                  -- this fridge's review score, [-1, 1]
+    fridge_score  NUMERIC(6,4),
+    computed_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (product_id, fridge_id, window_end)
+);
+
+-- ----------------------------------------------------------------------------
+-- 14.4 Clients (the businesses hosting fridges) + service catalog
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE clients (
+    id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name           TEXT NOT NULL UNIQUE,
+    location       TEXT,
+    workers_count  INT,
+    worker_type    TEXT CHECK (worker_type IN ('white_collar', 'blue_collar', 'mixed')),
+    notes          TEXT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Fridges belong to clients. ALTER (not inline) because clients is created
+-- after fridges; a fridge can be temporarily unassigned.
+ALTER TABLE fridges
+    ADD COLUMN client_id BIGINT REFERENCES clients (id) ON DELETE SET NULL;
+
+CREATE TABLE client_interventions (
+    id                 BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    client_id          BIGINT NOT NULL REFERENCES clients (id) ON DELETE CASCADE,
+    fridge_id          BIGINT REFERENCES fridges (id) ON DELETE SET NULL,
+    intervention_type  TEXT NOT NULL CHECK (intervention_type IN
+        ('technical', 'cleaning', 'hardware_replacement', 'other')),
+    description        TEXT,
+    occurred_at        TIMESTAMPTZ NOT NULL,
+    user_id            BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE client_preferences (
+    -- Free-text preference notes (e.g. "no pork", "prefers vegan options").
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    client_id   BIGINT NOT NULL REFERENCES clients (id) ON DELETE CASCADE,
+    preference  TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE service_types (
+    -- Catalog of billable services (seeded below): fridge_rental,
+    -- coffee_machine, fruit_delivery, business_lunch, catering.
+    id    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name  TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE client_service_fees (
+    id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    client_id        BIGINT NOT NULL REFERENCES clients (id) ON DELETE CASCADE,
+    service_type_id  BIGINT NOT NULL REFERENCES service_types (id) ON DELETE RESTRICT,
+    monthly_fee      NUMERIC(10,2) NOT NULL DEFAULT 0,
+    active           BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (client_id, service_type_id)
+);
+
+-- ----------------------------------------------------------------------------
+-- 14.5 Add-on services
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE addon_service_schedules (
+    -- Recurring deliveries, e.g. 5 kg fruit every Monday + Wednesday.
+    id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    client_id         BIGINT NOT NULL REFERENCES clients (id) ON DELETE CASCADE,
+    service_type_id   BIGINT NOT NULL REFERENCES service_types (id) ON DELETE RESTRICT,
+    quantity          NUMERIC(10,2) NOT NULL,
+    unit              TEXT NOT NULL,             -- 'kg', 'pieces', ...
+    recurrence_days   TEXT[] NOT NULL DEFAULT '{}',  -- day names, e.g. {Monday,Wednesday}
+    exclude_holidays  BOOLEAN NOT NULL DEFAULT TRUE,
+    active            BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE business_lunch_orders (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    client_id     BIGINT NOT NULL REFERENCES clients (id) ON DELETE CASCADE,
+    order_date    DATE NOT NULL,
+    po_reference  TEXT,                          -- client's own PO reference
+    description   TEXT,
+    amount        NUMERIC(10,2) NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ----------------------------------------------------------------------------
+-- 14.6 Dispatch withdrawal lines (driver pull list)
+-- Products whose remaining shelf life (DLC) falls below the coverage window
+-- are pulled from the fridge on delivery. resolution is NULL until the driver
+-- reports the outcome.
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE dispatch_withdrawal_lines (
+    id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    dispatch_plan_id  BIGINT NOT NULL REFERENCES dispatch_plans (id) ON DELETE CASCADE,
+    fridge_id         BIGINT NOT NULL REFERENCES fridges (id) ON DELETE RESTRICT,
+    product_id        BIGINT NOT NULL REFERENCES products (id) ON DELETE RESTRICT,
+    qty               INT NOT NULL CHECK (qty >= 0),
+    reason            TEXT NOT NULL CHECK (reason IN ('short_dlc', 'other')),
+    resolution        TEXT CHECK (resolution IN ('loss', 'return_to_warehouse')),  -- NULL until resolved
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ----------------------------------------------------------------------------
+-- 14.7 Azure Blob attachments
+-- e.g. photographed supplier delivery notes attached to PO receipts.
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE attachments (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    entity_type   TEXT NOT NULL,                 -- 'purchase_order', 'dispatch_plan', ...
+    entity_id     BIGINT NOT NULL,
+    blob_path     TEXT NOT NULL,                 -- path inside the Azure Blob container
+    filename      TEXT NOT NULL,
+    content_type  TEXT,
+    uploaded_by   BIGINT REFERENCES users (id) ON DELETE SET NULL,
+    uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Section 14 indexes
+CREATE INDEX idx_stock_movements_product_created ON stock_movements (product_id, created_at);
+CREATE INDEX idx_product_fridge_scores_lookup    ON product_fridge_scores (product_id, fridge_id, computed_at DESC);
+CREATE INDEX idx_attachments_entity              ON attachments (entity_type, entity_id);
+CREATE INDEX idx_dispatch_withdrawal_lines_plan  ON dispatch_withdrawal_lines (dispatch_plan_id);
+CREATE INDEX idx_client_interventions_client     ON client_interventions (client_id, occurred_at);
+
+-- ============================================================================
 -- FUNCTIONS
 -- ============================================================================
 
@@ -548,7 +775,10 @@ BEGIN
         'users', 'forecast_settings', 'category_adjustments', 'score_weights',
         'menu_plans', 'menu_allocations', 'purchase_orders', 'purchase_order_lines',
         'dispatch_plans', 'dispatch_lines', 'fridge_product_targets',
-        'weekly_summaries', 'fee_settings', 'fridge_fees', 'service_additionals'
+        'weekly_summaries', 'fee_settings', 'fridge_fees', 'service_additionals',
+        -- Section 14 (dev briefing v5)
+        'warehouse_stock', 'fridge_product_prices', 'clients',
+        'client_service_fees', 'addon_service_schedules', 'dispatch_withdrawal_lines'
     ]
     LOOP
         EXECUTE format(
@@ -706,9 +936,10 @@ INSERT INTO product_categories (name, sort_order) VALUES
     ('9. Soup',                 9),
     ('10. Frozen Warm Dishes', 10);
 
--- Default Final Score weights (Product Rating sheet B4:C6)
-INSERT INTO score_weights (sold_pct_weight, margin_pct_weight, review_pct_weight)
-VALUES (0.6200, 0.3300, 0.0500);
+-- Dual-scoring weights (dev briefing v5; supersedes Excel's 0.62/0.33/0.05)
+INSERT INTO score_weights (scope, sold_pct_weight, margin_pct_weight, review_pct_weight) VALUES
+    ('global', 0.5500, 0.3000, 0.1500),
+    ('fridge', 0.7000, 0.0000, 0.3000);
 
 -- Default fees (Weekly & Monthly Return configuration)
 INSERT INTO fee_settings (pos_software_pct, rfid_fee, discount_providers)
@@ -718,5 +949,30 @@ INSERT INTO roles (name) VALUES
     ('admin'),
     ('planner'),
     ('viewer');
+
+-- Service catalog (dev briefing v5)
+INSERT INTO service_types (name) VALUES
+    ('fridge_rental'),
+    ('coffee_machine'),
+    ('fruit_delivery'),
+    ('business_lunch'),
+    ('catering');
+
+-- Dispatch-sheet category order (dev briefing v5):
+--   Hot -> Frozen -> Salads -> Wraps -> Granolas -> Soups -> Desserts ->
+--   Drinks -> Snacks
+-- BEST-EFFORT mapping of the deck's 9 buckets onto the 10 legacy categories
+-- ("Hot" covers both Warm Dishes and Warm Dishes Jar; Granolas = Breakfast;
+-- Salads = Cold Dishes). CONFIRM WITH THE BUSINESS before go-live.
+UPDATE product_categories SET dispatch_display_order = 1  WHERE name = '4. Warm Dishes';
+UPDATE product_categories SET dispatch_display_order = 2  WHERE name = '3. Warm Dishes Jar';
+UPDATE product_categories SET dispatch_display_order = 3  WHERE name = '10. Frozen Warm Dishes';
+UPDATE product_categories SET dispatch_display_order = 4  WHERE name = '1. Cold Dishes';
+UPDATE product_categories SET dispatch_display_order = 5  WHERE name = '2. Wraps & Sandwiches';
+UPDATE product_categories SET dispatch_display_order = 6  WHERE name = '8. Breakfast';
+UPDATE product_categories SET dispatch_display_order = 7  WHERE name = '9. Soup';
+UPDATE product_categories SET dispatch_display_order = 8  WHERE name = '5. Desserts';
+UPDATE product_categories SET dispatch_display_order = 9  WHERE name = '7. Drinks';
+UPDATE product_categories SET dispatch_display_order = 10 WHERE name = '6. Snacks';
 
 COMMIT;

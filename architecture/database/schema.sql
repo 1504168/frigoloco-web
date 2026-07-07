@@ -7,10 +7,17 @@
 --               26 Office Scripts, 4 Power Automate flows.
 --
 -- Conventions
---   * Monetary columns .............. NUMERIC(10,2), euros (Husky cents and
---                                     comma-decimal strings are normalized
---                                     at ingestion, before they reach the DB).
---   * VAT rates / score fractions ... NUMERIC(6,4) fractions (0.06 = 6 %).
+--   * Monetary columns .............. BIGINT minor units (cents), matching the
+--                                     Husky API int64 contract. CHANGED 2026-07-03
+--                                     (user decision, migration 0002): was
+--                                     NUMERIC(10,2) euros. Columns keep their
+--                                     names (purchase_price, sales_price, ...);
+--                                     euros exist only at the API presentation
+--                                     edge (the JSON stays a 2-decimal euro
+--                                     string, so the frontend is untouched).
+--   * VAT rates / score fractions ... NUMERIC(6,4) fractions (0.06 = 6 %) — NOT
+--                                     money, unchanged. So are forecast_qty and
+--                                     pos_fee_pct_snapshot.
 --   * Product codes ................. TEXT, never integers — barcodes keep
 --                                     their leading zeros.
 --   * Audit columns ................. created_at/updated_at TIMESTAMPTZ.
@@ -26,44 +33,24 @@
 BEGIN;
 
 -- ============================================================================
--- SECTION 1 — ENUM TYPES
+-- SECTION 1 — STATUS / TYPE DOMAINS (TEXT + NAMED CHECK, not native ENUM)
 -- ============================================================================
-
-DO $$ BEGIN
-    CREATE TYPE user_role AS ENUM ('admin', 'ops_manager', 'warehouse', 'driver', 'finance');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-    CREATE TYPE po_status AS ENUM ('pending', 'received', 'cancelled');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-    CREATE TYPE dispatch_status AS ENUM ('draft', 'saved', 'dispatched', 'reconciled');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-    CREATE TYPE stock_movement_type AS ENUM ('po_receipt', 'dispatch', 'adjustment', 'cancellation_reversal');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-    CREATE TYPE menu_status AS ENUM ('draft', 'active', 'archived');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-    CREATE TYPE restock_action AS ENUM ('added', 'removed');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-    CREATE TYPE tag_status AS ENUM ('valid', 'unreliable', 'unrecognised');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-    CREATE TYPE line_source AS ENUM ('forecast', 'manual');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-    CREATE TYPE alert_type AS ENUM ('expiry', 'low_stock', 'below_target', 'negative_blocked', 'rfid_offline');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+-- Decision (2026-07-03, migration 0003): FrigoLoco does NOT use native PostgreSQL
+-- ENUM types. Each status/type column is plain TEXT guarded by a NAMED CHECK that
+-- lists the allowed values (declared inline on the owning table below). Native
+-- enums are painful to evolve (ALTER TYPE cannot run in every transaction, values
+-- cannot be dropped/reordered) and leak the type name into every constraint/view
+-- dependency; TEXT + CHECK is trivially editable and keeps the value list next to
+-- the column. The allowed value sets:
+--   users.role                 IN ('admin','ops_manager','warehouse','driver','finance')
+--   purchase_orders.status     IN ('pending','received','cancelled')
+--   dispatches.status          IN ('draft','saved','dispatched','reconciled')
+--   stock_movements.movement_type IN ('po_receipt','dispatch','adjustment','cancellation_reversal')
+--   weekly_menus.status        IN ('draft','active','archived')
+--   restock_events.action      IN ('added','removed')
+--   restock_events.tag_status  IN ('valid','unreliable','unrecognised')
+--   dispatch_lines.source      IN ('forecast','manual')
+--   alerts.alert_type          IN ('expiry','low_stock','below_target','negative_blocked','rfid_offline')
 
 -- ============================================================================
 -- SECTION 2 — IDENTITY & MASTER DATA (users, catalogue, clients, fridges)
@@ -74,7 +61,9 @@ CREATE TABLE IF NOT EXISTS users (
     email           TEXT         NOT NULL UNIQUE,
     full_name       TEXT         NOT NULL,
     password_hash   TEXT         NOT NULL,
-    role            user_role    NOT NULL,
+    role            TEXT         NOT NULL
+                                 CONSTRAINT chk_users_role
+                                 CHECK (role IN ('admin', 'ops_manager', 'warehouse', 'driver', 'finance')),
     is_active       BOOLEAN      NOT NULL DEFAULT TRUE,
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
@@ -106,13 +95,17 @@ CREATE TABLE IF NOT EXISTS products (
     name             TEXT           NOT NULL,
     category_id      INTEGER        NOT NULL REFERENCES categories(id),
     supplier_id      INTEGER        REFERENCES suppliers(id),
-    purchase_price   NUMERIC(10,2)  NOT NULL DEFAULT 0 CHECK (purchase_price >= 0),
-    sales_price      NUMERIC(10,2)  NOT NULL DEFAULT 0 CHECK (sales_price >= 0),
+    -- Money in minor units (cents), BIGINT — see header convention.
+    purchase_price   BIGINT         NOT NULL DEFAULT 0 CHECK (purchase_price >= 0),
+    sales_price      BIGINT         NOT NULL DEFAULT 0 CHECK (sales_price >= 0),
     -- VAT as a fraction (R5): 0.06 = 6 %.
     vat_rate         NUMERIC(6,4)   NOT NULL DEFAULT 0 CHECK (vat_rate >= 0 AND vat_rate < 1),
     -- NULLable: 218 products arrive from Husky without expiry days (backfill task).
     shelf_life_days  INTEGER        CHECK (shelf_life_days > 0),
     is_active        BOOLEAN        NOT NULL DEFAULT TRUE,
+    -- Manual status override (D5): NULL follows Husky (is_active), a non-NULL
+    -- value is user-forced and wins over sync. Sync NEVER writes this column.
+    local_status     TEXT           CHECK (local_status IN ('inactive', 'cancelled')),
     husky_synced_at  TIMESTAMPTZ,
     created_at       TIMESTAMPTZ    NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ    NOT NULL DEFAULT now()
@@ -141,6 +134,9 @@ CREATE TABLE IF NOT EXISTS fridges (
     delivery_address       TEXT,
     delivery_instructions  TEXT,
     is_active              BOOLEAN      NOT NULL DEFAULT TRUE,
+    -- Manual status override (D5): NULL follows Husky (is_active), a non-NULL
+    -- value is user-forced and wins over sync. Sync NEVER writes this column.
+    local_status           TEXT         CHECK (local_status IN ('inactive', 'cancelled')),
     created_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at             TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
@@ -149,7 +145,7 @@ CREATE TABLE IF NOT EXISTS fridges (
 CREATE TABLE IF NOT EXISTS fridge_product_prices (
     fridge_id    INTEGER        NOT NULL REFERENCES fridges(id) ON DELETE CASCADE,
     product_id   INTEGER        NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    sales_price  NUMERIC(10,2)  NOT NULL CHECK (sales_price >= 0),
+    sales_price  BIGINT         NOT NULL CHECK (sales_price >= 0),  -- cents
     updated_at   TIMESTAMPTZ    NOT NULL DEFAULT now(),
     PRIMARY KEY (fridge_id, product_id)
 );
@@ -167,7 +163,7 @@ CREATE TABLE IF NOT EXISTS fridge_delivery_config (
 CREATE TABLE IF NOT EXISTS client_fees (
     id              INTEGER        GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     client_id       INTEGER        NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-    yearly_fee      NUMERIC(10,2)  NOT NULL CHECK (yearly_fee >= 0),
+    yearly_fee      BIGINT         NOT NULL CHECK (yearly_fee >= 0),  -- cents
     contract_start  DATE           NOT NULL,
     contract_end    DATE,
     CHECK (contract_end IS NULL OR contract_end >= contract_start)
@@ -178,7 +174,7 @@ CREATE TABLE IF NOT EXISTS client_service_charges (
     client_id    INTEGER        NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     -- First day of the month the one-off charge belongs to.
     month        DATE           NOT NULL CHECK (month = date_trunc('month', month)::date),
-    amount       NUMERIC(10,2)  NOT NULL,
+    amount       BIGINT         NOT NULL,  -- cents
     description  TEXT           NOT NULL,
     created_at   TIMESTAMPTZ    NOT NULL DEFAULT now()
 );
@@ -249,15 +245,17 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
     order_no                 TEXT           NOT NULL UNIQUE
                                             CHECK (order_no ~ '^\d{4}-\d{5}$'),
     supplier_id              INTEGER        NOT NULL REFERENCES suppliers(id),
-    status                   po_status      NOT NULL DEFAULT 'pending',
+    status                   TEXT           NOT NULL DEFAULT 'pending'
+                                            CONSTRAINT chk_purchase_orders_status
+                                            CHECK (status IN ('pending', 'received', 'cancelled')),
     order_date               DATE           NOT NULL DEFAULT CURRENT_DATE,
     expected_delivery_date   DATE           NOT NULL,
     delivery_address         TEXT,
     comment                  TEXT,
     -- R5: totals accumulate ex-VAT, VAT and incl-VAT separately.
-    total_ex_vat             NUMERIC(10,2)  NOT NULL DEFAULT 0,
-    total_vat                NUMERIC(10,2)  NOT NULL DEFAULT 0,
-    total_incl_vat           NUMERIC(10,2)  NOT NULL DEFAULT 0,
+    total_ex_vat             BIGINT         NOT NULL DEFAULT 0,  -- cents
+    total_vat                BIGINT         NOT NULL DEFAULT 0,  -- cents
+    total_incl_vat           BIGINT         NOT NULL DEFAULT 0,  -- cents
     created_by               INTEGER        REFERENCES users(id),
     created_at               TIMESTAMPTZ    NOT NULL DEFAULT now(),
     updated_at               TIMESTAMPTZ    NOT NULL DEFAULT now(),
@@ -273,7 +271,7 @@ CREATE TABLE IF NOT EXISTS purchase_order_lines (
     product_id    INTEGER        NOT NULL REFERENCES products(id),
     qty_ordered   INTEGER        NOT NULL CHECK (qty_ordered > 0),
     qty_received  INTEGER        NOT NULL DEFAULT 0 CHECK (qty_received >= 0),
-    unit_price    NUMERIC(10,2)  NOT NULL CHECK (unit_price >= 0),
+    unit_price    BIGINT         NOT NULL CHECK (unit_price >= 0),  -- cents
     vat_rate      NUMERIC(6,4)   NOT NULL DEFAULT 0 CHECK (vat_rate >= 0 AND vat_rate < 1),
     UNIQUE (po_id, product_id)
 );
@@ -282,16 +280,22 @@ CREATE TABLE IF NOT EXISTS purchase_order_lines (
 -- SECTION 4 — MENUS, FORECASTS, SCORES (R1, R2, R3)
 -- ============================================================================
 
+-- day_name (ISO weekday name) completes the (year, iso_week, day_name) natural
+-- key the Forecast->Menu->Dispatch pipeline keys on (migration 0005, D2). The
+-- '' default keeps the legacy week-level create path unique.
 CREATE TABLE IF NOT EXISTS weekly_menus (
     id              INTEGER      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     year            INTEGER      NOT NULL CHECK (year BETWEEN 2020 AND 2100),
     iso_week        INTEGER      NOT NULL CHECK (iso_week BETWEEN 1 AND 53),
-    status          menu_status  NOT NULL DEFAULT 'draft',
+    day_name        TEXT         NOT NULL DEFAULT '',
+    status          TEXT         NOT NULL DEFAULT 'draft'
+                                 CONSTRAINT chk_weekly_menus_status
+                                 CHECK (status IN ('draft', 'active', 'archived')),
     copied_from_id  INTEGER      REFERENCES weekly_menus(id),
     created_by      INTEGER      REFERENCES users(id),
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    UNIQUE (year, iso_week)
+    CONSTRAINT uq_weekly_menus_year_week_day UNIQUE (year, iso_week, day_name)
 );
 
 CREATE TABLE IF NOT EXISTS menu_products (
@@ -300,15 +304,43 @@ CREATE TABLE IF NOT EXISTS menu_products (
     PRIMARY KEY (menu_id, product_id)
 );
 
+-- menu_lines: the per-fridge x product quantity grid a SAVED workflow menu
+-- carries (migration 0005, D2). menu_products (membership only) is unchanged;
+-- category_id is denormalised for the category-banded grid render (== products.category_id).
+CREATE TABLE IF NOT EXISTS menu_lines (
+    id           BIGINT   GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    menu_id      INTEGER  NOT NULL REFERENCES weekly_menus(id) ON DELETE CASCADE,
+    fridge_id    INTEGER  NOT NULL REFERENCES fridges(id),
+    product_id   INTEGER  NOT NULL REFERENCES products(id),
+    category_id  INTEGER  NOT NULL REFERENCES categories(id),
+    qty          INTEGER  NOT NULL CONSTRAINT chk_menu_lines_qty_nonneg CHECK (qty >= 0),
+    CONSTRAINT uq_menu_lines_menu_fridge_product UNIQUE (menu_id, fridge_id, product_id)
+);
+CREATE INDEX IF NOT EXISTS ix_menu_lines_menu ON menu_lines (menu_id);
+CREATE INDEX IF NOT EXISTS ix_menu_lines_product ON menu_lines (product_id);
+
+-- model: extensible enum-style selector (only 'moving_average_3w' today).
+-- is_saved: false = ephemeral /forecasts/run compute; true = the ONE persisted
+-- forecast per (year, week, day). day_name mirrors delivery_date's ISO weekday
+-- for saved runs. Natural key: delivery_date (bijective with year/week/day).
 CREATE TABLE IF NOT EXISTS forecast_runs (
     id             INTEGER      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     run_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
     delivery_date  DATE         NOT NULL,
+    model          TEXT         NOT NULL DEFAULT 'moving_average_3w'
+                                CONSTRAINT chk_forecast_runs_model
+                                CHECK (model IN ('moving_average_3w')),
+    is_saved       BOOLEAN      NOT NULL DEFAULT false,
+    day_name       TEXT,
     -- Snapshot of the parameters the run used: window weeks, scoring weights,
     -- per-category margins — keeps every run reproducible (R1).
     params         JSONB        NOT NULL DEFAULT '{}'::jsonb,
     created_by     INTEGER      REFERENCES users(id)
 );
+
+-- Exactly one SAVED forecast per delivery_date (== per iso_year/week/day).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_forecast_runs_saved_delivery_date
+    ON forecast_runs (delivery_date) WHERE is_saved;
 
 CREATE TABLE IF NOT EXISTS forecast_results (
     id            INTEGER        GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -357,14 +389,17 @@ CREATE TABLE IF NOT EXISTS dispatches (
     delivery_date  DATE             NOT NULL,
     iso_week       INTEGER          NOT NULL CHECK (iso_week BETWEEN 1 AND 53),
     weekday        SMALLINT         NOT NULL CHECK (weekday BETWEEN 1 AND 7),  -- ISO: 1=Mon
-    status         dispatch_status  NOT NULL DEFAULT 'draft',
+    status         TEXT             NOT NULL DEFAULT 'draft'
+                                    CONSTRAINT chk_dispatches_status
+                                    CHECK (status IN ('draft', 'saved', 'dispatched', 'reconciled')),
     confirmed_by   INTEGER          REFERENCES users(id),
     confirmed_at   TIMESTAMPTZ,
     created_by     INTEGER          REFERENCES users(id),
     created_at     TIMESTAMPTZ      NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ      NOT NULL DEFAULT now(),
     -- Dispatched/reconciled batches must carry their confirmation stamp.
-    CHECK (status NOT IN ('dispatched', 'reconciled') OR confirmed_at IS NOT NULL)
+    CONSTRAINT chk_dispatches_confirmed_stamp
+        CHECK (status NOT IN ('dispatched', 'reconciled') OR confirmed_at IS NOT NULL)
 );
 
 -- R7 batch identity: exactly one dispatch batch per delivery date. Saving a
@@ -372,22 +407,42 @@ CREATE TABLE IF NOT EXISTS dispatches (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_dispatches_delivery_date
     ON dispatches (delivery_date);
 
+-- RANGE-partitioned monthly on delivery_date (migration 0004). delivery_date is
+-- DENORMALISED from the parent dispatches row (immutable, never drifts) so it can
+-- serve as the partition key. The partition key must be part of every unique key,
+-- hence the composite PK (id, delivery_date) and the delivery_date-extended
+-- natural key — mirrors the sales_events pattern. Partitions are created below in
+-- SECTION 7 alongside the event-table partitions.
 CREATE TABLE IF NOT EXISTS dispatch_lines (
-    id                   INTEGER        GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id                   INTEGER        GENERATED ALWAYS AS IDENTITY,
     dispatch_id          INTEGER        NOT NULL REFERENCES dispatches(id) ON DELETE CASCADE,
     fridge_id            INTEGER        NOT NULL REFERENCES fridges(id),
     product_id           INTEGER        NOT NULL REFERENCES products(id),
-    qty                  INTEGER        NOT NULL CHECK (qty > 0),
-    source               line_source    NOT NULL DEFAULT 'manual',
+    delivery_date        DATE           NOT NULL,   -- partition key (== dispatches.delivery_date)
+    qty                  INTEGER        NOT NULL
+                                        CONSTRAINT chk_dispatch_lines_qty_positive CHECK (qty > 0),
+    source               TEXT           NOT NULL DEFAULT 'manual'
+                                        CONSTRAINT chk_dispatch_lines_source
+                                        CHECK (source IN ('forecast', 'manual')),
     -- Price snapshots taken at confirm time — P&L must not drift when the
     -- catalogue price changes later.
-    unit_purchase_price  NUMERIC(10,2),
-    unit_sales_price     NUMERIC(10,2),
-    vat_rate             NUMERIC(6,4),
+    unit_purchase_price  BIGINT,        -- cents
+    unit_sales_price     BIGINT,        -- cents
+    vat_rate             NUMERIC(6,4)
+                                        CONSTRAINT chk_dispatch_lines_vat_rate
+                                        CHECK (vat_rate IS NULL OR (vat_rate >= 0 AND vat_rate < 1)),
+    CONSTRAINT dispatch_lines_pkey PRIMARY KEY (id, delivery_date),
     -- Doubles as the (dispatch_id) access-path index: dispatch_id is the
     -- leading column, so no separate index on (dispatch_id) is needed.
-    UNIQUE (dispatch_id, fridge_id, product_id)
-);
+    CONSTRAINT uq_dispatch_lines_dispatch_fridge_product
+        UNIQUE (dispatch_id, fridge_id, product_id, delivery_date)
+) PARTITION BY RANGE (delivery_date);
+
+-- delivery_date is the partition key and MUST be supplied by the caller (it is
+-- denormalised from the parent dispatch). A trigger cannot backfill it —
+-- PostgreSQL rejects a NULL partition key during tuple routing, before any
+-- BEFORE-INSERT trigger on the parent could run. The dispatch service sets
+-- delivery_date = dispatch.delivery_date on every insert.
 
 -- ============================================================================
 -- SECTION 6 — STOCK LEDGER (append-only, non-negative — slide 24, R6)
@@ -398,9 +453,14 @@ CREATE TABLE IF NOT EXISTS stock_movements (
     product_id        INTEGER              NOT NULL REFERENCES products(id),
     -- Signed quantity. Sign convention enforced per movement type below.
     qty               INTEGER              NOT NULL CHECK (qty <> 0),
-    movement_type     stock_movement_type  NOT NULL,
+    movement_type     TEXT                 NOT NULL
+                                           CONSTRAINT chk_stock_movements_movement_type
+                                           CHECK (movement_type IN ('po_receipt', 'dispatch', 'adjustment', 'cancellation_reversal')),
     po_line_id        INTEGER              REFERENCES purchase_order_lines(id),
-    dispatch_line_id  INTEGER              REFERENCES dispatch_lines(id),
+    -- No FK: dispatch_lines is RANGE-partitioned (composite PK id+delivery_date),
+    -- so a FK on id alone is impossible (migration 0004). The link is enforced by
+    -- the application; the id value is still stored for joins.
+    dispatch_line_id  INTEGER,
     reason            TEXT,
     created_by        INTEGER              REFERENCES users(id),
     created_at        TIMESTAMPTZ          NOT NULL DEFAULT now(),
@@ -489,8 +549,9 @@ CREATE TRIGGER trg_stock_movements_append_only
 -- SECTION 7 — RAW RFID EVENT STORE (partitioned; the 20–30M-row layer)
 -- ============================================================================
 
--- One row per unit sold, from Husky GET /purchases. Prices normalized to
--- euros at ingestion. Refunded sales stay in (is_refunded = TRUE) because the
+-- One row per unit sold, from Husky GET /purchases. Prices stored RAW as the
+-- Husky int64 minor units (cents) — no conversion at ingestion. Refunded sales
+-- stay in (is_refunded = TRUE) because the
 -- Excel logic counts them as sold; P&L nets them out (R10).
 CREATE TABLE IF NOT EXISTS sales_events (
     id                BIGINT         GENERATED ALWAYS AS IDENTITY,
@@ -498,9 +559,9 @@ CREATE TABLE IF NOT EXISTS sales_events (
     fridge_id         INTEGER        NOT NULL REFERENCES fridges(id),
     product_id        INTEGER        NOT NULL REFERENCES products(id),
     sold_at           TIMESTAMPTZ    NOT NULL,
-    unit_price        NUMERIC(10,2)  NOT NULL,
+    unit_price        BIGINT         NOT NULL,           -- cents
     is_refunded       BOOLEAN        NOT NULL DEFAULT FALSE,
-    discount_amount   NUMERIC(10,2)  NOT NULL DEFAULT 0,
+    discount_amount   BIGINT         NOT NULL DEFAULT 0,  -- cents
     -- Distinguishes FrigoLoco-provided discounts from customer credit (R10).
     discount_provider TEXT,
     synced_at         TIMESTAMPTZ    NOT NULL DEFAULT now(),
@@ -518,8 +579,12 @@ CREATE TABLE IF NOT EXISTS restock_events (
     husky_ref    TEXT            NOT NULL,
     fridge_id    INTEGER         NOT NULL REFERENCES fridges(id),
     product_id   INTEGER         NOT NULL REFERENCES products(id),
-    action       restock_action  NOT NULL,
-    tag_status   tag_status      NOT NULL DEFAULT 'valid',
+    action       TEXT            NOT NULL
+                                 CONSTRAINT chk_restock_events_action
+                                 CHECK (action IN ('added', 'removed')),
+    tag_status   TEXT            NOT NULL DEFAULT 'valid'
+                                 CONSTRAINT chk_restock_events_tag_status
+                                 CHECK (tag_status IN ('valid', 'unreliable', 'unrecognised')),
     occurred_at  TIMESTAMPTZ     NOT NULL,
     synced_at    TIMESTAMPTZ     NOT NULL DEFAULT now(),
     PRIMARY KEY (id, occurred_at),
@@ -551,19 +616,43 @@ BEGIN
 END;
 $$;
 
+-- dispatch_lines is RANGE-partitioned monthly on delivery_date (migration 0004).
+-- Its partition maintenance mirrors the event tables' — same monthly cadence.
+CREATE OR REPLACE FUNCTION create_dispatch_line_partition_for_month(month_start DATE)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+-- Creates the monthly dispatch_lines partition covering month_start (idempotent).
+DECLARE
+    part_from  DATE := date_trunc('month', month_start)::DATE;
+    part_to    DATE := (date_trunc('month', month_start) + INTERVAL '1 month')::DATE;
+    suffix     TEXT := to_char(part_from, 'YYYY_MM');
+BEGIN
+    EXECUTE format(
+        'CREATE TABLE IF NOT EXISTS dispatch_lines_%s PARTITION OF dispatch_lines
+         FOR VALUES FROM (%L) TO (%L)',
+        suffix, part_from, part_to);
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION create_next_month_event_partitions()
 RETURNS VOID
 LANGUAGE plpgsql
 AS $$
 -- Scheduler hook: call monthly (e.g. from the APScheduler nightly job) to make
--- sure the current AND next month's partitions always exist ahead of inserts.
+-- sure the current AND next month's partitions always exist ahead of inserts —
+-- for sales_events, restock_events AND dispatch_lines.
+DECLARE
+    next_month DATE := (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')::DATE;
 BEGIN
     PERFORM create_event_partitions_for_month(CURRENT_DATE);
-    PERFORM create_event_partitions_for_month((date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')::DATE);
+    PERFORM create_event_partitions_for_month(next_month);
+    PERFORM create_dispatch_line_partition_for_month(CURRENT_DATE);
+    PERFORM create_dispatch_line_partition_for_month(next_month);
 END;
 $$;
 
--- Pre-create partitions from 2025-01 (covers the 12+ month Husky backfill)
+-- Pre-create event partitions from 2025-01 (covers the 12+ month Husky backfill)
 -- through 2027-01.
 DO $$
 DECLARE
@@ -576,6 +665,18 @@ BEGIN
 END;
 $$;
 
+-- Pre-create dispatch_lines partitions 2025-01 .. 2027-12 (migration 0004).
+DO $$
+DECLARE
+    m DATE := DATE '2025-01-01';
+BEGIN
+    WHILE m <= DATE '2027-12-01' LOOP
+        PERFORM create_dispatch_line_partition_for_month(m);
+        m := (m + INTERVAL '1 month')::DATE;
+    END LOOP;
+END;
+$$;
+
 -- Customer ratings from Husky GET /productreview. rating == 1 is positive,
 -- anything else negative (R2 review score).
 CREATE TABLE IF NOT EXISTS product_reviews (
@@ -583,7 +684,10 @@ CREATE TABLE IF NOT EXISTS product_reviews (
     husky_ref    TEXT         UNIQUE,
     product_id   INTEGER      NOT NULL REFERENCES products(id),
     fridge_id    INTEGER      REFERENCES fridges(id),
-    rating       SMALLINT     NOT NULL,
+    -- Thumbs model: 1 = positive, -1/0 = negative (scoring treats <> 1 as
+    -- negative). Live data is {-1, 1}; the ops test seeds 0 as a negative.
+    rating       SMALLINT     NOT NULL
+                              CONSTRAINT chk_product_reviews_rating CHECK (rating IN (-1, 0, 1)),
     reviewed_at  TIMESTAMPTZ  NOT NULL,
     synced_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
@@ -610,7 +714,7 @@ CREATE TABLE IF NOT EXISTS restock_verification_lines (
     unreliable_qty   INTEGER        NOT NULL DEFAULT 0 CHECK (unreliable_qty >= 0),
     diff_qty         INTEGER        NOT NULL DEFAULT 0,
     -- Valued at buy price (R9).
-    diff_value       NUMERIC(10,2)  NOT NULL DEFAULT 0,
+    diff_value       BIGINT         NOT NULL DEFAULT 0,  -- cents
     UNIQUE (verification_id, fridge_id, product_id)
 );
 
@@ -623,17 +727,19 @@ CREATE TABLE IF NOT EXISTS weekly_financials (
     year                  INTEGER        NOT NULL CHECK (year BETWEEN 2020 AND 2100),
     iso_week              INTEGER        NOT NULL CHECK (iso_week BETWEEN 1 AND 53),
     -- Manual weekly inputs (R10) — everything else is computed from events.
-    catering_turnover     NUMERIC(10,2)  NOT NULL DEFAULT 0,
-    catering_food_cost    NUMERIC(10,2)  NOT NULL DEFAULT 0,
-    tgtg_turnover         NUMERIC(10,2)  NOT NULL DEFAULT 0,
-    logistics_cost        NUMERIC(10,2)  NOT NULL DEFAULT 0,
+    catering_turnover     BIGINT         NOT NULL DEFAULT 0,  -- cents
+    catering_food_cost    BIGINT         NOT NULL DEFAULT 0,  -- cents
+    tgtg_turnover         BIGINT         NOT NULL DEFAULT 0,  -- cents
+    logistics_cost        BIGINT         NOT NULL DEFAULT 0,  -- cents
     drops_count           INTEGER        NOT NULL DEFAULT 0 CHECK (drops_count >= 0),
     unsold_items          INTEGER        NOT NULL DEFAULT 0 CHECK (unsold_items >= 0),
+    -- Manual per-week fridge count (Weekly View input). NULL = not entered.
+    fridge_count          INTEGER        CHECK (fridge_count IS NULL OR fridge_count >= 0),
     remarks               TEXT,
     -- Fee snapshots: the rates in force when the week was closed, so later
     -- settings changes never rewrite history.
-    pos_fee_pct_snapshot  NUMERIC(6,4)   NOT NULL DEFAULT 0.09,
-    rfid_fee_snapshot     NUMERIC(10,2)  NOT NULL DEFAULT 0.10,
+    pos_fee_pct_snapshot  NUMERIC(6,4)   NOT NULL DEFAULT 0.09,   -- fraction, NOT money
+    rfid_fee_snapshot     BIGINT         NOT NULL DEFAULT 10,     -- cents (EUR 0.10)
     updated_by            INTEGER        REFERENCES users(id),
     created_at            TIMESTAMPTZ    NOT NULL DEFAULT now(),
     updated_at            TIMESTAMPTZ    NOT NULL DEFAULT now(),
@@ -650,7 +756,9 @@ CREATE TABLE IF NOT EXISTS settings (
 
 CREATE TABLE IF NOT EXISTS alerts (
     id               BIGINT       GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    alert_type       alert_type   NOT NULL,
+    alert_type       TEXT         NOT NULL
+                                  CONSTRAINT chk_alerts_alert_type
+                                  CHECK (alert_type IN ('expiry', 'low_stock', 'below_target', 'negative_blocked', 'rfid_offline')),
     payload          JSONB        NOT NULL DEFAULT '{}'::jsonb,
     status           TEXT         NOT NULL DEFAULT 'open'
                                   CHECK (status IN ('open', 'acknowledged', 'resolved')),
@@ -778,7 +886,7 @@ COMMENT ON TABLE forecast_results           IS 'Replaces the Forecast V2 sheet o
 COMMENT ON TABLE product_scores             IS 'Replaces the Product Rating yearly scorecard sheet (R2), recomputed nightly.';
 COMMENT ON TABLE fridge_product_scores      IS 'New (briefing slide 18): per-fridge product scores for the target dual 50/50 scoring model (R2 target model).';
 COMMENT ON TABLE dispatches                 IS 'Replaces the Global Dispatch History batch key (ISO week, weekday, week start) + its summary table (R7). One batch per delivery date.';
-COMMENT ON TABLE dispatch_lines             IS 'Replaces GlobalDispatchHistoryTable rows (20,692 and growing) — with price snapshots and no full-sheet backup copy on every save.';
+COMMENT ON TABLE dispatch_lines             IS 'Replaces GlobalDispatchHistoryTable rows (20,692 and growing) — with price snapshots and no full-sheet backup copy on every save. RANGE-partitioned monthly on delivery_date (denormalised from dispatches; migration 0004).';
 COMMENT ON TABLE stock_movements            IS 'Replaces the StockAndOrderedTable recompute with an append-only signed ledger: balance = SUM(qty), non-negativity enforced by trigger (slide 24), cancellations are explicit reversals (fixes the Excel cancel bug).';
 COMMENT ON TABLE sales_events               IS 'Replaces the Husky /purchases pulls the scripts re-fetched on demand — the 20-30M-row store Excel could never hold. Monthly partitions on sold_at.';
 COMMENT ON TABLE restock_events             IS 'Replaces the Husky /restock pulls: ADDED/REMOVED tag events feeding reconciliation (R9) and scoring denominators. Monthly partitions on occurred_at.';
@@ -796,8 +904,10 @@ COMMENT ON FUNCTION next_order_no() IS
     'Concurrency-safe YYYY-NNNNN order number from a row-locked per-year counter (R4).';
 COMMENT ON FUNCTION create_event_partitions_for_month(DATE) IS
     'Creates the monthly sales_events/restock_events partitions covering the given month (idempotent).';
+COMMENT ON FUNCTION create_dispatch_line_partition_for_month(DATE) IS
+    'Creates the monthly dispatch_lines partition covering the given month (idempotent).';
 COMMENT ON FUNCTION create_next_month_event_partitions() IS
-    'Scheduler hook: ensures current and next month event partitions exist.';
+    'Scheduler hook: ensures current and next month partitions exist for sales_events, restock_events and dispatch_lines.';
 
 -- ============================================================================
 -- SECTION 13 — SEED DATA
@@ -835,11 +945,15 @@ INSERT INTO settings (key, value, description) VALUES
      '0.09',
      'R10 POS/software fee: 9% of sales (Return workbook Settings sheet).'),
     ('rfid_fee_eur',
-     '0.10',
-     'R10 RFID fee: EUR 0.10 per item sold (Return workbook Settings sheet).'),
+     '10',
+     'R10 RFID fee in CENTS (minor units): 10 = EUR 0.10 per item sold. Value is
+      cents as of migration 0002 (2026-07-03); the key name is kept for continuity.'),
     ('expiry_alert_days',
      '2',
-     'Alert when product expiry is within N days (configurable, default 2).')
+     'Alert when product expiry is within N days (configurable, default 2).'),
+    ('menu_category_columns',
+     '6',
+     'Minimum product column slots per category in Menu/Dispatch grids')
 ON CONFLICT (key) DO NOTHING;
 
 COMMIT;

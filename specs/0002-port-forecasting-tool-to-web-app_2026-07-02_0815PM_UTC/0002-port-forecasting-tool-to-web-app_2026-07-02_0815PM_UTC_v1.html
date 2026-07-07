@@ -945,7 +945,7 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
       <div class="spec-kicker">SPEC 0002 &nbsp;·&nbsp; 0002-port-forecasting-tool-to-web-app_2026-07-02_0815PM_UTC_v1.html</div>
       <h1>Port Smart Fridge Forecasting Tool to Web App (DB + Backend + Frontend)</h1>
       <div class="spec-meta">
-        <span class="spec-status" data-status="draft" id="spec-status-badge">Draft</span>
+        <span class="spec-status" data-status="reviewed" id="spec-status-badge">AI Review(1)</span>
         <span>Generated <b>2026-07-02 20:28 UTC</b></span>
       </div>
     </header>
@@ -958,17 +958,19 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
     <thead><tr><th>Date (UTC)</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td>2026-07-02 08:15 PM UTC</td><td>Initial creation</td></tr>
+      <tr><td>2026-07-02 09:30 PM UTC</td><td>Spec review: auto-fixed 6 items (stale spec-0001 references → spec 0004, OpenAPI path, workbook/flow counts, order_ref_counters in table inventory, client≡fridge terminology), added 5 open questions (Q10–Q14)</td></tr>
+      <tr><td>2026-07-02 10:00 PM UTC</td><td>Incorporated product guidance from FrigoLoco_Dev_Presentation_V5_Final.pptx: stack/hosting confirmed (Railway, Azure Blob), dual global×fridge scoring, day-of-week forecasting with residual-stock/DLC deduction + withdrawal lists, warehouse-stock rules (DB CHECK ≥ 0, movement ledger), 2 new screens (Clients, Add-on Services), dispatch changes, 5 deck roles, expanded alerts; Q1/Q7 answered from the deck; Q15–Q16 added; DDL extended to 47 tables</td></tr>
     </tbody>
   </table>
 </section>
 
 <section class="spec-section spec-summary" id="summary">
   <h2>Summary</h2>
-  <p class="summary-lead">Port the entire Frigoloco planning operation — currently 4 Excel workbooks, 26 Office Scripts, and 6 Power Automate flows orbiting "Smart Fridge Forecasting Tool V5.xlsx" — into a proper three-tier web application: a PostgreSQL database as the single source of truth, a FastAPI backend that owns the forecasting/scoring/dispatch/ordering engines and syncs the Intelligent Fridges vendor API, and a React single-page app whose 11 screens replace every sheet and button in the workbook. The front-end design is the primary deliverable of this spec: every screen is specified with layout, components, interactions, and the API calls behind it.</p>
+  <p class="summary-lead">Port the entire Frigoloco planning operation — currently 2 operational Excel workbooks plus 3 template workbooks, 26 Office Scripts, and 6 Power Automate flows orbiting "Smart Fridge Forecasting Tool V5.xlsx" — into a proper three-tier web application: a PostgreSQL database as the single source of truth, a FastAPI backend that owns the forecasting/scoring/dispatch/ordering engines and syncs the Intelligent Fridges vendor API, and a React single-page app whose 13 screens replace every sheet and button in the workbook. The front-end design is the primary deliverable of this spec: every screen is specified with layout, components, interactions, and the API calls behind it. The business's own dev briefing (<code>FrigoLoco_Dev_Presentation_V5_Final.pptx</code>, June 2026) is folded in as authoritative product guidance: it confirms the stack (React · FastAPI · PostgreSQL · Railway · Azure Blob), upgrades scoring to a dual global×fridge model, adds residual-stock/DLC-aware forecasting with driver withdrawal lists, mandates warehouse-stock integrity at the database level, and adds Client Management and Add-on Services modules.</p>
   <div class="summary-facts">
     <div class="summary-fact"><span class="summary-fact-label">Scope</span><span class="summary-fact-value">Full system port · greenfield app</span></div>
-    <div class="summary-fact"><span class="summary-fact-label">Stack</span><span class="summary-fact-value">React + FastAPI + PostgreSQL</span></div>
-    <div class="summary-fact"><span class="summary-fact-label">Screens</span><span class="summary-fact-value">11 screens · ~34 DB tables</span></div>
+    <div class="summary-fact"><span class="summary-fact-label">Stack</span><span class="summary-fact-value">React + FastAPI + PostgreSQL · Railway · Azure Blob</span></div>
+    <div class="summary-fact"><span class="summary-fact-label">Screens</span><span class="summary-fact-value">13 screens · 47 DB tables</span></div>
     <div class="summary-fact"><span class="summary-fact-label">Effort</span><span class="summary-fact-value">6 phases (~8–10 weeks)</span></div>
     <div class="summary-fact"><span class="summary-fact-label">Risk</span><span class="summary-fact-value"><span class="spec-tag spec-tag--modified">Medium-High</span> — mitigated by parallel run</span></div>
   </div>
@@ -979,7 +981,7 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
   <p>The forecasting tool works, but it has outgrown Excel. The whole company's weekly cycle — forecast demand, compose menus, dispatch fridges, order from suppliers, verify restocks, report margins — runs through one workbook that only one person can safely touch at a time. Concrete pain points found during research:</p>
   <ul>
     <li><strong>Fragility by design.</strong> All 26 scripts address data by hardcoded cell coordinates and column indexes (e.g. <code>row[15]</code> = "Is Dispatched?", <code>row[16]</code> = "Week Start Date" in <code>GlobalDispatchHistoryTable</code>). Inserting one column silently breaks five scripts at once.</li>
-    <li><strong>Security exposure.</strong> The vendor-API credentials (<code>mathieu@frigoloco.be</code> / password) are hardcoded in plaintext inside every API-calling script, and all 6 Power Automate flows are invoked via long-lived SAS-signed URLs embedded in script source.</li>
+    <li><strong>Security exposure.</strong> The vendor-API credentials (<code>mathieu@frigoloco.be</code> / password) are hardcoded in plaintext inside every API-calling script, and the script-invoked Power Automate flows are called via long-lived SAS-signed URLs embedded in script source (4 distinct flow endpoints across 5 scripts; see open question Q13 for the full flow inventory).</li>
     <li><strong>Known latent bugs.</strong> Two different week-numbering conventions coexist (ISO-8601 "Jan-4" weeks in the dispatch roll-up vs "first Monday of the year" in the weekly ETL), which can misalign dispatch cost against sales revenue for the same week. A probable off-by-one exists between the weekly-summary writer (writes Catering Food Cost at column 13) and reader (reads column 12).</li>
     <li><strong>No concurrency, no audit.</strong> Sheets like Global Dispatch History (20,692 rows) are deleted-and-rewritten wholesale on every save; the only safety net is a manual full-sheet backup copy. There is no record of who changed what.</li>
     <li><strong>Duplication.</strong> The <code>updateStockAndOrdered</code> routine is copy-pasted verbatim into three scripts; category lists are re-declared per script and have already drifted (one script includes "10. Frozen Warm Dishes", its sibling does not).</li>
@@ -1000,7 +1002,7 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
       <tr><td>3 template workbooks</td><td><code>POTemplate</code> (supplier purchase order), <code>DispatchTemplate</code> (~42 per-fridge delivery sheets), <code>RestockVerificationTemplate</code> (dispatch-vs-restock diff report).</td></tr>
       <tr><td>26 Office Scripts (<code>.osts</code>)</td><td>All business logic: forecasting, scoring, menu allocation, PO lifecycle, dispatch lifecycle, restock verification, weekly ETL, reporting.</td></tr>
       <tr><td>6 Power Automate flows</td><td>Glue + side effects: receive JSON from scripts, open template workbooks, run "From PA" scripts inside them, save the produced files, send emails (supplier POs, dispatch notes, restock alerts, below-target alerts).</td></tr>
-      <tr><td>Intelligent Fridges API</td><td>The smart-fridge vendor platform (<code>api.intelligentfridges.com/api/v1/frigoloco/…</code>, HTTP Basic auth). Source of truth for the product catalog, fridges/facilities, sales events, restock RFID events, live stock, and customer reviews. Full OpenAPI spec already saved at <code>specs/0001-…/reference-docs/intelligentfridges_openapi_v1.json</code>.</td></tr>
+      <tr><td>Intelligent Fridges API</td><td>The smart-fridge vendor platform (<code>api.intelligentfridges.com/api/v1/frigoloco/…</code>, HTTP Basic auth). Source of truth for the product catalog, fridges/facilities, sales events, restock RFID events, live stock, and customer reviews. Full OpenAPI spec already saved at <code>specs/0004-database-setup-and-husky-historical-backfill_2026-07-02_0810PM_UTC/reference-docs/intelligentfridges_openapi_v1.json</code>.</td></tr>
     </tbody>
   </table>
 
@@ -1071,7 +1073,7 @@ flowchart TD
         <thead><tr><th>Formula</th><th>Definition (as implemented today)</th><th>Source script</th></tr></thead>
         <tbody>
           <tr><td>Category forecast per client</td><td><code>(totalSoldForCategory / (validDayCount + noInfoDayCount)) × daysToFill × (1 + pctAdjust)</code> over a 3-week lookback aligned to a configured start weekday; a day is a "holiday" (excluded from valid days) when the fridge's total sold ≤ the client's minimum quantity</td><td>Update Forecast</td></tr>
-          <tr><td>Product Final Score</td><td><code>0.62 × soldPct + 0.33 × marginPct + 0.05 × reviewPct</code> where <code>soldPct = sold/added</code> (365-day window), <code>marginPct = (sellExVat − buy) / sellExVat</code>, <code>reviewPct = (pos − neg) / (pos + neg)</code>; weights are user-editable</td><td>Update Rating</td></tr>
+          <tr><td>Product Final Score (legacy)</td><td><code>0.62 × soldPct + 0.33 × marginPct + 0.05 × reviewPct</code> where <code>soldPct = sold/added</code> (365-day window), <code>marginPct = (sellExVat − buy) / sellExVat</code>, <code>reviewPct = (pos − neg) / (pos + neg)</code>; weights are user-editable. <em>Kept for parity tests only — the target design uses the deck's dual global×fridge model (see the dev-briefing guidance above).</em></td><td>Update Rating</td></tr>
           <tr><td>Menu allocation</td><td>Per client and category: <code>allocation(product) = round(forecast × score / ΣscoresInCategory)</code>, capped at remaining forecast; if remaining &gt; 0.5 and allocation &lt; 0.5 bump to 0.51 (guarantees ≥1 unit for real demand); leftover remainder goes to the highest-scored product; score 0 → 0 units; categories 6 (Snacks) and 7 (Drinks) excluded</td><td>Update Menu</td></tr>
           <tr><td>Snacks/Drinks replenishment</td><td><code>difference = target − currentLiveStock</code> per fridge × product, from the Target Map and <code>GET /stock/current</code></td><td>Refresh Drinks And Snacks</td></tr>
           <tr><td>Stock position</td><td><code>currentlyInStockAndOrdered = pendingToReceive + received − dispatched</code>, where pending = Σ ordered qty of <em>Pending</em> orders, received = Σ received qty of <em>Received</em> orders (Cancelled excluded), dispatched = Σ dispatch-ledger quantities with <code>Is Dispatched? = true</code></td><td>Refresh Stock And Ordered</td></tr>
@@ -1081,6 +1083,25 @@ flowchart TD
       </table>
     </div>
   </details>
+
+  <h3>Product guidance from the dev briefing (v5, June 2026)</h3>
+  <p><code>FrigoLoco_Dev_Presentation_V5_Final.pptx</code> is the business's own dev briefing for this port ("Cloud ERP Platform — from spreadsheets to a scalable cloud system", 40+ fridges today → 200 target, 540 products). Its decisions are treated as authoritative product guidance throughout this spec. The vendor platform is referred to as <strong>"Husky"</strong> in the deck — Husky ≡ the Intelligent Fridges API. Key decisions:</p>
+  <table>
+    <thead><tr><th>Deck decision</th><th>Effect on this spec</th></tr></thead>
+    <tbody>
+      <tr><td>Stack confirmed: React (TypeScript) · FastAPI (Python) · PostgreSQL · <strong>Railway.com</strong> hosting · <strong>Azure Blob</strong> file storage</td><td>Q1 and Q7 answered; attachments (e.g. scanned supplier delivery notes) stored on Azure Blob via an <code>attachments</code> table</td></tr>
+      <tr><td><strong>Dual product scoring</strong>: global score (55% sold-through · 30% margin · 15% review) × per-fridge score (70% fridge sold-through · 30% fridge review), combined 50/50; margin deliberately excluded per-fridge; new products ≤ 250 lifetime sales use the average global score as placeholder</td><td>Replaces the single Excel model (0.62/0.33/0.05) in the target design; legacy weights kept only for Excel-parity tests</td></tr>
+      <tr><td><strong>Forecast model</strong>: 6–12 months of sales per fridge × category × day-of-week (Mondays averaged with Mondays); automatic holiday exclusion; sell-through color codes (≥90% amber, &lt;70% red); future weather adjustment (Phase 5)</td><td>Forecast engine gains a day-of-week mode as the default; the 3-week legacy mode retained for parity tests</td></tr>
+      <tr><td><strong>Residual fridge stock logic</strong>: live RFID stock + remaining shelf life (DLC) per product; DLC ≥ coverage window → stays, deducted from forecast; DLC &lt; coverage → driver <em>withdrawal list</em> on the dispatch sheet (mark loss / return to warehouse); <code>net_to_deliver = max(0, forecast − deductible residual)</code></td><td>New engine step + withdrawal-list section on the Dispatch Board and dispatch-note PDFs; <code>dispatch_withdrawal_lines</code> table</td></tr>
+      <tr><td><strong>Warehouse stock integrity (non-negotiable)</strong>: negative stock impossible via DB <code>CHECK (qty &gt;= 0)</code>; PO receipt adds, dispatch save deducts, cancellation explicitly reverses; manual adjustments require a reason; full movement audit trail (user + timestamp)</td><td><code>warehouse_stock</code> + <code>stock_movements</code> tables; stock-aware quantity assignment in the Menu/Dispatch grids (red border when exceeding warehouse stock)</td></tr>
+      <tr><td><strong>New modules</strong>: Client Management (client info incl. workers count/type, intervention log, preferences like "no fish", per-service monthly fees) and Add-on Services (coffee / fruits / business lunch; recurring items auto-added to dispatch, e.g. 5 kg fruit every Mon+Wed excluding holidays)</td><td>2 new screens (13 total); client/service tables in the DDL; <code>addon_service_dispatch</code> cron job</td></tr>
+      <tr><td><strong>Dispatch details</strong>: categories printed in fixed order (Hot → Frozen → Salads → Wraps → Granolas → Soups → Desserts → Drinks → Snacks); products addable outside the weekly menu; past-date saves require explicit confirmation; up to 2 dispatches per day; clone a delivery day; printed reminders on every sheet</td><td>Dispatch Board + document service updates; <code>dispatch_plans.seq</code>; category <code>dispatch_display_order</code></td></tr>
+      <tr><td><strong>Alerts</strong>: expiry within 2 days (configurable), per-product low-stock thresholds, negative-stock block, RFID-offline (no sales reported in N hours)</td><td>4 additional cron jobs beside the below-target alert</td></tr>
+      <tr><td><strong>Roles</strong>: Ops manager (full) · Warehouse staff · Driver (mobile, read-only dispatch) · Finance (read-only reports) · Admin</td><td>Replaces the earlier admin/planner/viewer triple</td></tr>
+      <tr><td><strong>Migration facts</strong>: 540 products / 40 fridges / 30 weeks of financial history; 218 products missing DLC (block dispatch until filled); ~20 "Box n°" test products excluded; per-fridge prices need mapping to internal fridge ids; imports must preserve source ordering</td><td>Import-script requirements in Phase 6; <code>products.is_test</code>; <code>fridge_product_prices</code></td></tr>
+      <tr><td><strong>Out of v1 / later phases</strong>: logistics &amp; routing (optimised routes, driver app, SMS, pick lists), weather adjustment, Peppol invoice 3-way reconciliation, auto-forecast + mobile (deck Phase 5 "Automation")</td><td>Captured as open question Q15 for scope confirmation</td></tr>
+    </tbody>
+  </table>
 
   <div class="spec-callout spec-callout--warn"><span class="spec-callout-title">Known defects to fix during the port (not replicate)</span>
     <ul>
@@ -1100,7 +1121,7 @@ flowchart TD
   <pre class="mermaid">
 flowchart LR
     subgraph SPA["React SPA (browser)"]
-        UI["11 screens<br/>Dashboard / Forecast / Menu / Dispatch Board / Orders / Stock / Verification / Ratings / Targets / Reports / Admin"]
+        UI["13 screens<br/>Dashboard / Forecast / Menu / Add-on Services / Dispatch Board / Orders / Stock / Verification / Clients / Ratings / Targets / Reports / Admin"]
     end
     subgraph BE["FastAPI backend"]
         REST["REST API + auth"]
@@ -1142,7 +1163,7 @@ flowchart LR
   </table>
 
   <h3>Database design</h3>
-  <p>PostgreSQL 16. Vendor-synced tables are append-only event stores (sales, restocks, reviews) plus upserted masters (products, fridges); app-owned tables hold plans, orders, dispatches, and configuration. Stock position is a view, never a stored table — it cannot drift the way the Excel table could.</p>
+  <p>PostgreSQL 16. Vendor-synced tables are append-only event stores (sales, restocks, reviews) plus upserted masters (products, fridges); app-owned tables hold plans, orders, dispatches, and configuration. Stock position is a view, never a stored table — it cannot drift the way the Excel table could. <strong>Terminology:</strong> a "client" is a fridge location — the workbook uses the words interchangeably, and the data model represents both as rows in <code>fridges</code> (whose <code>name</code> is the client name, e.g. "ABB Zaventem").</p>
 
   <pre class="mermaid">
 erDiagram
@@ -1225,7 +1246,7 @@ erDiagram
           <tr><td>Forecasting</td><td><code>forecast_settings</code> (per fridge: min_qty, days_to_fill; active flag), <code>category_adjustments</code> (pct per category), <code>forecast_runs</code>, <code>forecast_results</code> (run, fridge, category, forecast_qty, sold, added, valid_days)</td><td>Forecast engine</td></tr>
           <tr><td>Scoring</td><td><code>score_weights</code> (sold_pct, margin_pct, review_pct — editable), <code>product_scores</code> (product, window_start/end, sold_qty, added_qty, pos/neg reviews, sold_pct, margin_pct, review_pct, final_score, computed_at)</td><td>Scoring engine</td></tr>
           <tr><td>Menu</td><td><code>menu_plans</code> (week_start_date, day_name, status), <code>menu_products</code> (plan, category, product, score_snapshot, position), <code>menu_allocations</code> (plan, fridge, product, qty, source: engine|manual)</td><td>Menu Planner</td></tr>
-          <tr><td>Ordering</td><td><code>purchase_orders</code> (order_ref UK, supplier, status: draft|sent|partially_received|received|cancelled, dates, comment, delivery_address, totals cached), <code>purchase_order_lines</code> (order, product, qty_ordered, qty_received, unit_price, vat_rate)</td><td>Orders module</td></tr>
+          <tr><td>Ordering</td><td><code>purchase_orders</code> (order_ref UK, supplier, status: draft|sent|partially_received|received|cancelled, dates, comment, delivery_address, totals cached), <code>purchase_order_lines</code> (order, product, qty_ordered, qty_received, unit_price, vat_rate), <code>order_ref_counters</code> (per-year row-locked sequence backing <code>next_order_ref()</code>)</td><td>Orders module</td></tr>
           <tr><td>Dispatch</td><td><code>dispatch_plans</code> (week_start_date + day_name UK, iso_week, status: draft|saved|dispatched|verified, dispatched_at), <code>dispatch_lines</code> (plan, fridge, product, qty, is_dispatched, price/score/shelf-life snapshots)</td><td>Dispatch Board</td></tr>
           <tr><td>Verification</td><td><code>restock_verifications</code> (plan, run_at, totals), <code>verification_lines</code> (verification, fridge, product, dispatched_qty, added_qty, unreliable_qty, diff_qty, diff_value)</td><td>Verification module</td></tr>
           <tr><td>Targets</td><td><code>fridge_product_targets</code> (fridge, product, target_qty)</td><td>Targets screen</td></tr>
@@ -1267,7 +1288,7 @@ erDiagram
   <ul>
     <li><strong>Nightly incremental sync</strong> (APScheduler): purchases, restocks, reviews for the trailing 3 days (idempotent upsert by tag/natural key — late events get captured); producttype + facility upsert.</li>
     <li><strong>On-demand sync</strong>: "Sync now" button on Admin, and the Forecast/Verification engines trigger a targeted sync of their window before computing, so results never depend on stale data.</li>
-    <li><strong>Historical backfill</strong>: one-off management command pulling 365+ days in monthly chunks (mirrors what Update Rating does today) — this also serves spec 0001's "historical backfill" goal.</li>
+    <li><strong>Historical backfill</strong>: one-off management command pulling 365+ days in monthly chunks (mirrors what Update Rating does today) — this also serves spec 0004's ("Database Setup &amp; Husky Historical Data Backfill") goal.</li>
     <li><strong>Live stock</strong> is never stored as truth — proxied with a 60-second cache for the Targets and Dashboard screens.</li>
   </ul>
 
@@ -1281,6 +1302,10 @@ erDiagram
       <tr><td><code>below_target_alert</code></td><td>Hourly 07:00–18:00 weekdays (configurable)</td><td>Query <code>v_below_target</code>; email the HTML alert table when any fridge/category is under target</td><td>Get Below Target Items + its PA flow</td></tr>
       <tr><td><code>weekly_aggregate_cache</code></td><td>Mon 04:00</td><td>Cache the completed ISO week's sales/added/dispatch aggregates into <code>weekly_summaries</code></td><td>Add Or Update Weekly Data (automatic part) + Send Dispatch Data To Return File</td></tr>
       <tr><td><code>sync_watchdog</code></td><td>Daily 08:00</td><td>Alert ops when any sync job failed or hasn't run in 36h</td><td>— (new safety net)</td></tr>
+      <tr><td><code>addon_service_dispatch</code></td><td>Daily 05:00</td><td>Inject scheduled add-on items (e.g. 5 kg fruit Mon+Wed, holidays excluded) into that day's dispatch plan</td><td>— (dev-briefing Add-on Services module)</td></tr>
+      <tr><td><code>expiry_alert</code></td><td>Daily 07:00</td><td>Alert on fridge products expiring within N days (default 2, configurable)</td><td>— (dev-briefing alert set)</td></tr>
+      <tr><td><code>low_stock_alert</code></td><td>Daily 07:00</td><td>Alert on warehouse products under their per-product minimum threshold</td><td>— (dev-briefing alert set)</td></tr>
+      <tr><td><code>rfid_offline_alert</code></td><td>Hourly</td><td>Alert when a fridge has reported no sales in &gt; N hours (RFID reader likely offline)</td><td>— (dev-briefing alert set)</td></tr>
     </tbody>
   </table>
 
@@ -1320,7 +1345,7 @@ sequenceDiagram
     Cron->>Mail: below-target alert email
   </pre>
   <div class="spec-callout spec-callout--info"><span class="spec-callout-title">Layer reference documents</span>
-    Companion implementation-grade documents live in this spec's <code>reference-docs/</code> folder: <code>database-schema.sql</code> (full PostgreSQL DDL: 34 tables, 2 views, race-safe order-ref function, indexes, seeds), <code>backend-and-cron-layers.md</code> (FastAPI project layout, engine signatures, vendor client, job specs, document/email service), and the front-end mockup at <code>mockups/frigoloco-forecasting-app-mockup.html</code> (all 11 screens, interactive, house style shared with the returns-app mockup).
+    Companion implementation-grade documents live in this spec's <code>reference-docs/</code> folder: <code>database-schema.sql</code> (full PostgreSQL DDL: 47 tables incl. the dev-briefing extensions, 2 views, race-safe order-ref function, indexes, seeds), <code>backend-and-cron-layers.md</code> (FastAPI project layout, engine signatures, vendor client, job specs, document/email service), and the front-end mockup at <code>mockups/frigoloco-forecasting-app-mockup.html</code> (all 13 screens, interactive, house style shared with the returns-app mockup).
   </div>
 
   <h3 id="frontend-design">Front-End Design (primary focus)</h3>
@@ -1370,6 +1395,8 @@ sequenceDiagram
         <li class="tree-file"><span class="tree-label">/verification, /verification/:id</span></li>
         <li class="tree-file"><span class="tree-label">/ratings</span><span class="tree-note">Product Ratings</span></li>
         <li class="tree-file"><span class="tree-label">/reports/weekly, /reports/monthly, /reports/fridge</span></li>
+        <li class="tree-file tree-new"><span class="tree-label">/services</span><span class="tree-note">Add-on Services: coffee · fruits · business lunch (dev briefing)</span></li>
+        <li class="tree-file tree-new"><span class="tree-label">/clients, /clients/:id</span><span class="tree-note">Client Management (dev briefing)</span></li>
         <li class="tree-file"><span class="tree-label">/admin/*</span><span class="tree-note">suppliers · fridges · fees · users · sync</span></li>
       </ul>
     </li>
@@ -1379,7 +1406,9 @@ sequenceDiagram
   <table>
     <thead><tr><th>Concern</th><th>Choice</th><th>Notes</th></tr></thead>
     <tbody>
-      <tr><td>Framework</td><td>React 18 + TypeScript + Vite</td><td>SPA; no SSR needed for an internal tool (open question Q1)</td></tr>
+      <tr><td>Framework</td><td>React 18 + TypeScript + Vite</td><td>SPA; no SSR needed for an internal tool (confirmed by the dev briefing — Q1)</td></tr>
+      <tr><td>Hosting</td><td>Railway.com</td><td>Confirmed by the dev briefing (Q7); single docker deploy of backend + built SPA + managed Postgres</td></tr>
+      <tr><td>File storage</td><td>Azure Blob</td><td>Confirmed by the dev briefing; PDFs and scanned delivery-note attachments</td></tr>
       <tr><td>Styling / components</td><td>Tailwind CSS + shadcn/ui</td><td>Dialogs, tabs, toasts, forms; consistent tokens</td></tr>
       <tr><td>Data grid</td><td>AG Grid Community (default — Q2)</td><td>Editable cells, clipboard, pinned columns, column groups (category grouping like the merged Excel headers)</td></tr>
       <tr><td>Server state</td><td>TanStack Query</td><td>Query invalidation replaces every "Refresh" button</td></tr>
@@ -1432,6 +1461,8 @@ sequenceDiagram
         <li><strong>Editing</strong>: Min qty and Days to fill edit in-grid → <code>PUT /forecast/settings</code> (debounced). % adjust persists per category.</li>
         <li><strong>Run</strong>: <code>POST /forecast/run</code> returns a run id; grid populates from <code>GET /forecast/runs/{id}/results</code>. Each run is kept — a run-history dropdown lets the user reload any previous run (Excel overwrote it).</li>
         <li><strong>Holiday-day exclusions</strong> are surfaced: cell tooltip shows "based on N valid days (M excluded as closed)".</li>
+        <li><strong>Residual stock deduction (dev briefing)</strong>: before results render, the engine pulls live fridge stock + remaining shelf life (DLC) per product; stock with DLC ≥ the coverage window stays and is deducted (<code>net_to_deliver = max(0, forecast − deductible residual)</code>), stock with shorter DLC goes to the dispatch withdrawal list. A green-tinted panel shows the deduction per fridge. Sell-through cells color-code: ≥90% amber, &lt;70% red.</li>
+        <li><strong>Forecast model (dev briefing)</strong>: default mode averages 6–12 months of sales per fridge × category × day-of-week (Mondays with Mondays); the legacy 3-week mode is kept selectable for parity comparison during the parallel run.</li>
         <li><strong>Push to Menu</strong>: <code>POST /forecast/runs/{id}/push-to-menu</code> creates/updates the week's <code>menu_plan</code> and navigates to it.</li>
       </ul>
 
@@ -1453,6 +1484,8 @@ sequenceDiagram
         <li><strong>Allocation</strong>: <code>POST /menus/{id}/allocate</code> runs the score-weighted split per client (exact Excel algorithm, incl. the 0.51 bump and leftover-to-top-product rules). Manual cell edits → <code>PATCH /menus/{id}/allocations</code> with <code>source: manual</code>; re-allocation never overwrites manual cells unless "reset overrides" is checked.</li>
         <li><strong>Snacks/Drinks</strong> columns render from the Targets module (difference values) as read-only with a link "adjust targets →".</li>
         <li><strong>Guard rails</strong>: adding a product with score 0 warns; totals recompute client-side instantly, server-verified on save.</li>
+        <li><strong>Week tabs (dev briefing)</strong>: tabs across the top (S26 | S27 | S28 | + New week) — menus plannable weeks in advance, with one-click "Copy previous week". The weekly menu is the <em>permitted product list</em>; per-fridge quantities live in the dispatch matrix.</li>
+        <li><strong>Caps &amp; stock awareness (dev briefing)</strong>: per-product-per-fridge hard caps (e.g. max 15 cookies at ABB) cannot be exceeded; assigning more than available warehouse stock is blocked with a red cell border.</li>
       </ul>
 
       <h5>4 · Targets (<code>/targets</code>) — replaces Snacks &amp; Drinks Target Map</h5>
@@ -1460,6 +1493,13 @@ sequenceDiagram
         <li>Editable grid: rows = fridge × product (filter by fridge / category 6–7 / product), columns = Target ✎ | Live stock (from <code>GET /stock/live</code>, 60s cache, refresh icon) | Difference (computed, red when positive).</li>
         <li>Bulk actions: copy targets from another fridge; set target for a product across all fridges.</li>
         <li><code>PUT /targets</code> bulk-saves; <code>GET /targets/differences</code> feeds both this grid and the Menu Planner's snack/drink columns — one source of truth.</li>
+      </ul>
+
+      <h5>12 · Add-on Services (<code>/services</code>) — new module from the dev briefing</h5>
+      <ul>
+        <li>Tabs per service type: <strong>Coffee</strong> (per-client service-level table), <strong>Fruits</strong> (recurring schedules: client, quantity + unit e.g. "5 kg", recurrence days e.g. Mon+Wed, holidays excluded, active toggle — scheduled items are injected into that day's dispatch automatically by the <code>addon_service_dispatch</code> job), <strong>Business Lunch</strong> (order table: client, date, PO reference, description, amount).</li>
+        <li>Data: <code>addon_service_schedules</code>, <code>business_lunch_orders</code>, <code>service_types</code>; endpoints <code>GET/POST/PATCH /services/schedules</code>, <code>GET/POST /services/business-lunch</code>.</li>
+        <li>Service fees per client are managed on the Client page (screen 13); this screen manages the operational schedules and orders.</li>
       </ul>
     </div>
 
@@ -1490,6 +1530,8 @@ stateDiagram-v2
         <li><strong>Save</strong> = <code>PUT /dispatches/{id}/lines</code> (bulk diff of the grid). Versioned rows replace the Excel "backup sheet" — an activity drawer lists prior saves with restore.</li>
         <li><strong>Confirm</strong> = <code>POST /dispatches/{id}/confirm</code>: marks lines dispatched, snapshots prices/scores, generates one dispatch-note PDF per fridge (delivery date, address, instructions from the facility sync; category-grouped product/qty lines — the DispatchTemplate layout), emails logistics, flips status. Idempotent: re-confirm re-sends only on explicit "resend".</li>
         <li><strong>Category filter</strong> reproduces the partial-save behavior: with a category selected, Save only touches that category's lines.</li>
+        <li><strong>Withdrawal list (dev briefing)</strong>: a panel below the grid lists products the driver must pull from each fridge (remaining DLC shorter than the coverage window) with a resolution field per line — mark as <em>loss</em> or <em>return to warehouse</em>. Printed on the dispatch-note PDF.</li>
+        <li><strong>Dev-briefing behaviors</strong>: cells carry an <code>fc</code>/<code>man</code> indicator (forecast-filled vs manually overridden); saving auto-deducts warehouse stock (movement-logged); saving for a past date demands explicit confirmation; up to 2 dispatches per day (plan sequence); any product can be added manually beyond the weekly menu; sheet categories print in the fixed order Hot → Frozen → Salads → Wraps → Granolas → Soups → Desserts → Drinks → Snacks; configurable printed reminders (e.g. "N'oubliez pas votre uniforme").</li>
       </ul>
 
       <h5>6 · Purchase Orders (<code>/orders</code>, <code>/orders/:id</code>) — replaces Order View + Order History + PO flow</h5>
@@ -1516,9 +1558,9 @@ stateDiagram-v2
     Cancelled --> [*]
   </pre>
       <ul>
-        <li><strong>List view</strong>: filterable table (status chips, supplier, dates, totals); row click → detail. Replaces scrolling Order History.</li>
+        <li><strong>List view</strong>: filterable table (status chips, supplier, dates, totals); row click → detail. Replaces scrolling Order History. <em>Dev briefing:</em> warehouse-first "by delivery date" grouping toggle (what's arriving today / this week), and a paperclip indicator on orders with a scanned delivery note attached.</li>
         <li><strong>Confirm</strong> assigns <code>order_ref = {year}-{NNNNN}</code> server-side (DB sequence per year — race-safe, unlike the Excel max+1 scan), renders the PO PDF (POTemplate layout), emails the supplier.</li>
-        <li><strong>Receive flow</strong>: on the detail page, a "Receive delivery" mode makes Qty-received editable per line with an "all as ordered" shortcut → <code>POST /orders/{id}/receive</code>. Status auto-derives from line completeness — the operator never sets it by hand (fixes the free-text " Received " status values seen in the sheet).</li>
+        <li><strong>Receive flow</strong>: on the detail page, a "Receive delivery" mode makes Qty-received editable per line with an "all as ordered" shortcut → <code>POST /orders/{id}/receive</code>. Status auto-derives from line completeness — the operator never sets it by hand (fixes the free-text " Received " status values seen in the sheet). Receiving adds the quantities to warehouse stock (movement-logged); a photo of the supplier delivery note can be attached (upload → Azure Blob via <code>attachments</code>). Cancelling a received order runs an explicit cancel-with-reversal that returns the stock movement.</li>
       </ul>
 
       <h5>7 · Stock Position (<code>/stock</code>) — replaces Stock &amp; Ordered</h5>
@@ -1526,6 +1568,7 @@ stateDiagram-v2
         <li>Read-only live grid over <code>v_stock_position</code>: Product | Category | Supplier | Pending to receive | Received | Dispatched | Stock &amp; ordered | Currently in stock &amp; ordered (negative = red).</li>
         <li>Row expander shows the contributing documents (open POs, recent dispatch lines) — the drill-down Excel could never offer.</li>
         <li>No refresh button: the view is always current.</li>
+        <li><strong>Warehouse stock (dev briefing)</strong>: side-by-side columns for physical warehouse stock vs on-order quantities vs the difference; a movements drawer shows the full audit ledger (PO receipts, dispatch deductions, manual adjustments with reason, cancellation reversals — user + timestamp on every row). Manual adjustment requires an explanation before saving.</li>
       </ul>
 
       <h5>8 · Restock Verification (<code>/verification</code>) — replaces the alert + template flow</h5>
@@ -1541,6 +1584,12 @@ stateDiagram-v2
       <ul>
         <li><strong>Run</strong> = <code>POST /dispatches/{id}/verify</code>: backend syncs that date's restock events, diffs against dispatch lines (UNRELIABLE tags counted separately, exactly as today), persists, and emails the alert when discrepancies exist. History list keeps every run.</li>
       </ul>
+
+      <h5>13 · Clients (<code>/clients/:id</code>) — new module from the dev briefing</h5>
+      <ul>
+        <li>Client picker list (left) → one page per client with four cards: <strong>Client info</strong> (location, number of workers, worker type white/blue collar — used to calibrate forecast targets and product mix), <strong>Intervention log</strong> (technical issue / cleaning / hardware replacement, timestamped, user-attributed, linked to the fridge), <strong>Preferences</strong> (chips, e.g. "no fish products", plus special services), <strong>Service fees</strong> (monthly fee per service type: fridge rental, coffee machine, fruit delivery, catering — feeds financial reporting).</li>
+        <li>Data: <code>clients</code>, <code>client_interventions</code>, <code>client_preferences</code>, <code>client_service_fees</code>; fridges link to clients via <code>fridges.client_id</code>. Endpoints <code>GET/POST/PATCH /clients</code>, <code>POST /clients/{id}/interventions</code>, <code>PUT /clients/{id}/fees</code>.</li>
+      </ul>
     </div>
 
     <div class="spec-tab-panel" data-tab="insights">
@@ -1549,13 +1598,14 @@ stateDiagram-v2
       <div class="spec-mockup">
         <div class="spec-mockup-bar">Product Ratings — window: last 365 days · computed nightly 03:00</div>
         <div class="spec-mockup-body">
-          <div class="mk-field">Weights editor: % Sold [0.62] · Margin [0.33] · Reviews [0.05] — must sum to 1.00 (inline validation) · <span class="mk-btn">Recompute now</span></div>
-          <div class="mk-field">Grid: Product | Category | Supplier | Shelf life | Buy € | Sell € | Margin % | Sold | Added | % Sold | +Reviews | −Reviews | Review % | <strong>Final Score</strong> (sorted desc, score bar in cell) | Active toggle</div>
+          <div class="mk-field">Dual weights editor (dev briefing): Global — % Sold [0.55] · Margin [0.30] · Reviews [0.15]; Fridge — % Sold [0.70] · Reviews [0.30] (margin excluded per-fridge); each set must sum to 1.00 · <span class="mk-btn">Recompute now</span></div>
+          <div class="mk-field">Grid: Product | Category | Supplier | Shelf life (DLC) | Buy € | Sell € | Margin % | Sold | Added | % Sold | Review % | <strong>Global score</strong> | <strong>Fridge score</strong> (fridge selector above the grid) | <strong>Combined (50/50)</strong> (sorted desc, score bar) | Active toggle</div>
+          <div class="mk-field">Note: new products (≤ 250 lifetime sales) show the average global score as placeholder, flagged with a "new" chip</div>
         </div>
       </div>
       <ul>
         <li>Scores compute nightly from local <code>sales_events</code>/<code>restock_events</code>/<code>product_reviews</code> (no more 12× monthly API pulls per click); "Recompute now" for after-weight-change refreshes.</li>
-        <li>The score written to <code>product_scores</code> is what Menu Planner's pickers and the allocation engine read — one number, one place.</li>
+        <li>The <strong>combined score</strong> (50% global from <code>product_scores</code> × 50% per-fridge from <code>product_fridge_scores</code>) is what Menu Planner's pickers and the allocation engine read — one number per product×fridge, one place.</li>
         <li>Score history per product (sparkline on row expand) — enables the "retire low scorers" decision Excel supported only implicitly.</li>
       </ul>
 
@@ -1572,14 +1622,14 @@ stateDiagram-v2
         <li><strong>Suppliers</strong>: CRUD grid (name, emails — multiple, warehouse address). Seeded from the Supplier Info sheet.</li>
         <li><strong>Fridges</strong>: synced list with local overrides (active, display name, delivery instructions override); forecast settings (min qty, days to fill) editable here too.</li>
         <li><strong>Fees</strong>: POS/software %, RFID fee, discount-provider list, per-fridge yearly fee + fraction + contract end, service additionals.</li>
-        <li><strong>Users &amp; roles</strong>: admin / planner / viewer. <strong>Sync</strong>: run history, per-endpoint status, manual trigger, backfill launcher.</li>
+        <li><strong>Users &amp; roles (dev briefing)</strong>: ops_manager (full access) · warehouse (stock, dispatch, PO receipt; read-only forecasts/finance) · driver (read-only dispatch sheets, mobile-friendly) · finance (read-only reports) · admin (users, settings, master data import/export). <strong>Sync</strong>: run history, per-endpoint status, manual trigger, backfill launcher.</li>
       </ul>
     </div>
   </div>
 
   <h4>Screen ↔ API ↔ legacy traceability</h4>
   <details class="spec-details">
-    <summary>Traceability matrix<span class="spec-details-tag">11 screens</span></summary>
+    <summary>Traceability matrix<span class="spec-details-tag">13 screens</span></summary>
     <div class="spec-details-body">
       <table>
         <thead><tr><th>Screen</th><th>Primary endpoints</th><th>Replaces (sheets / scripts)</th></tr></thead>
@@ -1594,6 +1644,8 @@ stateDiagram-v2
           <tr><td>Restock Verification</td><td>/dispatches/{id}/verify, /verifications</td><td>Send Restock Verification Alert · Update Restock Verification From PA · template</td></tr>
           <tr><td>Product Ratings</td><td>/scores/*</td><td>Product Rating · Update Rating</td></tr>
           <tr><td>Reports</td><td>/reports/*</td><td>Weekly &amp; Monthly Return workbook · Add Or Update Weekly Data · Pull Week Summary · Send Dispatch Data · GSV Report · Get Below Target Items</td></tr>
+          <tr><td>Add-on Services</td><td>/services/*</td><td>— (new module, dev briefing: coffee / fruits / business lunch)</td></tr>
+          <tr><td>Clients</td><td>/clients/*</td><td>— (new module, dev briefing: client info · interventions · preferences · service fees)</td></tr>
           <tr><td>Admin</td><td>/suppliers, /fridges, /settings/*, /users, /sync</td><td>Supplier Info · Settings sheet · Fee/Fraction lists</td></tr>
         </tbody>
       </table>
@@ -1641,7 +1693,7 @@ stateDiagram-v2
   <h2>Trade-off Analysis</h2>
 
   <h3>Decision 1 — Database &amp; backend stack</h3>
-  <p><strong>PostgreSQL + FastAPI (SQLAlchemy 2 / Alembic / Pydantic v2 / APScheduler)</strong> is chosen without a full bake-off: the team's existing tooling and skills are built around Python, FastAPI scaffolding, and PostgreSQL analysis workflows, and spec 0001 already targets a PostgreSQL database with vendor-API backfill. Any JVM/Node alternative would add a second ecosystem for zero functional gain on an internal tool. Risk accepted: Python is slower per-request than Go/Node, which is irrelevant at this user count (&lt;10 concurrent users).</p>
+  <p><strong>PostgreSQL + FastAPI (SQLAlchemy 2 / Alembic / Pydantic v2 / APScheduler)</strong> is chosen without a full bake-off: the team's existing tooling and skills are built around Python, FastAPI scaffolding, and PostgreSQL analysis workflows, and spec 0004 ("Database Setup &amp; Husky Historical Data Backfill") already targets a PostgreSQL database with vendor-API backfill. Any JVM/Node alternative would add a second ecosystem for zero functional gain on an internal tool. Risk accepted: Python is slower per-request than Go/Node, which is irrelevant at this user count (&lt;10 concurrent users).</p>
 
   <h3>Decision 2 — Front-end framework</h3>
   <div class="spec-compare">
@@ -1813,7 +1865,7 @@ stateDiagram-v2
       <div class="phase-marker">1</div>
       <div class="phase-body">
         <div class="phase-title">Phase 1 — Foundations: DB, vendor client, sync</div>
-        <div class="phase-goal">Stand up PostgreSQL schema, the typed vendor client, sync jobs, and the historical backfill (delivers spec 0001's goal).</div>
+        <div class="phase-goal">Stand up PostgreSQL schema, the typed vendor client, sync jobs, and the historical backfill (delivers spec 0004's goal).</div>
         <div class="phase-meta">7 steps · backend only</div>
       </div>
     </li>
@@ -1859,6 +1911,10 @@ stateDiagram-v2
     </li>
   </ol>
 
+  <div class="spec-callout spec-callout--info"><span class="spec-callout-title">Alignment with the dev briefing's 5-phase delivery plan</span>
+    The deck's plan maps onto these phases as: deck Phase 1 "Foundation" (DB, auth, products, clients, fridges) = Phases 1 + 3.1 here plus the Clients module; deck Phase 2 "Supply chain" (orders, stock, PO receipt, alerts) = Phases 3 + 5.3/5.5/5.7 plus the warehouse-stock service and alert jobs; deck Phase 3 "Dispatch" (dispatch, forecast, menu, PDF export) = Phases 2 + 4 + 5.1/5.4; deck Phase 4 "Reporting" (returns, P&amp;L, consumption) = Phase 6.1–6.2; deck Phase 5 "Automation" (auto-forecast, email alerts, mobile, weather adjustment, routing/driver app) is intentionally out of this spec's v1 scope — see Q15. The deck's principle is preserved: <em>each phase delivers a working product; Excel stays live until each module is validated</em>. Scope additions from the deck folded into the phases below: Add-on Services + Clients screens (Phase 4), warehouse-stock service with movement ledger (Phase 3/5), attachment upload to Azure Blob (Phase 5), the 4 new alert jobs (Phase 5), and migration handling for 218 DLC-less products, ~20 test products, and per-fridge price mapping (Phase 6.3).
+  </div>
+
   <h3>Phase 1 — Foundations</h3>
   <table>
     <thead><tr><th>#</th><th>Action</th><th>Detail &amp; verification</th></tr></thead>
@@ -1879,8 +1935,8 @@ stateDiagram-v2
     <tbody>
       <tr><td>2.1</td><td>week_utils</td><td>ISO-8601 week helpers (week number, Mon–Sun span, next-occurrence-of-weekday, cross-month day-count proration). All dataclass returns per backend doc §2. <em>Verify:</em> unit tests incl. year boundaries (Week 1 containing Jan 4; week 52/53).</td></tr>
       <tr><td>2.2</td><td>Golden-file capture</td><td><code>scripts/export_excel_golden_files.py</code>: extract from the live workbook one captured forecast run (inputs: settings + raw sales; outputs: Forecast V2 grid), the current Product Rating table, one Menu allocation, and Stock &amp; Ordered. Store as JSON fixtures. <em>Verify:</em> fixtures load in pytest.</td></tr>
-      <tr><td>2.3</td><td>forecast_engine</td><td>Exact port per Background formulas (3-week lookback aligned to weekday; holiday exclusion when sold ≤ min qty; noInfoDayCount in denominator; % adjust). <em>Verify:</em> parity test reproduces the golden forecast grid within rounding (±0.01).</td></tr>
-      <tr><td>2.4</td><td>scoring_engine</td><td>365-day window from local tables; the 0.62/0.33/0.05 weighted score; net review ratio; sell-through. <em>Verify:</em> parity vs golden Product Rating rows (±0.001 on final score).</td></tr>
+      <tr><td>2.3</td><td>forecast_engine</td><td>Two modes: <em>legacy</em> (exact Excel port: 3-week lookback aligned to weekday; holiday exclusion when sold ≤ min qty; noInfoDayCount in denominator; % adjust) and <em>day-of-week</em> (dev-briefing default: 6–12-month lookback averaged per fridge × category × day-of-week) plus the residual-stock deduction step (live stock + DLC vs coverage window; withdrawal-list output; <code>net_to_deliver = max(0, forecast − deductible)</code>). <em>Verify:</em> legacy-mode parity test reproduces the golden forecast grid within rounding (±0.01); day-of-week mode unit-tested on synthetic fixtures.</td></tr>
+      <tr><td>2.4</td><td>scoring_engine</td><td>Dual model (dev briefing): global = 0.55·soldPct + 0.30·marginPct + 0.15·reviewPct; per-fridge = 0.70·fridgeSoldPct + 0.30·fridgeReviewPct; combined 50/50; ≤250-sales placeholder rule. Legacy 0.62/0.33/0.05 mode retained for parity. <em>Verify:</em> legacy-mode parity vs golden Product Rating rows (±0.001); dual-model unit tests incl. the placeholder rule.</td></tr>
       <tr><td>2.5</td><td>allocation_engine</td><td>Score-weighted split with cap, 0.51 bump, leftover-to-top-scorer, categories 6–7 excluded. <em>Verify:</em> parity vs golden Menu allocation; property test: Σ allocations per client-category == round(forecast).</td></tr>
       <tr><td>2.6</td><td>verification_engine + stock view test</td><td>Diff logic (ADDED only, UNRELIABLE separated) + tests that <code>v_stock_position</code> reproduces the golden Stock &amp; Ordered rows from imported history. <em>Verify:</em> parity test green.</td></tr>
     </tbody>
@@ -1909,6 +1965,7 @@ stateDiagram-v2
       <tr><td>4.5</td><td>Forecast Workbench</td><td>Params panel, results grid (category column groups), diagnostics drawer, run history, push-to-menu. <em>Verify:</em> Playwright: run → results render → push navigates to Menu Planner.</td></tr>
       <tr><td>4.6</td><td>Menu Planner</td><td>Category rail, score-sorted product picker, allocation matrix with manual-override markers, margin footer, re-allocate actions. <em>Verify:</em> Playwright: allocate → edit cell → re-allocate preserves override.</td></tr>
       <tr><td>4.7</td><td>Targets</td><td>Target grid with live stock + difference, bulk actions. <em>Verify:</em> Playwright: edit target → difference updates.</td></tr>
+      <tr><td>4.8</td><td>Add-on Services + Clients screens</td><td>The two dev-briefing modules per their screen specs (service schedules/orders; client info, interventions, preferences, fees). <em>Verify:</em> Playwright: create a fruit schedule → appears flagged on the next dispatch build; log an intervention → appears on the client page timeline.</td></tr>
     </tbody>
   </table>
 
@@ -1987,7 +2044,7 @@ stateDiagram-v2
       <tr><td>1</td><td>Provision PostgreSQL 16 (per hosting decision Q7) and create the app database + role</td><td>Ops</td></tr>
       <tr><td>2</td><td>Place Intelligent Fridges credentials in <code>.env</code> (<code>FRIGOLOCO_IF_USERNAME/PASSWORD</code>) — never in code; confirm API account works with read scope</td><td>Ismail</td></tr>
       <tr><td>3</td><td>Choose and configure the mail channel (SMTP account or MS Graph app registration + consent) and a test inbox for Test mode</td><td>Ismail / IT</td></tr>
-      <tr><td>4</td><td>Answer the open questions in this spec (framework, grid, auth, PA replacement, migration scope, weeks, hosting, language, analytics scope)</td><td>Ismail / Mathieu</td></tr>
+      <tr><td>4</td><td>Answer the open questions in this spec, Q1–Q14 (framework, grid, auth, PA replacement, migration scope, weeks, hosting, language, analytics scope, spec 0003 boundary, spec 0001 relationship, run-history tables, PA flow inventory, dispatch-note recipients)</td><td>Ismail / Mathieu</td></tr>
       <tr><td>5</td><td>Freeze a copy of both workbooks as the golden-file source (snapshot date recorded)</td><td>Ismail</td></tr>
     </tbody>
   </table>
@@ -2072,8 +2129,8 @@ stateDiagram-v2
         "detail": "Comparable, smaller grid ecosystem"
       }
     ],
-    "answer": null,
-    "status": "open"
+    "answer": "react-vite — confirmed by FrigoLoco_Dev_Presentation_V5_Final.pptx (slide 3: React (TypeScript) frontend)",
+    "status": "answered"
   },
   {
     "id": "Q2",
@@ -2218,8 +2275,8 @@ stateDiagram-v2
         "detail": "Least ops work; managed Postgres included"
       }
     ],
-    "answer": null,
-    "status": "open"
+    "answer": "paas — Railway.com, confirmed by FrigoLoco_Dev_Presentation_V5_Final.pptx (slide 3); file storage on Azure Blob",
+    "status": "answered"
   },
   {
     "id": "Q8",
@@ -2260,6 +2317,124 @@ stateDiagram-v2
         "detail": "Return workbook survives cutover temporarily; smaller v1"
       }
     ],
+    "answer": null,
+    "status": "open"
+  },
+  {
+    "id": "Q10",
+    "question": "Where is the boundary between this spec's Reports & Analytics module and spec 0003 (Port Weekly & Monthly Return Tool to Web App)?",
+    "context": "Screen 10 (Reports & Analytics) and Phases 6.1-6.2 port the Weekly & Monthly Return workbook (weekly summary, monthly client/supplier/category margin reports), but spec 0003 exists specifically to port that same workbook. Implementing both as written duplicates the work. Related to Q9, which asks about analytics timing but not about the spec-0003 overlap.",
+    "section": "Implementation Plan",
+    "type": "single",
+    "options": [
+      {
+        "value": "keep-in-0002",
+        "label": "Keep full Reports module in spec 0002",
+        "detail": "Spec 0003 is folded into / superseded by this spec's Phase 6"
+      },
+      {
+        "value": "defer-to-0003",
+        "label": "Move the Return-workbook port to spec 0003",
+        "detail": "Spec 0002 drops screen 10's monthly analytics; 0003 owns the Return port on the same DB/backend"
+      },
+      {
+        "value": "split",
+        "label": "Split: weekly ops summary stays in 0002, monthly margin analytics go to 0003",
+        "detail": "0002 keeps the weekly summary screen the operational cycle needs; fee math and monthly reports live in 0003"
+      }
+    ],
+    "answer": null,
+    "status": "open"
+  },
+  {
+    "id": "Q11",
+    "question": "How does this spec relate to spec 0001 (FrigoLoco: Excel to Cloud ERP Port)?",
+    "context": "Spec 0001 covers the same system end-to-end (DB + backend + frontend) with a conflicting inventory (0001: two workbooks, four Power Automate flows; this spec: five workbooks, six flows). Specs 0002/0003/0004 look like a decomposition of 0001, but no Parent Spec relationship is recorded and it is unclear which document governs implementation.",
+    "section": "Background & Context",
+    "type": "single",
+    "options": [
+      {
+        "value": "0001-superseded",
+        "label": "Specs 0002/0003/0004 govern; mark 0001 superseded",
+        "detail": "This spec adds a Parent Spec note; 0001 is kept only as historical context"
+      },
+      {
+        "value": "0001-parent",
+        "label": "Keep 0001 as the parent overview",
+        "detail": "0001 stays the umbrella; 0002/0003/0004 reference it as parent and must stay aligned with it"
+      }
+    ],
+    "answer": null,
+    "status": "open"
+  },
+  {
+    "id": "Q12",
+    "question": "The backend reference doc uses two tables the authoritative DDL does not define (job_runs, dispatch_line_versions) — how should this be resolved?",
+    "context": "reference-docs/backend-and-cron-layers.md records every cron job run in job_runs and dispatch-grid save versions in dispatch_line_versions, but reference-docs/database-schema.sql (declared the authoritative shape in step 1.2, '34 tables + 2 views') defines neither. The spec's Dispatch Board promises 'versioned saves with restore' (verified in step 5.4) and the cron section says every job records a run row, so both features currently lack storage in the authoritative schema.",
+    "section": "Proposed Solution",
+    "type": "single",
+    "options": [
+      {
+        "value": "add-both",
+        "label": "Add job_runs and dispatch_line_versions to the DDL (36 tables)",
+        "detail": "Keep sync_runs for vendor syncs; job_runs for all scheduled jobs; versioned dispatch saves as specified"
+      },
+      {
+        "value": "generalize",
+        "label": "Generalize sync_runs into a single job_runs table; add dispatch_line_versions",
+        "detail": "One run-bookkeeping table for syncs and jobs alike (35 tables)"
+      },
+      {
+        "value": "drop-versions",
+        "label": "Add job_runs only; drop the versioned-save/restore feature",
+        "detail": "audit_log diffs remain the recovery mechanism for dispatch edits"
+      }
+    ],
+    "answer": null,
+    "status": "open"
+  },
+  {
+    "id": "Q13",
+    "question": "What is the exact Power Automate flow inventory to disable at cutover?",
+    "context": "This spec says 6 flows, spec 0001 says 4, and the Office Scripts reference exactly 4 distinct flow endpoints (createpo, updatedispatchfile, restock-verification, return-file) across 5 scripts — any additional flows (e.g. scheduled flows that run 'Get Below Target Items' or the weekly ETL) are not visible in the repo. The cutover step 6.6 and Post-implementation step 3 need the definitive list. Please name each flow (trigger + what it does).",
+    "section": "Manual Steps",
+    "type": "text",
+    "options": [],
+    "answer": null,
+    "status": "open"
+  },
+  {
+    "id": "Q14",
+    "question": "Who receives the per-fridge dispatch-note emails, and where should those recipients be configured?",
+    "context": "The Dispatch Board confirm step 'emails logistics', but no recipient source is specified anywhere: the backend doc defines env vars only for below-target and ops alerts (BELOW_TARGET_ALERT_RECIPIENTS, OPS_ALERT_RECIPIENTS), and neither fridges nor facilities carry an email column in database-schema.sql. State the mailbox(es) and the preferred configuration mechanism (env var list, per-fridge/facility field editable in Admin, or a global admin setting).",
+    "section": "Proposed Solution",
+    "type": "text",
+    "options": [],
+    "answer": null,
+    "status": "open"
+  },
+  {
+    "id": "Q15",
+    "question": "Which dev-briefing 'Phase 5 — Automation' items should be pulled into this spec's v1 scope, if any?",
+    "context": "The dev briefing lists logistics & routing (optimised routes, driver mobile app, SMS reminders, pick lists), weather-based forecast adjustment (18-month weather/sales correlation), auto-forecast, and Peppol invoice 3-way reconciliation. This spec keeps them all out of v1 (the forecast engine only reserves a hook for the weather factor). Confirm or pull items forward.",
+    "section": "Implementation Plan",
+    "type": "multi",
+    "options": [
+      { "value": "none", "label": "None — keep all in a later phase/spec", "detail": "v1 scope stays as specified" },
+      { "value": "routing", "label": "Logistics & routing + driver app", "detail": "Route generation, pick lists, SMS, mobile driver view" },
+      { "value": "weather", "label": "Weather adjustment", "detail": "Requires 18 months of weather data correlation work" },
+      { "value": "peppol", "label": "Peppol invoicing link", "detail": "PO → delivery receipt → invoice 3-way reconciliation" }
+    ],
+    "answer": null,
+    "status": "open"
+  },
+  {
+    "id": "Q16",
+    "question": "Confirm the mapping between the dispatch-sheet category order and the 10 legacy categories.",
+    "context": "The dev briefing prints dispatch sheets in the order Hot → Frozen → Salads → Wraps → Granolas → Soups → Desserts → Drinks → Snacks (9 buckets), but the catalog has 10 numbered categories. The DDL seeds a best-effort mapping (Hot ⊇ {3. Warm Dishes Jar, 4. Warm Dishes}; Salads = 1. Cold Dishes; Granolas = 8. Breakfast; Frozen = 10. Frozen Warm Dishes; Desserts ⊇ 5. Desserts) that must be confirmed with the business before go-live — where do 2. Wraps & Sandwiches sub-items and any unmapped categories print?",
+    "section": "Proposed Solution",
+    "type": "text",
+    "options": [],
     "answer": null,
     "status": "open"
   }

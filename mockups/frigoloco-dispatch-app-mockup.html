@@ -23,6 +23,7 @@
     --good-text: #006300;
     --warning: #fab219;
     --critical: #d03b3b;
+    --teal: #0d9488;
     --seq-150: #b7d3f6;
     --seq-250: #86b6ef;
     --sidebar-bg: #14202e;
@@ -44,6 +45,7 @@
       --pos: #3987e5;
       --neg: #e66767;
       --good-text: #0ca30c;
+      --teal: #2dd4bf;
       --seq-150: #184f95;
       --seq-250: #1c5cab;
     }
@@ -66,6 +68,7 @@
     padding: 18px 0;
     position: sticky; top: 0; height: 100vh;
     display: flex; flex-direction: column;
+    overflow-y: auto;
   }
   .logo { padding: 4px 20px 18px; border-bottom: 1px solid rgba(255,255,255,.08); margin-bottom: 12px; }
   .logo .name { font-size: 17px; font-weight: 700; color: #fff; letter-spacing: .2px; }
@@ -104,6 +107,7 @@
   .btn.primary { background: var(--series-1); border-color: transparent; color: #fff; }
   .btn.ghost { background: transparent; }
   .btn.danger { background: var(--critical); border-color: transparent; color: #fff; }
+  .btn.sm { padding: 4px 10px; font-size: 12.5px; }
 
   .card {
     background: var(--surface-1);
@@ -162,6 +166,24 @@
   .badge.info { background: rgba(42,120,214,.12); color: var(--series-1); }
   @media (prefers-color-scheme: dark) { .badge.warn { color: #fab219; } }
 
+  /* status chips — shared with the other FrigoLoco apps (Draft gray · Saved blue · Sent/Dispatched green · Partial amber · Cancelled red · Verified teal) */
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 10px; white-space: nowrap;
+  }
+  .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .chip.draft      { background: rgba(137,135,129,.16); color: var(--ink-2); }
+  .chip.saved      { background: rgba(42,120,214,.13);  color: var(--series-1); }
+  .chip.sent, .chip.dispatched, .chip.received { background: rgba(12,163,12,.12); color: var(--good-text); }
+  .chip.partial    { background: rgba(250,178,25,.18);  color: #8a6100; }
+  .chip.cancelled  { background: rgba(208,59,59,.12);   color: var(--critical); }
+  .chip.verified   { background: rgba(13,148,136,.14);  color: var(--teal); }
+  .chip.unreliable { background: rgba(237,120,0,.14);   color: #b45309; }
+  @media (prefers-color-scheme: dark) {
+    .chip.partial { color: #fab219; }
+    .chip.unreliable { color: #fb923c; }
+  }
+
   /* tabs */
   .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--baseline); margin-bottom: 16px; flex-wrap: wrap; }
   .tab {
@@ -174,7 +196,7 @@
     border-left: 3px solid var(--series-1); background: rgba(42,120,214,.06);
     padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 12.5px; color: var(--ink-2); margin: 12px 0;
   }
-  .callout.warn { border-left-color: var(--warning); background: rgba(250,178,25,.10); }
+  .callout.warn { border-left-color: var(--warning); background: rgba(250,178,25,.08); }
   .callout.crit { border-left-color: var(--critical); background: rgba(208,59,59,.08); }
   code, .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
   .mt { margin-top: 14px; }
@@ -300,6 +322,39 @@
   .withdraw .p-line { background: transparent; border-color: rgba(208,59,59,.25); }
   .phone .p-foot { padding: 0 14px 16px; }
   .phone .p-foot .btn { width: 100%; text-align: center; }
+
+  /* ── Empty / loading / error states — shared pattern (see AUDIT: every React view needs these) ── */
+  .empty-state { text-align: center; padding: 34px 20px; color: var(--ink-3); }
+  .empty-state .ico { font-size: 30px; opacity: .45; display: block; margin-bottom: 8px; }
+  .empty-state b { display: block; color: var(--ink-2); font-size: 13.5px; margin-bottom: 3px; }
+  .empty-state.err { color: var(--critical); }
+  .skeleton { height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--grid), var(--page), var(--grid)); background-size: 200% 100%; animation: sk 1.2s ease-in-out infinite; }
+  @keyframes sk { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  .toast-wrap { position: fixed; right: 16px; bottom: 46px; z-index: 120; display: flex; flex-direction: column; gap: 8px; }
+  .toast {
+    display: flex; align-items: center; gap: 10px; max-width: 400px;
+    background: var(--surface-1); color: var(--ink-1);
+    border: 1px solid var(--border); border-left: 4px solid var(--critical);
+    border-radius: 10px; padding: 11px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.22); font-size: 13px;
+  }
+  .toast .tico { color: var(--critical); font-weight: 700; }
+  .toast.ok   { border-left-color: var(--good); }    .toast.ok .tico   { color: var(--good-text); }
+  .toast.warn { border-left-color: var(--warning); } .toast.warn .tico { color: #8a6100; }
+  .toast .x { margin-left: auto; color: var(--ink-3); cursor: pointer; font-weight: 700; }
+  @media (prefers-color-scheme: dark) { .toast.warn .tico { color: #fab219; } }
+
+  /* ── Print — driver dispatch sheet & documents (hide chrome, black-on-white, one fridge per page) ── */
+  @media print {
+    .sidebar, .mock-foot, .tooltip, .toast-wrap, .modal-backdrop, .topbar .controls, .btn { display: none !important; }
+    .main { padding: 0; }
+    body { background: #fff; color: #000; }
+    .card { border: none; box-shadow: none; break-inside: avoid; }
+    .phone { border: none; box-shadow: none; width: 100%; max-width: 100%; border-radius: 0; }
+    .phone .p-head { background: #fff; color: #000; border-bottom: 1px solid #000; }
+    .phone .p-head .route, .phone .p-head .addr, .phone .p-head .instr { color: #000; }
+    .print-break, .phone { break-before: page; }
+    a { color: #000; text-decoration: none; }
+  }
 </style>
 </head>
 <body>
@@ -312,12 +367,12 @@
       <div class="sub">Dispatch &amp; Forecasting</div>
     </div>
     <div class="nav-section">Operations</div>
-    <div class="nav-item active" data-page="matrix"><span class="ico">▦</span> Dispatch Matrix</div>
-    <div class="nav-item" data-page="menu"><span class="ico">▤</span> Menu Planner</div>
-    <div class="nav-item" data-page="forecast"><span class="ico">◔</span> Forecast</div>
-    <div class="nav-item" data-page="verify"><span class="ico">⇄</span> Restock Verification</div>
+    <div class="nav-item active" data-page="matrix"><span class="ico" aria-hidden="true">▦</span> Dispatch Matrix</div>
+    <div class="nav-item" data-page="menu"><span class="ico" aria-hidden="true">▤</span> Menu Planner</div>
+    <div class="nav-item" data-page="forecast"><span class="ico" aria-hidden="true">◔</span> Forecast</div>
+    <div class="nav-item" data-page="verify"><span class="ico" aria-hidden="true">⇄</span> Restock Verification</div>
     <div class="nav-section">Field</div>
-    <div class="nav-item" data-page="driver"><span class="ico">▯</span> Driver View</div>
+    <div class="nav-item" data-page="driver"><span class="ico" aria-hidden="true">▯</span> Driver View</div>
     <div class="foot"><b>ismail@alliedchb.com</b>Ops manager · v0.1 mockup</div>
   </nav>
 
@@ -336,6 +391,9 @@
         <span class="badge warn">Draft · unsaved edits</span>
         <button class="btn ghost">＋ Add product</button>
         <button class="btn ghost">Apply forecast</button>
+        <button class="btn ghost">⧉ Clone previous week</button>
+        <button class="btn ghost">↻ History…</button>
+        <button class="btn ghost" style="color:var(--critical)">Clear grid</button>
         <button class="btn">Save draft</button>
         <button class="btn primary" id="btn-confirm">Confirm dispatch</button>
       </div>
@@ -395,6 +453,7 @@
       <div class="controls">
         <span class="badge ok">S27 · Active</span>
         <button class="btn">Copy previous week</button>
+        <button class="btn">Export to Order →</button>
         <button class="btn primary">Save menu</button>
       </div>
     </div>
@@ -441,7 +500,7 @@
             <div class="pick-row"><span class="p-name"><b>Salade Niçoise</b><span>Tastyfood · 1058</span></span><span class="p-price">€8.60</span><span class="score-chip lo">0.34</span><button class="btn ghost" style="padding:3px 10px">＋ Add</button></div>
           </div>
         </div>
-        <div class="callout">7 of 540 products match "salade" in <b>1. Cold Dishes</b>. New products (≤ 250 lifetime sales) get the average global score as a baseline so they still receive forecast allocation (slide 8).</div>
+        <div class="callout">8 of 540 products match "salade" in <b>1. Cold Dishes</b>. New products (≤ 250 lifetime sales) get the average global score as a baseline so they still receive forecast allocation (slide 8).</div>
       </div>
 
       <div class="card">
@@ -483,7 +542,35 @@
       </div>
     </div>
 
-    <div class="callout" style="margin-top:0"><b>Rule R1:</b> per fridge × category, 3-week window anchored on the delivery weekday. <span class="mono">forecast = (units sold ÷ (valid + no-info days)) × days-to-fill × (1 + category margin %)</span>. Days where the fridge sold ≤ its minimum daily qty are excluded as holidays.</div>
+    <div class="grid kpis">
+      <div class="card tile">
+        <div class="label">Forecast units — ABB Zaventem</div>
+        <div class="value">67</div>
+        <div class="delta">Tue 30 Jun · days-to-fill 2</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Residual stock deducted</div>
+        <div class="value">−9</div>
+        <div class="delta">DLC covers to next delivery (slide 5)</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Withdrawal list</div>
+        <div class="value warnv">4</div>
+        <div class="delta">Short-DLC units to pull</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Holiday days excluded</div>
+        <div class="value">2</div>
+        <div class="delta">Sold ≤ min daily qty (6)</div>
+      </div>
+      <div class="card tile">
+        <div class="label">Sell-through last week</div>
+        <div class="value">82%</div>
+        <div class="delta up">▲ Healthy 70–89% band</div>
+      </div>
+    </div>
+
+    <div class="callout" style="margin-top:0"><b>Rule R1:</b> per fridge × category, 3-week window anchored on the delivery weekday. <span class="mono">forecast = (units sold ÷ (valid + no-info days)) × days-to-fill × (1 + category margin %)</span>. Days where the fridge sold ≤ its minimum daily qty are excluded as holidays. Then residual fridge stock with sufficient DLC is deducted; the rest joins the withdrawal list.</div>
 
     <div class="grid two-col">
       <div class="card">
@@ -493,18 +580,23 @@
         <table>
           <thead><tr><th>Category</th><th class="num">Forecast qty</th><th class="num">Valid days</th><th class="num">Holiday-excl.</th><th class="num">Margin %</th><th>Sell-through last wk</th></tr></thead>
           <tbody>
-            <tr><td>1. Cold Dishes</td><td class="num">13</td><td class="num">18</td><td class="num">2</td><td class="num">+10%</td><td><span class="badge warn">94% · sold-out risk</span></td></tr>
-            <tr><td>2. Wraps &amp; Sandwiches</td><td class="num">20</td><td class="num">18</td><td class="num">2</td><td class="num">+10%</td><td><span class="badge ok">86%</span></td></tr>
-            <tr><td>3. Warm Dishes Jar</td><td class="num">5</td><td class="num">18</td><td class="num">2</td><td class="num">+5%</td><td><span class="badge ok">78%</span></td></tr>
-            <tr><td>4. Warm Dishes</td><td class="num">7</td><td class="num">18</td><td class="num">2</td><td class="num">+5%</td><td><span class="badge crit">64% · overstocked</span></td></tr>
-            <tr><td>5. Desserts</td><td class="num">9</td><td class="num">18</td><td class="num">2</td><td class="num">+10%</td><td><span class="badge ok">81%</span></td></tr>
+            <tr><td>1. Cold Dishes</td><td class="num">13</td><td class="num">18</td><td class="num">2</td><td class="num">+10%</td><td><div class="meter"><div class="track"><div class="fill warn" style="width:94%"></div></div><span class="pct">94%</span></div></td></tr>
+            <tr><td>2. Wraps &amp; Sandwiches</td><td class="num">20</td><td class="num">18</td><td class="num">2</td><td class="num">+10%</td><td><div class="meter"><div class="track"><div class="fill" style="width:86%"></div></div><span class="pct">86%</span></div></td></tr>
+            <tr><td>3. Warm Dishes Jar</td><td class="num">5</td><td class="num">18</td><td class="num">2</td><td class="num">+5%</td><td><div class="meter"><div class="track"><div class="fill" style="width:78%"></div></div><span class="pct">78%</span></div></td></tr>
+            <tr><td>4. Warm Dishes</td><td class="num">7</td><td class="num">18</td><td class="num">2</td><td class="num">+5%</td><td><div class="meter"><div class="track"><div class="fill crit" style="width:64%"></div></div><span class="pct">64%</span></div></td></tr>
+            <tr><td>5. Desserts</td><td class="num">9</td><td class="num">18</td><td class="num">2</td><td class="num">+10%</td><td><div class="meter"><div class="track"><div class="fill" style="width:81%"></div></div><span class="pct">81%</span></div></td></tr>
             <tr><td>6. Snacks</td><td class="num">target-based</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td><span class="badge info">target − live stock</span></td></tr>
             <tr><td>7. Drinks</td><td class="num">target-based</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td><span class="badge info">target − live stock</span></td></tr>
-            <tr><td>8. Breakfast</td><td class="num">6</td><td class="num">18</td><td class="num">2</td><td class="num">+5%</td><td><span class="badge warn">92% · sold-out risk</span></td></tr>
-            <tr><td>9. Soups</td><td class="num">4</td><td class="num">18</td><td class="num">2</td><td class="num">+5%</td><td><span class="badge ok">73%</span></td></tr>
-            <tr><td>10. Frozen Warm Dishes</td><td class="num">3</td><td class="num">18</td><td class="num">2</td><td class="num">+0%</td><td><span class="badge crit">58% · overstocked</span></td></tr>
+            <tr><td>8. Breakfast</td><td class="num">6</td><td class="num">18</td><td class="num">2</td><td class="num">+5%</td><td><div class="meter"><div class="track"><div class="fill warn" style="width:92%"></div></div><span class="pct">92%</span></div></td></tr>
+            <tr><td>9. Soups</td><td class="num">4</td><td class="num">18</td><td class="num">2</td><td class="num">+5%</td><td><div class="meter"><div class="track"><div class="fill" style="width:73%"></div></div><span class="pct">73%</span></div></td></tr>
+            <tr><td>10. Frozen Warm Dishes</td><td class="num">3</td><td class="num">18</td><td class="num">2</td><td class="num">+0%</td><td><div class="meter"><div class="track"><div class="fill crit" style="width:58%"></div></div><span class="pct">58%</span></div></td></tr>
           </tbody>
         </table>
+        </div>
+        <div class="callout green" style="margin-bottom:0"><b>Residual fridge stock — stays in the fridge (green panel, slide 5):</b> live Husky stock with enough DLC to cover Tue → Thu is deducted from the forecast above.
+          <div class="residual-line mt" style="margin-top:8px"><span class="nm">Salade Cesar C&amp;G</span><span class="dlc">DLC 04 Jul ✓</span><span class="qy">−3</span></div>
+          <div class="residual-line"><span class="nm">Chicken Andalusia Wrap</span><span class="dlc">DLC 03 Jul ✓</span><span class="qy">−4</span></div>
+          <div class="residual-line"><span class="nm">Granola Vanille</span><span class="dlc">DLC 12 Jul ✓</span><span class="qy">−2</span></div>
         </div>
         <div class="callout warn">2 days excluded by the holiday filter in this window: Mon 15 Jun (site closed — 3 items sold) and Fri 19 Jun (bridge day — 4 items sold). Excluded days don't count as valid selling days.</div>
       </div>
@@ -514,26 +606,27 @@
         <div class="sub">ABB Zaventem · restock additions vs RFID sales per category</div>
         <div class="table-scroll">
         <table>
-          <thead><tr><th>Category</th><th class="num">Added</th><th class="num">Sold</th><th class="num">Sell-through</th></tr></thead>
+          <thead><tr><th>Category</th><th class="num">Added</th><th class="num">Sold</th><th>Sell-through</th></tr></thead>
           <tbody>
-            <tr><td>1. Cold Dishes</td><td class="num">17</td><td class="num">16</td><td class="num"><span class="badge warn">94%</span></td></tr>
-            <tr><td>2. Wraps &amp; Sandwiches</td><td class="num">28</td><td class="num">24</td><td class="num"><span class="badge ok">86%</span></td></tr>
-            <tr><td>3. Warm Dishes Jar</td><td class="num">9</td><td class="num">7</td><td class="num"><span class="badge ok">78%</span></td></tr>
-            <tr><td>4. Warm Dishes</td><td class="num">11</td><td class="num">7</td><td class="num"><span class="badge crit">64%</span></td></tr>
-            <tr><td>5. Desserts</td><td class="num">16</td><td class="num">13</td><td class="num"><span class="badge ok">81%</span></td></tr>
-            <tr><td>6. Snacks</td><td class="num">22</td><td class="num">19</td><td class="num"><span class="badge ok">86%</span></td></tr>
-            <tr><td>7. Drinks</td><td class="num">31</td><td class="num">26</td><td class="num"><span class="badge ok">84%</span></td></tr>
-            <tr><td>8. Breakfast</td><td class="num">12</td><td class="num">11</td><td class="num"><span class="badge warn">92%</span></td></tr>
-            <tr><td>9. Soups</td><td class="num">7</td><td class="num">5</td><td class="num"><span class="badge ok">73%</span></td></tr>
-            <tr><td>10. Frozen Warm Dishes</td><td class="num">6</td><td class="num">3</td><td class="num"><span class="badge crit">58%</span></td></tr>
-            <tr class="total"><td>Total</td><td class="num">159</td><td class="num">131</td><td class="num">82%</td></tr>
+            <tr><td>1. Cold Dishes</td><td class="num">17</td><td class="num">16</td><td><div class="meter"><div class="track"><div class="fill warn" style="width:94%"></div></div><span class="pct">94%</span></div></td></tr>
+            <tr><td>2. Wraps &amp; Sandwiches</td><td class="num">28</td><td class="num">24</td><td><div class="meter"><div class="track"><div class="fill" style="width:86%"></div></div><span class="pct">86%</span></div></td></tr>
+            <tr><td>3. Warm Dishes Jar</td><td class="num">9</td><td class="num">7</td><td><div class="meter"><div class="track"><div class="fill" style="width:78%"></div></div><span class="pct">78%</span></div></td></tr>
+            <tr><td>4. Warm Dishes</td><td class="num">11</td><td class="num">7</td><td><div class="meter"><div class="track"><div class="fill crit" style="width:64%"></div></div><span class="pct">64%</span></div></td></tr>
+            <tr><td>5. Desserts</td><td class="num">16</td><td class="num">13</td><td><div class="meter"><div class="track"><div class="fill" style="width:81%"></div></div><span class="pct">81%</span></div></td></tr>
+            <tr><td>6. Snacks</td><td class="num">22</td><td class="num">19</td><td><div class="meter"><div class="track"><div class="fill" style="width:86%"></div></div><span class="pct">86%</span></div></td></tr>
+            <tr><td>7. Drinks</td><td class="num">31</td><td class="num">26</td><td><div class="meter"><div class="track"><div class="fill" style="width:84%"></div></div><span class="pct">84%</span></div></td></tr>
+            <tr><td>8. Breakfast</td><td class="num">12</td><td class="num">11</td><td><div class="meter"><div class="track"><div class="fill warn" style="width:92%"></div></div><span class="pct">92%</span></div></td></tr>
+            <tr><td>9. Soups</td><td class="num">7</td><td class="num">5</td><td><div class="meter"><div class="track"><div class="fill" style="width:73%"></div></div><span class="pct">73%</span></div></td></tr>
+            <tr><td>10. Frozen Warm Dishes</td><td class="num">6</td><td class="num">3</td><td><div class="meter"><div class="track"><div class="fill crit" style="width:58%"></div></div><span class="pct">58%</span></div></td></tr>
+            <tr class="total"><td>Total</td><td class="num">159</td><td class="num">131</td><td><div class="meter"><div class="track"><div class="fill" style="width:82%"></div></div><span class="pct">82%</span></div></td></tr>
           </tbody>
         </table>
         </div>
-        <div class="callout" style="margin-bottom:0">Color coding: <span class="badge warn">≥ 90% sold-out risk</span> — increase forecast margin; <span class="badge crit">&lt; 70% overstocked</span> — reduce or rotate menu; <span class="badge ok">70–89% healthy</span>.</div>
+        <div class="callout" style="margin-bottom:0">Colour code (slide 4): <b style="color:#8a6100">≥ 90%</b> sold-out risk — increase forecast margin · <b class="neg">&lt; 70%</b> overstocked — reduce or rotate menu · <b class="posv">70–89%</b> healthy.</div>
       </div>
     </div>
-    <div class="note-src">Source: <span class="mono">Forecast V2</span> sheet + Update Forecast script → <span class="mono">POST /api/v1/forecasts/run</span> · <span class="mono">GET /api/v1/forecasts/performance?week=26</span></div>
+    <!-- production: sell-through bars render with d3.js in the React frontend; inline CSS bars here keep the mockup self-contained -->
+    <div class="note-src">Charts (sell-through bars) are static mockups — <b>production: rendered with d3.js</b>. Source: <span class="mono">Forecast V2</span> sheet + Update Forecast script → <span class="mono">POST /api/v1/forecasts/run</span> · <span class="mono">GET /api/v1/forecasts/performance?week=26</span></div>
   </section>
 
   <!-- ═══════════ PAGE 4: RESTOCK VERIFICATION ═══════════ -->
@@ -563,17 +656,17 @@
       </div>
       <div class="card tile">
         <div class="label">Difference</div>
-        <div class="value" style="color:var(--critical)">−44</div>
+        <div class="value negv">−44</div>
         <div class="delta down">▼ 2.3% of dispatched</div>
       </div>
       <div class="card tile">
         <div class="label">€ difference</div>
-        <div class="value" style="color:var(--critical)">−€212.40</div>
+        <div class="value negv">−€212.40</div>
         <div class="delta">At snapshot purchase prices</div>
       </div>
       <div class="card tile">
         <div class="label">Unreliable tags</div>
-        <div class="value" style="color:#8a6100">17</div>
+        <div class="value warnv">17</div>
         <div class="delta">Excluded from diff · flagged below</div>
       </div>
     </div>
@@ -607,7 +700,7 @@
         <div class="sub">UNRELIABLE = tag read but not trusted by Husky — investigate before writing off</div>
         <div class="table-scroll">
         <table>
-          <thead><tr><th>Product</th><th>Fridge</th><th class="num">Disp.</th><th class="num">Added</th><th class="num" style="color:#8a6100">Unreliable</th><th class="num">Diff</th><th class="num">€ diff</th></tr></thead>
+          <thead><tr><th>Product</th><th>Fridge</th><th class="num">Disp.</th><th class="num">Added</th><th class="num">Unreliable</th><th class="num">Diff</th><th class="num">€ diff</th></tr></thead>
           <tbody>
             <tr><td>Chicken Andalusia Wrap</td><td>RTBF</td><td class="num">8</td><td class="num">4</td><td class="num"><span class="badge warn">3</span></td><td class="num neg">−4</td><td class="num neg">−€16.40</td></tr>
             <tr><td>Lasagne Bolognese (frozen)</td><td>DPG Media Antwerpen</td><td class="num">6</td><td class="num">2</td><td class="num">0</td><td class="num neg">−4</td><td class="num neg">−€47.60</td></tr>
@@ -636,6 +729,7 @@
       <div class="controls">
         <select><option>Route A — Brussels (14 fridges)</option><option>Route B — Antwerpen (11 fridges)</option><option>Route C — Wallonie (9 fridges)</option></select>
         <span class="badge info">Stop 3 of 14</span>
+        <span class="badge ok">ETA 09:55 · 4.2 km to next stop</span>
       </div>
     </div>
 
@@ -643,7 +737,7 @@
       <div class="phone">
         <div class="statusbar"><span>09:41</span><span>FrigoLoco Driver · Tue 30 Jun</span><span>▮▮▮</span></div>
         <div class="p-head">
-          <div class="route">Route A · Stop 3/14 · Week 27 — Tuesday</div>
+          <div class="route">Route A · Stop 3/14 · ETA 09:55 · 4.2 km · Week 27 — Tuesday</div>
           <h4>RTBF</h4>
           <div class="addr">Boulevard Auguste Reyers 52, 1044 Bruxelles</div>
           <div class="instr">⚠ Badge à l'accueil · frigo au −1 près de la cafétéria · sonner au 02 737 xx xx si fermé</div>
@@ -773,13 +867,19 @@ function renderDispatchMatrix() {
   const stock = grandTotals.map((v, i) => v + stockDelta[i]);
   const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
+  /* first column index of each category — gets a separator border down the whole grid */
+  const catStarts = new Set();
+  let cursor = 0;
+  matrixCategories.forEach(c => { catStarts.add(cursor); cursor += c.products.length; });
+  const sep = i => (catStarts.has(i) ? " cat-start" : "");
+
   let html = "<thead><tr class='cat-row'><th class='fridge-col'>Fridge</th>";
   matrixCategories.forEach(c => {
-    html += `<th class='${c.cls}' colspan='${c.products.length}'>${esc(c.name)}</th>`;
+    html += `<th class='${c.cls} cat-start' colspan='${c.products.length}'>${esc(c.name)}</th>`;
   });
   html += "<th class='rowtotal-h'></th></tr><tr class='prod-row'><th class='fridge-col'></th>";
-  allProducts.forEach(p => {
-    html += `<th>${esc(p.n)}<span class='price'>€${p.p}</span></th>`;
+  allProducts.forEach((p, i) => {
+    html += `<th class='${sep(i).trim()}'>${esc(p.n)}<span class='price'>€${p.p}</span></th>`;
   });
   html += "<th class='rowtotal-h'>Fridge total</th></tr></thead><tbody>";
 
@@ -787,27 +887,27 @@ function renderDispatchMatrix() {
     const rowTotal = f.q.reduce((a, b) => a + (b || 0), 0);
     html += `<tr><td class='fridge-col'>${esc(f.n)}</td>`;
     f.q.forEach((v, i) => {
-      const isMan = f.man.includes(i);
       if (v === null || v === 0) {
-        html += "<td class='qty zero'>–</td>";
+        html += `<td class='qty zero${sep(i)}'>·</td>`;
       } else {
-        html += `<td class='qty ${isMan ? "man" : "fc"}'><span class='q'>${v}</span><span class='src'>${isMan ? "m" : "ƒ"}</span></td>`;
+        const isMan = f.man.includes(i);
+        html += `<td class='qty ${isMan ? "man" : "fc"}${sep(i)}'><span class='q'>${v}</span><span class='src'>${isMan ? "m" : "ƒ"}</span></td>`;
       }
     });
     html += `<td class='rowtotal'>${rowTotal}</td></tr>`;
   });
-  html += `<tr class='more-row'><td class='fridge-col'>… 32 more fridges</td><td colspan='${colCount}'>scroll — all 42 fridges load in one grid</td><td class='rowtotal'>…</td></tr></tbody>`;
+  html += `<tr class='more-row'><td class='fridge-col'>+ 32 more fridges…</td><td colspan='${colCount}'>every fridge loads in this one virtualized grid — totals below already include them</td><td class='rowtotal'>…</td></tr></tbody>`;
 
   html += "<tfoot><tr class='t-total'><th class='fridge-col'>Total (42 fridges)</th>";
   grandTotals.forEach((v, i) => {
-    html += `<td class='${v > stock[i] ? "over" : ""}'>${v}</td>`;
+    html += `<td class='${(v > stock[i] ? "over" : "") + sep(i)}'>${v}</td>`;
   });
   const grand = grandTotals.reduce((a, b) => a + b, 0);
   html += `<td class='rowtotal'>${grand.toLocaleString("en-US")}</td></tr>`;
   html += "<tr class='t-stock'><th class='fridge-col'>Warehouse stock</th>";
   stock.forEach((v, i) => {
     const over = grandTotals[i] > v;
-    html += `<td class='${over ? "over" : ""}'>${v}${over ? ` <span style='font-size:10px'>(−${grandTotals[i] - v})</span>` : ""}</td>`;
+    html += `<td class='${(over ? "over" : "") + sep(i)}'>${v}${over ? ` <span style='font-size:10px'>(−${grandTotals[i] - v})</span>` : ""}</td>`;
   });
   html += "<td class='rowtotal'></td></tr></tfoot>";
 
@@ -816,6 +916,16 @@ function renderDispatchMatrix() {
 renderDispatchMatrix();
 
 /* ── nav switching ───────────────────────────────────────────────────── */
+/* a11y: nav items pair a decorative icon with a text label — expose them as focusable links with title/aria-label */
+document.querySelectorAll(".nav-item").forEach(item => {
+  const label = item.textContent.trim();
+  item.setAttribute("role", "link");
+  item.setAttribute("tabindex", "0");
+  item.setAttribute("title", label);
+  item.setAttribute("aria-label", label);
+  if (item.classList.contains("active")) item.setAttribute("aria-current", "page");
+  item.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); item.click(); } });
+});
 document.querySelectorAll(".nav-item").forEach(item => {
   item.addEventListener("click", () => {
     document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));

@@ -1,0 +1,32 @@
+[project]
+name = "frigoloco-cron"
+version = "0.1.0"
+description = "FrigoLoco scheduled jobs: Husky ingestion, snapshots, scoring, backfill."
+requires-python = ">=3.12"
+dependencies = [
+    "apscheduler>=3.10",
+    "python-dotenv",
+    # The backend package provides Settings, models, the DB session and the
+    # app.husky client the jobs import. Co-installed editable from ../backend
+    # (`pip install -e ../backend -e .`), which satisfies this requirement
+    # locally without hitting PyPI.
+    "frigoloco-backend",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+]
+
+[project.scripts]
+frigoloco-scheduler = "cron.scheduler:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["cron*"]
+
+[tool.uv.sources]
+frigoloco-backend = { path = "../backend", editable = true }

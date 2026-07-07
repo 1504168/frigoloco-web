@@ -1,5 +1,11 @@
 # FrigoLoco ERP — Scheduled Jobs (Cron Layer)
 
+> **⚠ DRIFT NOTICE (verifier, 2026-07-03):** parts of this document predate the canonical decisions in
+> [`architecture/IMPLEMENTATION-BRIEF.md`](../IMPLEMENTATION-BRIEF.md) and the scaffolded code. Where they disagree,
+> the BRIEF + code win: **no Alembic** (plain SQL via `backend/scripts/apply_schema.py`), **APScheduler worker in `cron/`**
+> (not in-process, not Railway cron), **`sync_run` + trailing-overlap re-pull** (no `sync_cursors` table),
+> env keys `DB_URL`/`FRIGOLOCO_API_*`, models split `master/planning/operations/events/sync`.
+
 > Layer: **CRON / JOBS** · APScheduler running **in-process** inside the FastAPI web service (modular-monolith Decision 4 in the spec) · single-run guarantee via PostgreSQL advisory locks · all runs logged to `job_runs`.
 >
 > Code home: `backend/app/jobs/` (`scheduler.py` = engine + locking + retry + logging, `definitions.py` = the job registrations below). Companion document: [`../backend/README.md`](../backend/README.md). Source of truth: spec `0001-frigoloco-excel-to-cloud-erp` (Husky sync strategy, R1/R2, Phase 5 automation).

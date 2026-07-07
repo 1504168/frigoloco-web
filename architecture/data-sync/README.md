@@ -14,7 +14,7 @@ flowchart TD
         EPE["GET purchases / restock / productreview - from-to windows"]
         EPS["GET stock/current - point-in-time"]
     end
-    subgraph JOBS["backend/app/jobs - Railway crons + one-off commands"]
+    subgraph JOBS["cron/ package - APScheduler worker + one-off CLIs"]
         MS["sync_master - daily 05:00"]
         BF["backfill - one-off, resumable, 7-day chunks"]
         DS["sync_incremental - daily 05:30, re-pulls last 3 days"]
@@ -70,7 +70,7 @@ All writes are `INSERT … ON CONFLICT DO UPDATE`, so every job can be re-run sa
 
 - **Database layer** (`architecture/database/`): owns the app-facing schema; this layer populates the event/master tables (`purchase`, `restock_*`, `stock_snapshot`, `product_review`, `product`, `fridge`, `client`, `fridge_product_price`) plus Excel-migrated history. Aggregate tables in the legacy workbooks become SQL views over these facts — the copy-paste financial pipeline disappears.
 - **Backend layer** (`architecture/backend/`): FastAPI services read the synced tables; nothing in the request path ever calls the vendor API synchronously (latency + rate-limit isolation). Live-telemetry needs (fridge state, RFID-offline alert) go through dedicated cron polls, not request-time calls.
-- **Cron layer** (`architecture/cron/`): the job catalogue there schedules the four movers here (`sync_master` 05:00, `sync_incremental` 05:30, `snapshot_stock` intraday, `backfill` on demand). Jobs are plain CLIs (`python -m app.jobs.<name>`), so the scheduler choice (Railway cron vs APScheduler, spec Q4) is a config swap.
+- **Cron layer** (`architecture/cron/`): the job catalogue there schedules the four movers here (`sync_master` 05:00, `sync_incremental` 05:30, `snapshot_stock` intraday, `backfill` on demand). **Scheduler = APScheduler** (user decision 2026-07-03, spec Q4 answered): a long-running worker (`python -m cron.scheduler`) in its own container; every job is also a plain CLI (`python -m cron.jobs.<name>`) for manual runs.
 - **Frontend** (`mockups/`): forecast/finance screens render data whose freshness = last green `sync_run`; surface `sync_run.finished_at` as the "data as of" stamp shown in the UI.
 
 ## Runbook (condensed — full plan in spec 0004)

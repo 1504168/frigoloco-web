@@ -957,7 +957,9 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
   <table>
     <thead><tr><th>Date (UTC)</th><th>Description</th></tr></thead>
     <tbody><tr><td>2026-07-02 08:10 PM UTC</td><td>Initial creation</td></tr>
-    <tr><td>2026-07-02 09:45 PM UTC</td><td>Spec review: auto-fixed 3 items (HuskyClient tuple returns → HuskyResponse dataclass; numeric section references → named sections; workbook paths + importer CLI flags), added 2 open questions (Q9–Q10)</td></tr></tbody>
+    <tr><td>2026-07-02 09:45 PM UTC</td><td>Spec review: auto-fixed 3 items (HuskyClient tuple returns → HuskyResponse dataclass; numeric section references → named sections; workbook paths + importer CLI flags), added 2 open questions (Q9–Q10)</td></tr>
+    <tr><td>2026-07-02 09:50 PM UTC</td><td>Deck-guidance audit vs FrigoLoco_Dev_Presentation_V5_Final.pptx: added product.display_order + importer order-preservation rule (slide 23); added Q11 on weather-history backfill (slide 4, step 6). Spec renumbered 0001 → 0004 (parallel session claimed 0001–0003).</td></tr>
+    <tr><td>2026-07-02 09:15 PM UTC</td><td>User decisions folded in: Q4 answered = APScheduler (cron/ package, own container, jobs also plain CLIs); Trade-off Decision 3 updated; env loading via python-dotenv; d3.js for frontend charts; no Alembic (schema via plain SQL scripts) — all recorded in CLAUDE.md.</td></tr></tbody>
   </table>
 </section>
 
@@ -1447,26 +1449,26 @@ raw/excel/{workbook_name}/{import_run_iso}/...       (copies of the workbooks at
 
   <h3>Decision 3 — Cron execution model</h3>
   <div class="spec-compare">
-    <div class="spec-compare-col is-chosen">
+    <div class="spec-compare-col">
       <div class="spec-compare-head">A — Railway cron jobs (one-shot containers)</div>
       <div class="spec-compare-body">
-        <span class="cmp-verdict cmp-verdict--win">Chosen (pending Q4)</span>
-        <p class="cmp-summary">Each job is <code>python -m app.jobs.X</code> on a Railway cron schedule.</p>
-        <ul class="cmp-pros"><li>No always-on scheduler process to babysit</li><li>Per-job logs/retries visible in Railway UI</li><li>Jobs are plain CLIs — trivially runnable locally</li></ul>
+        <span class="cmp-verdict cmp-verdict--alt">Alternative</span>
+        <p class="cmp-summary">Each job is <code>python -m cron.jobs.X</code> on a Railway cron schedule.</p>
+        <ul class="cmp-pros"><li>No always-on scheduler process to babysit</li><li>Per-job logs/retries visible in Railway UI</li></ul>
         <ul class="cmp-cons"><li>Minimum practical cadence coarser than an in-process loop</li><li>Schedule lives in Railway config, not code</li></ul>
       </div>
     </div>
-    <div class="spec-compare-col">
+    <div class="spec-compare-col is-chosen">
       <div class="spec-compare-head">B — APScheduler worker container</div>
       <div class="spec-compare-body">
-        <span class="cmp-verdict cmp-verdict--alt">Alternative</span>
-        <p class="cmp-summary">A long-running container schedules everything in code.</p>
-        <ul class="cmp-pros"><li>Schedules versioned in the repo</li><li>Sub-minute cadence possible</li></ul>
-        <ul class="cmp-cons"><li>One crashed process silently stops ALL jobs</li><li>Always-on container cost</li></ul>
+        <span class="cmp-verdict cmp-verdict--win">Chosen (user decision, Q4 answered)</span>
+        <p class="cmp-summary">A long-running worker (<code>python -m cron.scheduler</code>) in its own Docker container schedules everything in code.</p>
+        <ul class="cmp-pros"><li>Schedules versioned in the repo</li><li>Sub-minute cadence possible</li><li>Jobs still exposed as plain CLIs for manual runs/backfills</li></ul>
+        <ul class="cmp-cons"><li>One crashed process silently stops ALL jobs — mitigate with container restart policy + a heartbeat row in <code>sync_run</code></li><li>Always-on container cost</li></ul>
       </div>
     </div>
   </div>
-  <p><strong>Decision:</strong> A, provisionally — every job is written as a plain CLI either way, so switching later costs one config change. If the stock-snapshot cadence chosen in Q3 is finer than Railway cron comfortably supports, revisit for that one job only.</p>
+  <p><strong>Decision:</strong> B — <strong>APScheduler</strong>, decided by the user on 2026-07-03 (recorded in CLAUDE.md). Jobs live in the top-level <code>cron/</code> package, run in their own Docker container, and every job remains a plain CLI (<code>python -m cron.jobs.X</code>) so manual runs and the one-off backfill work unchanged.</p>
 
   <h3>Decision 4 — Money representation</h3>
   <p>Integer cents (<code>bigint</code>) everywhere, matching the API's verified <code>int64</code> minor-unit schema; <code>numeric</code> only for rates/fractions. Rejected: <code>numeric(8,2)</code> euros (invites float-ish drift and double conversion — Excel's euros are converted once at import: <code>round(Decimal(v) * 100)</code>), and floats (never for money). This is the deck-independent choice with the fewest conversion boundaries.</p>
@@ -1801,8 +1803,8 @@ class HuskyClient:
         "detail": "Schedules versioned in code; one always-on container"
       }
     ],
-    "answer": null,
-    "status": "open"
+    "answer": "apscheduler — decided by user in chat 2026-07-03; jobs live in cron/ package, own Docker container, each job also a plain CLI",
+    "status": "answered"
   },
   {
     "id": "Q5",
@@ -1945,6 +1947,27 @@ class HuskyClient:
         "value": "prune",
         "label": "Hard-delete snapshots older than N months",
         "detail": "Leanest database; full history remains recoverable from the raw blob archive"
+      }
+    ],
+    "answer": null,
+    "status": "open"
+  },
+  {
+    "id": "Q11",
+    "question": "Should historical weather data be backfilled in this phase for the deck's weather-adjusted forecasting?",
+    "context": "Deck slide 4 (Forecast step 6) adjusts forecasts by +/- % based on 18 months of weather/sales correlation. No weather table or ingestion exists in any prepared artifact yet. Historical + daily weather per client location is external data (e.g. the free Open-Meteo historical API), so it naturally belongs to this data-sync layer — but it could also wait for the forecast spec. Deferring costs nothing (historical weather is always retrievable, unlike stock snapshots).",
+    "section": "Proposed Solution",
+    "type": "single",
+    "options": [
+      {
+        "value": "defer",
+        "label": "Defer to the forecast spec",
+        "detail": "Keep this phase focused; weather history can be fetched any time later"
+      },
+      {
+        "value": "now",
+        "label": "Include a weather_observation table + backfill job now",
+        "detail": "One more sync job (daily) + 18-month backfill from a weather API keyed by client location"
       }
     ],
     "answer": null,

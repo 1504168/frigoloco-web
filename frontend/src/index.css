@@ -1,0 +1,125 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  FrigoLoco design tokens.
+  Source of truth: mockups/frigoloco-forecasting-app-mockup.html (:root + dark block).
+  The mockup uses a prefers-color-scheme media query; here dark mode is class-based
+  (.dark on <html>) so the in-app toggle controls it. Values are copied verbatim from
+  the mockup, then mapped onto shadcn/ui semantic variables.
+*/
+
+@layer base {
+  :root {
+    /* ---- Raw brand tokens (verbatim from mockup light :root) ---- */
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --ink-1: #0b0b0b;
+    --ink-2: #52514e;
+    --ink-3: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    /* ---- FrigoLoco brand teal (D6) ----
+       --brand-teal = sampled logo teal (#45BCB4); used as-is on dark surfaces.
+       --brand-teal-aa = darkened for WCAG AA on white (4.73:1 both directions:
+       white-on-teal buttons AND teal-text/links on white). */
+    --brand-teal: #45bcb4;
+    --brand-teal-aa: #1a8175;
+    --sidebar-accent: #45bcb4;
+    --series-1: var(--brand-teal-aa);
+    --series-2: #1baf7a;
+    --series-3: #eda100;
+    --good: #0ca30c;
+    --good-text: #006300;
+    --warning: #fab219;
+    --critical: #d03b3b;
+    --teal: #0d9488;
+    --sidebar-bg: #14202e;
+    --sidebar-ink: #c7d2de;
+
+    /* ---- shadcn semantic tokens (light) ---- */
+    --background: var(--page);
+    --foreground: var(--ink-1);
+    --card: var(--surface-1);
+    --card-foreground: var(--ink-1);
+    --popover: var(--surface-1);
+    --popover-foreground: var(--ink-1);
+    --primary: var(--series-1);
+    --primary-foreground: #ffffff;
+    --secondary: #f0efe9;
+    --secondary-foreground: var(--ink-2);
+    --muted: #f0efe9;
+    --muted-foreground: var(--ink-3);
+    --accent: #eceada;
+    --accent-foreground: var(--ink-1);
+    --destructive: var(--critical);
+    --destructive-foreground: #ffffff;
+    --border: rgba(11, 11, 11, 0.1);
+    --input: rgba(11, 11, 11, 0.14);
+    --ring: var(--series-1);
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* ---- Raw brand tokens (verbatim from mockup dark block) ---- */
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --ink-1: #ffffff;
+    --ink-2: #c3c2b7;
+    --ink-3: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    /* ---- FrigoLoco brand teal (D6) ---- brand teal is bright enough on the
+       dark page (8.4:1); primary-foreground flips to dark ink because white on
+       teal is only 2.31:1 (see --primary-foreground below). */
+    --brand-teal: #45bcb4;
+    --brand-teal-aa: #1a8175;
+    --sidebar-accent: #45bcb4;
+    --series-1: var(--brand-teal);
+    --series-2: #199e70;
+    --series-3: #c98500;
+    --good: #0ca30c;
+    --good-text: #0ca30c;
+    --warning: #fab219;
+    --critical: #d03b3b;
+    --teal: #2dd4bf;
+    --sidebar-bg: #14202e;
+    --sidebar-ink: #c7d2de;
+
+    /* ---- shadcn semantic tokens (dark) ---- */
+    --background: var(--page);
+    --foreground: var(--ink-1);
+    --card: var(--surface-1);
+    --card-foreground: var(--ink-1);
+    --popover: var(--surface-1);
+    --popover-foreground: var(--ink-1);
+    --primary: var(--series-1);
+    /* Dark-mode teal is light; dark ink on it scores 8.5:1 (white would be 2.3:1). */
+    --primary-foreground: #08110f;
+    --secondary: #26261f;
+    --secondary-foreground: var(--ink-2);
+    --muted: #24241f;
+    --muted-foreground: var(--ink-3);
+    --accent: #2c2c26;
+    --accent-foreground: var(--ink-1);
+    --destructive: #e34948;
+    --destructive-foreground: #ffffff;
+    --border: rgba(255, 255, 255, 0.1);
+    --input: rgba(255, 255, 255, 0.16);
+    --ring: var(--series-1);
+  }
+
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+}

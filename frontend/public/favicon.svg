@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-label="FrigoLoco">
+  <!-- FrigoLoco favicon (D6): white location-pin mark on the brand-teal rounded square. -->
+  <rect width="48" height="48" rx="11" fill="#45BCB4"/>
+  <path fill="#ffffff" d="M24 9c-6.075 0-11 4.7-11 10.5 0 7.9 11 19.5 11 19.5s11-11.6 11-19.5C35 13.7 30.075 9 24 9z"/>
+  <circle cx="24" cy="19.5" r="4.4" fill="#45BCB4"/>
+</svg>

@@ -23,6 +23,7 @@
     --good-text: #006300;
     --warning: #fab219;
     --critical: #d03b3b;
+    --teal: #0d9488;
     --seq-150: #b7d3f6;
     --seq-250: #86b6ef;
     --sidebar-bg: #14202e;
@@ -44,6 +45,7 @@
       --pos: #3987e5;
       --neg: #e66767;
       --good-text: #0ca30c;
+      --teal: #2dd4bf;
       --seq-150: #184f95;
       --seq-250: #1c5cab;
     }
@@ -66,6 +68,7 @@
     padding: 18px 0;
     position: sticky; top: 0; height: 100vh;
     display: flex; flex-direction: column;
+    overflow-y: auto;
   }
   .logo { padding: 4px 20px 18px; border-bottom: 1px solid rgba(255,255,255,.08); margin-bottom: 12px; }
   .logo .name { font-size: 17px; font-weight: 700; color: #fff; letter-spacing: .2px; }
@@ -103,6 +106,8 @@
   }
   .btn.primary { background: var(--series-1); border-color: transparent; color: #fff; }
   .btn.ghost { background: transparent; }
+  .btn.danger { background: var(--critical); border-color: transparent; color: #fff; }
+  .btn.sm { padding: 4px 10px; font-size: 12.5px; }
 
   .card {
     background: var(--surface-1);
@@ -197,6 +202,22 @@
     border-left: 3px solid var(--series-1); background: rgba(42,120,214,.06);
     padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 12.5px; color: var(--ink-2); margin: 12px 0;
   }
+  .callout.warn { border-left-color: var(--warning); background: rgba(250,178,25,.08); }
+  .callout.green { border-left-color: var(--series-2); background: rgba(27,175,122,.08); }
+
+  /* status chips — shared with the other FrigoLoco apps */
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 10px; white-space: nowrap;
+  }
+  .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .chip.draft      { background: rgba(137,135,129,.16); color: var(--ink-2); }
+  .chip.saved      { background: rgba(42,120,214,.13);  color: var(--series-1); }
+  .chip.sent, .chip.dispatched, .chip.received { background: rgba(12,163,12,.12); color: var(--good-text); }
+  .chip.partial    { background: rgba(250,178,25,.18);  color: #8a6100; }
+  .chip.cancelled  { background: rgba(208,59,59,.12);   color: var(--critical); }
+  .chip.verified   { background: rgba(13,148,136,.14);  color: var(--teal); }
+  @media (prefers-color-scheme: dark) { .chip.partial { color: #fab219; } }
 
   /* system design */
   .flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
@@ -227,6 +248,36 @@
 
   .mt { margin-top: 14px; }
   .note-src { font-size: 11px; color: var(--ink-3); margin-top: 10px; }
+
+  /* ── Empty / loading / error states — shared pattern (see AUDIT: every React view needs these) ── */
+  .empty-state { text-align: center; padding: 34px 20px; color: var(--ink-3); }
+  .empty-state .ico { font-size: 30px; opacity: .45; display: block; margin-bottom: 8px; }
+  .empty-state b { display: block; color: var(--ink-2); font-size: 13.5px; margin-bottom: 3px; }
+  .empty-state.err { color: var(--critical); }
+  .skeleton { height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--grid), var(--page), var(--grid)); background-size: 200% 100%; animation: sk 1.2s ease-in-out infinite; }
+  @keyframes sk { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  .toast-wrap { position: fixed; right: 16px; bottom: 46px; z-index: 120; display: flex; flex-direction: column; gap: 8px; }
+  .toast {
+    display: flex; align-items: center; gap: 10px; max-width: 400px;
+    background: var(--surface-1); color: var(--ink-1);
+    border: 1px solid var(--border); border-left: 4px solid var(--critical);
+    border-radius: 10px; padding: 11px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.22); font-size: 13px;
+  }
+  .toast .tico { color: var(--critical); font-weight: 700; }
+  .toast.ok   { border-left-color: var(--good); }    .toast.ok .tico   { color: var(--good-text); }
+  .toast.warn { border-left-color: var(--warning); } .toast.warn .tico { color: #8a6100; }
+  .toast .x { margin-left: auto; color: var(--ink-3); cursor: pointer; font-weight: 700; }
+  @media (prefers-color-scheme: dark) { .toast.warn .tico { color: #fab219; } }
+
+  /* ── Print — report / document output (hide chrome, black-on-white) ── */
+  @media print {
+    .sidebar, .mock-foot, .tooltip, .toast-wrap, .topbar .controls, .btn { display: none !important; }
+    .main { padding: 0; }
+    body { background: #fff; color: #000; }
+    .card { border: none; box-shadow: none; break-inside: avoid; }
+    .print-break { break-before: page; }
+    a { color: #000; text-decoration: none; }
+  }
 </style>
 </head>
 <body>
@@ -239,14 +290,14 @@
       <div class="sub">Weekly &amp; Monthly Returns</div>
     </div>
     <div class="nav-section">Analytics</div>
-    <div class="nav-item active" data-page="dashboard"><span class="ico">◧</span> Dashboard</div>
-    <div class="nav-item" data-page="weekly"><span class="ico">▤</span> Weekly Returns</div>
-    <div class="nav-item" data-page="monthly"><span class="ico">▥</span> Monthly Analysis</div>
+    <div class="nav-item active" data-page="dashboard"><span class="ico" aria-hidden="true">◧</span> Dashboard</div>
+    <div class="nav-item" data-page="weekly"><span class="ico" aria-hidden="true">▤</span> Weekly Returns</div>
+    <div class="nav-item" data-page="monthly"><span class="ico" aria-hidden="true">▥</span> Monthly Analysis</div>
     <div class="nav-section">Data</div>
-    <div class="nav-item" data-page="master"><span class="ico">▦</span> Master Data</div>
-    <div class="nav-item" data-page="imports"><span class="ico">⇅</span> Data Imports</div>
+    <div class="nav-item" data-page="master"><span class="ico" aria-hidden="true">▦</span> Master Data</div>
+    <div class="nav-item" data-page="imports"><span class="ico" aria-hidden="true">⇅</span> Data Imports</div>
     <div class="nav-section">System</div>
-    <div class="nav-item" data-page="system"><span class="ico">⚙</span> Backend &amp; Data Model</div>
+    <div class="nav-item" data-page="system"><span class="ico" aria-hidden="true">⚙</span> Backend &amp; Data Model</div>
     <div class="foot"><b>ismail@alliedchb.com</b>Admin · v0.1 mockup</div>
   </nav>
 
@@ -303,7 +354,8 @@
     <div class="grid two-col">
       <div class="card">
         <h3>Sales turnover &amp; net margin — W18 to W26</h3>
-        <div class="sub">Weekly turnover ex VAT; W21 had no recorded activity (public holiday week)</div>
+        <div class="sub">Weekly turnover ex VAT; W21 had no recorded activity (public holiday week) · <span style="color:var(--ink-2)">production: rendered with <b>d3.js</b></span></div>
+        <!-- production: this trend chart is drawn with d3.js in the React frontend; inline SVG here keeps the mockup self-contained (no CDN) -->
         <div class="chart-wrap" id="trend-chart"></div>
         <div class="legend">
           <span class="key"><span class="line-key" style="background:var(--series-1)"></span> Sales turnover (€)</span>
@@ -312,7 +364,7 @@
       </div>
       <div class="card">
         <h3>Week 26 food margin by category</h3>
-        <div class="sub">Net sale − food cost per category · € · blue = positive, red = negative</div>
+        <div class="sub">Net sale − food cost per category · € · blue = positive, red = negative · <span style="color:var(--ink-2)">production: rendered with <b>d3.js</b></span></div>
         <div id="cat-margin-chart"></div>
       </div>
     </div>
@@ -357,12 +409,19 @@
         <div class="field"><label>TGTG CA (€)</label><input type="number" value="55"><div class="hint">Too Good To Go</div></div>
         <div class="field"><label>Business lunch food cost (€)</label><input type="number" placeholder="0.00"></div>
         <div class="field"><label>Logistics cost (€)</label><input type="number" value="1711.60"></div>
+        <div class="field"><label># of Fridges</label><input type="number" value="45"><div class="hint">Manual weekly input (Weekly Data col J)</div></div>
         <div class="field"><label># of drops</label><input type="number" value="120"></div>
         <div class="field"><label>Unsold items</label><input type="number" value="0"></div>
         <div class="field" style="grid-column: span 2"><label>Remarks</label><input type="text" placeholder="e.g. Friday refill @Neuhaus, panne electricité…"></div>
       </div>
       <div class="callout">
-        <b>Pulled automatically on save:</b> total sales, refunds, FrigoLoco discount &amp; customer credit (Wix sales import) · fridge food cost (dispatch import) · POS &amp; software fee 9% and RFID €0.10/item (Settings). All margin fields are calculated by the backend — no formulas to maintain.
+        <b>Pulled automatically on save:</b> total sales, refunds, FrigoLoco discount &amp; customer credit (Wix sales import) · <b>fridge food cost = ADDED / restock value</b> (the <span class="mono">Added Food Cost</span> column from the Added-data import — <b>not</b> dispatched value) · <b>POS &amp; software fee = 9% × VAT-inclusive gross sales</b> (Total Sales, the Wix gross — not ex-VAT) and RFID €0.10/item (Settings). All margin fields are calculated by the backend — no formulas to maintain.
+      </div>
+      <div class="callout warn" style="margin-top:10px">
+        <b>Cost basis — weekly view:</b> fridge food cost uses the <b>ADDED (restock)</b> value. This differs from the Monthly by-fridge P&amp;L, which uses <b>DISPATCHED</b> value. The difference is a deliberate legacy inconsistency and is stated on each view so the numbers are never silently mixed.
+      </div>
+      <div class="callout green" style="margin-top:10px">
+        <b>Weekly net margin</b> = (Sales Turnover + Catering + TGTG) − (Fridge Food Cost<span class="mono">[ADDED]</span> + Catering Food Cost + Logistics) − POS &amp; software − RFID. &nbsp;<span style="color:var(--ink-3)">Turnover ex VAT = (Sales + Credit − Refund) <b>÷ 1.06</b>.</span>
       </div>
       <div class="form-actions">
         <button class="btn primary">Save week 26</button>
@@ -416,6 +475,9 @@
     <div class="subview active" id="sub-clients">
       <div class="callout" style="margin-top:0">
         <b>Net margin per fridge</b> = client fee (yearly ÷ 12) + food margin + service additionals − fraction-allocated logistics − POS &amp; software (9%). In the database this is one SQL view — the month columns pasted side-by-side in Excel become a simple month filter, and year-over-year comparison finally becomes possible.
+      </div>
+      <div class="callout warn" style="margin-top:0">
+        <b>Cost basis — monthly by-fridge:</b> food cost uses the <b>DISPATCHED</b> value. This is intentionally different from the Weekly view (which uses <b>ADDED / restock</b> value) — a deliberate legacy inconsistency, surfaced here so the two reports are never compared on the same basis by mistake.
       </div>
       <div class="card">
         <h3>Client P&amp;L — April 2026</h3>
@@ -541,7 +603,7 @@
           <tbody>
             <tr><td class="mono">pos_software_percent</td><td class="num">9.00%</td><td>of sales</td><td>01 Jan 2025</td><td>Husky fee on sales</td><td><a href="#">Edit</a></td></tr>
             <tr><td class="mono">rfid_tag_transaction</td><td class="num">€0.10</td><td>per item sold</td><td>01 Jan 2025</td><td>RFID tag on each item</td><td><a href="#">Edit</a></td></tr>
-            <tr><td class="mono">vat_rate_food</td><td class="num">6.00%</td><td>of gross sales</td><td>01 Jan 2025</td><td>Deducted to get turnover ex VAT</td><td><a href="#">Edit</a></td></tr>
+            <tr><td class="mono">vat_rate_food</td><td class="num">6.00%</td><td>of gross sales</td><td>01 Jan 2025</td><td>Turnover ex VAT = gross <b>÷ 1.06</b> — i.e. (Sales + Credit − Refund) ÷ 1.06, <b>not</b> gross − 6%</td><td><a href="#">Edit</a></td></tr>
             <tr><td class="mono">discount_providers</td><td class="num">—</td><td>list</td><td>01 Jan 2025</td><td>“Frigo Loco Depot”, “Discount” — provider names treated as internal discount in Wix export</td><td><a href="#">Edit</a></td></tr>
           </tbody>
         </table>
@@ -892,6 +954,16 @@ function showTip(e, html) {
 function hideTip() { tooltip.style.display = "none"; }
 
 /* ── nav & tabs ─────────────────────────────── */
+/* a11y: nav items pair a decorative icon with a text label — expose them as focusable links with title/aria-label */
+document.querySelectorAll(".nav-item").forEach(item => {
+  const label = item.textContent.trim();
+  item.setAttribute("role", "link");
+  item.setAttribute("tabindex", "0");
+  item.setAttribute("title", label);
+  item.setAttribute("aria-label", label);
+  if (item.classList.contains("active")) item.setAttribute("aria-current", "page");
+  item.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); item.click(); } });
+});
 document.querySelectorAll(".nav-item").forEach(item => {
   item.addEventListener("click", () => {
     document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
@@ -921,6 +993,7 @@ if (hashPage) {
 }
 
 /* ── horizontal diverging bar chart ─────────────────────────────── */
+/* production: these bar/trend charts render with d3.js in the React frontend; inline SVG/HTML here keeps the mockup self-contained (no CDN) */
 function renderHBars(elId, data, unit = "€") {
   const el = document.getElementById(elId);
   const maxPos = Math.max(0, ...data.map(d => d.v));

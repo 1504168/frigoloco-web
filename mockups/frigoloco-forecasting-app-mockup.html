@@ -368,6 +368,41 @@
     background: var(--surface-1); border: 1px solid var(--border);
     border-radius: 999px; padding: 3px 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08);
   }
+
+  /* nav count pill — shared with the other FrigoLoco apps */
+  .nav-item .pill { margin-left: auto; font-size: 10.5px; font-weight: 700; background: var(--critical); color: #fff; border-radius: 999px; padding: 1px 7px; }
+
+  /* ── Empty / loading / error states — shared pattern (see AUDIT: every React view needs these) ── */
+  .empty-state { text-align: center; padding: 34px 20px; color: var(--ink-3); }
+  .empty-state .ico { font-size: 30px; opacity: .45; display: block; margin-bottom: 8px; }
+  .empty-state b { display: block; color: var(--ink-2); font-size: 13.5px; margin-bottom: 3px; }
+  .empty-state.err { color: var(--critical); }
+  .skeleton { height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--grid), var(--page), var(--grid)); background-size: 200% 100%; animation: sk 1.2s ease-in-out infinite; }
+  @keyframes sk { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  .toast-wrap { position: fixed; right: 16px; bottom: 46px; z-index: 120; display: flex; flex-direction: column; gap: 8px; }
+  .toast {
+    display: flex; align-items: center; gap: 10px; max-width: 400px;
+    background: var(--surface-1); color: var(--ink-1);
+    border: 1px solid var(--border); border-left: 4px solid var(--critical);
+    border-radius: 10px; padding: 11px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.22); font-size: 13px;
+  }
+  .toast .tico { color: var(--critical); font-weight: 700; }
+  .toast.ok   { border-left-color: var(--good); }    .toast.ok .tico   { color: var(--good-text); }
+  .toast.warn { border-left-color: var(--warning); } .toast.warn .tico { color: #8a6100; }
+  .toast .x { margin-left: auto; color: var(--ink-3); cursor: pointer; font-weight: 700; }
+  @media (prefers-color-scheme: dark) { .toast.warn .tico { color: #fab219; } }
+
+  /* ── Print — dispatch sheets & PO documents (hide chrome, black-on-white, page break per doc) ── */
+  @media print {
+    .sidebar, .mock-foot, .tooltip, .toast-wrap, .global-bar, .modal-backdrop, .modal-overlay, .topbar .controls, .btn { display: none !important; }
+    .main { padding: 0; }
+    body { background: #fff; color: #000; }
+    .card { border: none; box-shadow: none; break-inside: avoid; }
+    .phone { border: none; box-shadow: none; width: 100%; max-width: 100%; border-radius: 0; }
+    .pdf-paper, .pdf-ph { box-shadow: none; border: none; }
+    .print-break { break-before: page; }
+    a { color: #000; text-decoration: none; }
+  }
 </style>
 </head>
 <body>
@@ -380,20 +415,23 @@
       <div class="sub">Forecasting &amp; Operations</div>
     </div>
     <div class="nav-section">Planning</div>
-    <div class="nav-item active" data-page="dashboard"><span class="ico">◧</span> Dashboard</div>
-    <div class="nav-item" data-page="forecast"><span class="ico">▤</span> Forecast</div>
-    <div class="nav-item" data-page="menu"><span class="ico">▦</span> Menu Planner</div>
-    <div class="nav-item" data-page="targets"><span class="ico">◎</span> Targets</div>
+    <div class="nav-item active" data-page="dashboard"><span class="ico" aria-hidden="true">◧</span> Dashboard</div>
+    <div class="nav-item" data-page="forecast"><span class="ico" aria-hidden="true">▤</span> Forecast</div>
+    <div class="nav-item" data-page="menu"><span class="ico" aria-hidden="true">▦</span> Menu Planner</div>
+    <div class="nav-item" data-page="targets"><span class="ico" aria-hidden="true">◎</span> Targets</div>
+    <div class="nav-item" data-page="addons"><span class="ico" aria-hidden="true">✚</span> Add-on Services</div>
     <div class="nav-section">Operations</div>
-    <div class="nav-item" data-page="dispatch"><span class="ico">▥</span> Dispatch Board</div>
-    <div class="nav-item" data-page="orders"><span class="ico">▨</span> Purchase Orders</div>
-    <div class="nav-item" data-page="stock"><span class="ico">▧</span> Stock Position</div>
-    <div class="nav-item" data-page="verification"><span class="ico">✓</span> Restock Verification</div>
+    <div class="nav-item" data-page="dispatch"><span class="ico" aria-hidden="true">▥</span> Dispatch Board</div>
+    <div class="nav-item" data-page="orders"><span class="ico" aria-hidden="true">▨</span> Purchase Orders</div>
+    <div class="nav-item" data-page="stock"><span class="ico" aria-hidden="true">▧</span> Stock Position</div>
+    <div class="nav-item" data-page="verification"><span class="ico" aria-hidden="true">✓</span> Restock Verification</div>
+    <div class="nav-item" data-page="alerts"><span class="ico" aria-hidden="true">⚑</span> Alerts <span class="pill">4</span></div>
+    <div class="nav-item" data-page="clients"><span class="ico" aria-hidden="true">▣</span> Clients</div>
     <div class="nav-section">Insights</div>
-    <div class="nav-item" data-page="ratings"><span class="ico">★</span> Product Ratings</div>
-    <div class="nav-item" data-page="reports"><span class="ico">▩</span> Reports</div>
+    <div class="nav-item" data-page="ratings"><span class="ico" aria-hidden="true">★</span> Product Ratings</div>
+    <div class="nav-item" data-page="reports"><span class="ico" aria-hidden="true">▩</span> Reports</div>
     <div class="nav-section">System</div>
-    <div class="nav-item" data-page="admin"><span class="ico">⚙</span> Admin</div>
+    <div class="nav-item" data-page="admin"><span class="ico" aria-hidden="true">⚙</span> Admin</div>
     <div class="foot"><b>ismail@alliedchb.com</b>Planner · v0.1 mockup</div>
   </nav>
 
@@ -483,7 +521,8 @@
 
     <div class="card mt">
       <h3>Sold vs added by category — Week 26 (last completed)</h3>
-      <div class="sub">Units added by dispatch vs units sold · low sell-through flags overfilling</div>
+      <div class="sub">Units added by dispatch vs units sold · low sell-through flags overfilling · <span style="color:var(--ink-2)">production: rendered with <b>d3.js</b></span></div>
+      <!-- production: this bar chart is drawn with d3.js in the React frontend; inline SVG/HTML bars here keep the mockup self-contained (no CDN) -->
       <div id="dash-cat-chart"></div>
       <div class="legend">
         <span class="key"><span class="swatch" style="background:var(--seq-250)"></span> Added (dispatched units)</span>
@@ -534,14 +573,34 @@
       </div>
     </div>
 
+    <div class="card mt" style="border-left:3px solid var(--series-2); background: rgba(27,175,122,.05)">
+      <h3>Residual stock deduction</h3>
+      <div class="sub">live fridge stock (RFID) + remaining DLC decide what stays in the fridge vs what the driver withdraws</div>
+      <div class="grid two-even">
+        <div style="border:1px solid rgba(12,163,12,.35);border-radius:10px;padding:10px 14px;font-size:12.5px">
+          <span class="badge ok">✓ DLC ≥ coverage days</span>
+          <div style="margin-top:6px;color:var(--ink-2)">Item <b>stays in the fridge</b> and is <b>deducted from the forecast</b> — it will still be sellable through the coverage window.</div>
+        </div>
+        <div style="border:1px solid rgba(208,59,59,.4);border-radius:10px;padding:10px 14px;font-size:12.5px">
+          <span class="badge crit">✗ DLC &lt; coverage days</span>
+          <div style="margin-top:6px;color:var(--ink-2)">Item goes to the <b>withdrawal list</b> on the Dispatch Board — driver pulls it (resolution: Loss / Return to WH).</div>
+        </div>
+      </div>
+      <div class="callout" style="margin-bottom:0;margin-top:12px"><code>Net to deliver = max(0, forecast − deductible residual stock)</code></div>
+    </div>
+
     <div class="card mt">
       <h3>Diagnostics — Added / Sold / ratio (Week 26)</h3>
-      <div class="sub">Sell-through per category for the selected client · <span style="color:var(--critical);font-weight:600">red</span> = ratio &lt; 0.50 (overfilling)</div>
+      <div class="sub">Sell-through per category for the selected client · <span style="color:#8a6100;font-weight:600">amber</span> = ratio ≥ 0.90 (near sell-out — consider increasing) · <span style="color:var(--critical);font-weight:600">red</span> = ratio &lt; 0.70 (overfilling)</div>
       <div class="controls" style="margin-bottom:10px">
         <select id="diag-client"><option>Allianz Brussels</option><option>ABB Zaventem</option><option>Abbott Wavre</option><option>RTBF</option><option>Zoetis LLN</option></select>
         <span class="badge info">drawer · toggled from the grid</span>
       </div>
       <div class="table-scroll"><table id="diag-table"></table></div>
+      <div class="legend">
+        <span class="key"><span class="swatch" style="background:rgba(250,178,25,.45)"></span> ≥ 90% sell-through</span>
+        <span class="key"><span class="swatch" style="background:rgba(208,59,59,.35)"></span> &lt; 70% sell-through</span>
+      </div>
     </div>
     <div class="note-src">Source: <span class="mono">POST /forecast/run</span> → <span class="mono">GET /forecast/runs/{id}/results</span> · settings via <span class="mono">PUT /forecast/settings</span> (debounced)</div>
   </section>
@@ -556,8 +615,17 @@
       <div class="controls">
         <button class="btn">Re-allocate category</button>
         <button class="btn">Re-allocate all</button>
+        <button class="btn">Export to Order →</button>
         <button class="btn primary">Save menu</button>
       </div>
+    </div>
+
+    <div class="tabs" style="align-items:center">
+      <div class="tab">S26</div>
+      <div class="tab active">S27</div>
+      <div class="tab">S28</div>
+      <div class="tab" style="color:var(--series-1)">＋ New week</div>
+      <button class="btn sm" style="margin-left:auto;margin-bottom:6px">Copy previous week</button>
     </div>
 
     <div class="grid side-col">
@@ -646,19 +714,38 @@
     <div class="card">
       <div class="controls" style="margin-bottom:12px">
         <select><option>Week 27 · 2026</option><option>Week 26 · 2026</option></select>
-        <select><option>Tuesday</option><option>Monday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option></select>
-        <select><option>Category: All</option><option>1. Cold Dishes</option><option>2. Wraps &amp; Sandwiches</option><option>3. Warm Dishes Jar</option><option>4. Warm Dishes</option><option>5. Desserts</option><option>6. Snacks</option></select>
-        <span class="badge info">12 fridges · 16 products · 118 lines</span>
+        <select><option>Tuesday — AM run</option><option>Tuesday — PM run</option><option>Monday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option></select>
+        <select><option>Category: All</option><option>Hot</option><option>Frozen</option><option>Salads</option><option>Wraps</option><option>Granolas</option><option>Soups</option><option>Desserts</option><option>Drinks</option><option>Snacks</option></select>
+        <span class="badge info">12 fridges · 21 products · 146 lines</span>
+        <span class="badge info">2 dispatches/day possible</span>
         <span class="badge warn" style="margin-left:auto">⚠ 1 product over stock — see totals row</span>
       </div>
       <div class="wgrid-wrap">
         <table class="wgrid" id="dispatch-grid"></table>
       </div>
       <div class="legend">
+        <span class="key"><sup style="color:var(--series-1);font-weight:700">fc</sup> forecast-filled · <sup style="color:#8a6100;font-weight:700">man</sup> manual override (sample cells)</span>
         <span class="key">Pinned totals row: Σ dispatched vs currently in stock &amp; ordered — <span style="color:var(--critical);font-weight:600">red when Σ &gt; stock</span></span>
         <span class="key" style="margin-left:auto">Σ food cost €2,368.41 · Σ sales value €4,187.20</span>
       </div>
-      <div class="callout warn mt"><b>Confirm dispatch…</b> opens a typed-confirmation dialog: 12 fridges · 118 lines · Σ food cost €2,368.41 · dispatch notes emailed to logistics@frigoloco.be (rerouted — <b>TEST MODE</b>) · type <span class="mono">DISPATCH</span> to proceed.</div>
+      <div class="callout warn mt"><b>Confirm dispatch…</b> opens a typed-confirmation dialog: 12 fridges · 146 lines · Σ food cost €2,368.41 · dispatch notes emailed to logistics@frigoloco.be (rerouted — <b>TEST MODE</b>) · type <span class="mono">DISPATCH</span> to proceed.</div>
+    </div>
+
+    <div class="card mt">
+      <h3>Withdrawal list — driver pulls these on arrival</h3>
+      <div class="sub">residual fridge stock whose DLC is too short to cover the delivery window (see Forecast → residual stock deduction) · resolution logged per line</div>
+      <div class="table-scroll">
+      <table>
+        <thead><tr><th>Fridge</th><th>Product</th><th class="num">Qty</th><th>Reason</th><th>Resolution</th></tr></thead>
+        <tbody>
+          <tr><td><b>RTBF</b></td><td>Salade Cesar C&amp;G</td><td class="num">2</td><td><span class="badge crit">DLC &lt; 4 days</span></td><td><select><option>Loss</option><option>Return to WH</option></select></td></tr>
+          <tr><td><b>Allianz Brussels</b></td><td>Caesar Wrap BWL</td><td class="num">1</td><td><span class="badge crit">DLC &lt; 4 days</span></td><td><select><option>Return to WH</option><option>Loss</option></select></td></tr>
+          <tr><td><b>ABB Zaventem</b></td><td>Mango Mousse</td><td class="num">3</td><td><span class="badge crit">DLC &lt; 4 days</span></td><td><select><option>Loss</option><option>Return to WH</option></select></td></tr>
+          <tr><td><b>Kadans Droite</b></td><td>Chicken pesto wrap</td><td class="num">1</td><td><span class="badge crit">DLC &lt; 4 days</span></td><td><select><option>Return to WH</option><option>Loss</option></select></td></tr>
+          <tr class="total"><td>Total</td><td>4 lines</td><td class="num">7</td><td></td><td></td></tr>
+        </tbody>
+      </table>
+      </div>
     </div>
     <div class="note-src">Source: <span class="mono">PUT /dispatches/{id}/lines</span> (bulk diff) · <span class="mono">POST /dispatches/{id}/confirm</span> → per-fridge dispatch-note PDFs + email · activity drawer lists prior saves with restore</div>
   </section>
@@ -672,13 +759,14 @@
       </div>
       <div class="controls">
         <select><option>All statuses</option><option>Draft</option><option>Sent</option><option>Partially received</option><option>Received</option><option>Cancelled</option></select>
+        <select><option>Group: by order date</option><option>Group: by delivery date</option></select>
         <button class="btn primary">+ New order</button>
       </div>
     </div>
 
     <div class="card">
       <h3>Orders — Week 27</h3>
-      <div class="sub">Status auto-derives from line completeness — never set by hand</div>
+      <div class="sub">Status auto-derives from line completeness — never set by hand · 📎 = scanned delivery note attached on received orders</div>
       <div class="table-scroll">
       <table>
         <thead><tr><th>Order ref</th><th>Supplier</th><th>Order date</th><th>Expected delivery</th><th class="num">Lines</th><th class="num">Total inc. VAT</th><th>Status</th><th></th></tr></thead>
@@ -733,7 +821,33 @@
         </div>
       </div>
     </div>
-    <div class="note-src">Source: <span class="mono">POST /orders/build-from-menu</span> · <span class="mono">POST /orders/{id}/confirm</span> (assign ref → PDF → email) · <span class="mono">POST /orders/{id}/receive</span></div>
+    <div class="card mt">
+      <h3>Receive delivery — PO 2026-00352 · Croc&amp;Go <span class="chip partial">Partially received</span></h3>
+      <div class="sub">Enter quantity received per line · status derives from completeness (all lines full → <span class="chip received" style="vertical-align:middle">Received</span>, some short → <span class="chip partial" style="vertical-align:middle">Partial</span>) · attach the scanned delivery note</div>
+      <div class="controls" style="margin-bottom:12px">
+        <select><option>PO 2026-00352 — Croc&amp;Go (expected 01 Jul)</option><option>PO 2026-00360 — Croc&amp;Go (expected 30 Jun)</option><option>PO 2026-00358 — Bon - With Love</option></select>
+        <input type="date" value="2026-07-02">
+        <span class="badge warn">1 line short</span>
+      </div>
+      <div class="table-scroll">
+      <table>
+        <thead><tr><th>Product</th><th>Code</th><th class="num">Qty ordered</th><th class="num">Qty received ✎</th><th class="num">Δ</th><th>Line status</th></tr></thead>
+        <tbody>
+          <tr><td><b>Salade Cesar C&amp;G</b></td><td class="mono">1001</td><td class="num">40</td><td class="num"><input type="number" value="40" style="width:70px;text-align:right"></td><td class="num">0</td><td><span class="chip received">Received</span></td></tr>
+          <tr><td><b>Bun chicken brasil</b></td><td class="mono">0000074956333</td><td class="num">64</td><td class="num"><input type="number" value="58" style="width:70px;text-align:right"></td><td class="num neg">−6</td><td><span class="chip partial">Short</span></td></tr>
+          <tr><td><b>Chicken pesto wrap</b></td><td class="mono">1188</td><td class="num">30</td><td class="num"><input type="number" value="30" style="width:70px;text-align:right"></td><td class="num">0</td><td><span class="chip received">Received</span></td></tr>
+          <tr class="total"><td>Total</td><td></td><td class="num">134</td><td class="num">128</td><td class="num neg">−6</td><td><span class="chip partial">Partial</span></td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="form-actions">
+        <button class="btn primary">Confirm receipt</button>
+        <button class="btn ghost">📎 Attach delivery note</button>
+        <button class="btn ghost">Mark PO cancelled</button>
+        <span class="badge info">Receiving adds to stock &amp; ordered → Stock Position updates live</span>
+      </div>
+    </div>
+    <div class="note-src">Source: <span class="mono">POST /orders/build-from-menu</span> · <span class="mono">POST /orders/{id}/confirm</span> (assign ref → PDF → email) · <span class="mono">POST /orders/{id}/receive</span> (qty-received per line → status Pending/Partial/Received/Cancelled)</div>
   </section>
 
   <!-- ═══════════ 7 · STOCK POSITION ═══════════ -->
@@ -812,19 +926,24 @@
     </div>
 
     <div class="card" style="margin-bottom:14px">
-      <h3>Score weights</h3>
-      <div class="sub">Final Score = w₁ × % sold + w₂ × margin % + w₃ × review % · must sum to 1.00</div>
+      <h3>Score weights — dual scoring model</h3>
+      <div class="sub"><b>Global score</b> = 0.55 × % sold + 0.30 × margin + 0.15 × reviews · <b>Fridge score</b> = 0.70 × fridge % sold + 0.30 × fridge reviews · <b>Combined</b> = 50% global + 50% fridge · global weights must sum to 1.00</div>
       <div class="controls">
-        <div class="field"><label>% Sold</label><input type="number" step="0.01" value="0.62" style="width:90px"></div>
-        <div class="field"><label>Margin</label><input type="number" step="0.01" value="0.33" style="width:90px"></div>
-        <div class="field"><label>Reviews</label><input type="number" step="0.01" value="0.05" style="width:90px"></div>
+        <div class="field"><label>% Sold (global)</label><input type="number" step="0.01" value="0.55" style="width:90px"></div>
+        <div class="field"><label>Margin (global)</label><input type="number" step="0.01" value="0.30" style="width:90px"></div>
+        <div class="field"><label>Reviews (global)</label><input type="number" step="0.01" value="0.15" style="width:90px"></div>
         <span class="badge ok" style="margin-top:14px">Σ = 1.00 ✓</span>
       </div>
+      <div class="note-src">New products (≤ 250 sales) use the average global score as placeholder until they have enough history.</div>
     </div>
 
     <div class="card">
       <h3>Scores — 318 products · showing 12</h3>
-      <div class="sub">This score feeds the Menu Planner pickers and the allocation engine — one number, one place · row expand shows score history sparkline</div>
+      <div class="sub">Combined score feeds the Menu Planner pickers and the allocation engine per client · row expand shows score history sparkline</div>
+      <div class="controls" style="margin-bottom:10px">
+        <select id="ratings-fridge"><option>Fridge score for: RTBF</option><option>Fridge score for: ABB Zaventem</option><option>Fridge score for: Allianz Brussels</option><option>Fridge score for: Zoetis LLN</option></select>
+        <span class="badge info">fridge column recomputes per selection</span>
+      </div>
       <div class="table-scroll">
       <table>
         <thead><tr>
@@ -832,7 +951,8 @@
           <th class="num">Buy €</th><th class="num">Sell €</th><th class="num">Margin %</th>
           <th class="num">Sold</th><th class="num">Added</th><th class="num">% Sold</th>
           <th class="num">+Rev</th><th class="num">−Rev</th>
-          <th class="sorted">Final Score ▾</th><th>Active</th>
+          <th class="num">Global</th><th class="num">Fridge (RTBF)</th>
+          <th class="sorted">Combined (50/50) ▾</th><th>Active</th>
         </tr></thead>
         <tbody id="ratings-table"></tbody>
       </table>
@@ -925,7 +1045,8 @@
         </div>
         <div class="card">
           <h3>Net margin by category — June 2026</h3>
-          <div class="sub">€ · blue = positive, red = negative</div>
+          <div class="sub">€ · blue = positive, red = negative · <span style="color:var(--ink-2)">production: rendered with <b>d3.js</b></span></div>
+          <!-- production: this diverging bar chart is drawn with d3.js in the React frontend; inline bars here keep the mockup self-contained (no CDN) -->
           <div id="monthly-chart"></div>
         </div>
       </div>
@@ -1065,6 +1186,234 @@
     <div class="note-src">Source: <span class="mono">/suppliers</span> · <span class="mono">/fridges</span> · <span class="mono">/settings/*</span> · <span class="mono">/users</span> · <span class="mono">/sync</span> — replaces Supplier Info, Settings, Fee/Fraction sheets</div>
   </section>
 
+  <!-- ═══════════ 12 · CLIENTS ═══════════ -->
+  <section class="page-view" id="page-clients">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Operations / Clients</div>
+        <h1>Clients</h1>
+      </div>
+      <div class="controls">
+        <button class="btn">+ Log intervention</button>
+        <button class="btn primary">+ New client</button>
+      </div>
+    </div>
+
+    <div class="grid side-col">
+      <div class="card">
+        <h3>Clients — 45</h3>
+        <div class="sub">one page per client</div>
+        <input type="text" placeholder="Filter clients…" style="width:100%;margin-bottom:8px;padding:5px 10px;font-size:12.5px">
+        <ul class="cat-rail" id="client-rail"></ul>
+      </div>
+
+      <div>
+        <div class="grid two-even">
+          <div class="card">
+            <h3>ABB Zaventem — client info</h3>
+            <div class="sub">synced from /facility · local overrides preserved</div>
+            <div class="table-scroll">
+            <table>
+              <tbody>
+                <tr><td style="color:var(--ink-3)">Location</td><td><b>Hoge Wei 27, 1930 Zaventem</b></td></tr>
+                <tr><td style="color:var(--ink-3)">Workers on site</td><td><b>320</b></td></tr>
+                <tr><td style="color:var(--ink-3)">Worker type</td><td><span class="badge info">White collar</span></td></tr>
+                <tr><td style="color:var(--ink-3)">Fridge</td><td class="mono">if-0000198 · since 10 Oct 2024</td></tr>
+                <tr><td style="color:var(--ink-3)">Delivery window</td><td>Tue &amp; Thu · before 07:30 · badge at reception</td></tr>
+              </tbody>
+            </table>
+            </div>
+            <h3 class="mt">Preferences</h3>
+            <div class="slot-chips" style="margin-bottom:0">
+              <span class="slot-chip">No fish products<span class="x" title="Remove">✕</span></span>
+              <span class="slot-chip">≥ 30% vegetarian<span class="x" title="Remove">✕</span></span>
+              <span class="slot-chip">No pork<span class="x" title="Remove">✕</span></span>
+              <span class="slot-chip add">＋ Add preference</span>
+            </div>
+            <div class="note-src">Preferences constrain the Menu Planner allocation for this client.</div>
+          </div>
+
+          <div class="card">
+            <h3>Service fees</h3>
+            <div class="sub">monthly fees per active service · feeds monthly client P&amp;L</div>
+            <div class="table-scroll">
+            <table>
+              <thead><tr><th>Service</th><th class="num">Monthly fee</th><th>Active</th><th></th></tr></thead>
+              <tbody>
+                <tr><td><b>Fridge rental</b></td><td class="num">€648.92</td><td><span class="badge ok">✓ Active</span></td><td><a href="#">Edit</a></td></tr>
+                <tr><td><b>Coffee machine</b></td><td class="num">€120.00</td><td><span class="badge ok">✓ Active</span></td><td><a href="#">Edit</a></td></tr>
+                <tr><td><b>Fruit delivery</b></td><td class="num">€95.00</td><td><span class="badge ok">✓ Active</span></td><td><a href="#">Edit</a></td></tr>
+                <tr><td><b>Catering / business lunch</b></td><td class="num">on demand</td><td><span class="badge warn">— Off</span></td><td><a href="#">Edit</a></td></tr>
+                <tr class="total"><td>Recurring total</td><td class="num">€863.92</td><td></td><td></td></tr>
+              </tbody>
+            </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mt">
+          <h3>Machine-intervention log</h3>
+          <div class="sub">technical issues · cleaning · hardware replacements — timestamped, per user</div>
+          <div class="table-scroll">
+          <table>
+            <thead><tr><th>When</th><th>Type</th><th>Detail</th><th>User</th></tr></thead>
+            <tbody>
+              <tr><td>01 Jul 2026 14:20</td><td><span class="badge crit">Technical issue</span></td><td>Door sensor error E-14 — reset on site, monitoring</td><td>Mathieu</td></tr>
+              <tr><td>24 Jun 2026 09:05</td><td><span class="badge info">Cleaning</span></td><td>Full interior cleaning + door gasket check</td><td>Driver (Ali)</td></tr>
+              <tr><td>12 Jun 2026 11:40</td><td><span class="badge warn">Hardware replacement</span></td><td>RFID antenna replaced (intermittent reads)</td><td>IF technician</td></tr>
+              <tr><td>02 Jun 2026 08:15</td><td><span class="badge info">Cleaning</span></td><td>Scheduled monthly cleaning</td><td>Driver (Karim)</td></tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note-src">Source: <span class="mono">GET /clients/{id}</span> · <span class="mono">GET/POST /clients/{id}/interventions</span> · <span class="mono">GET/PUT /clients/{id}/services</span> · <span class="mono">GET/PUT /clients/{id}/preferences</span></div>
+  </section>
+
+  <!-- ═══════════ 13 · ADD-ON SERVICES ═══════════ -->
+  <section class="page-view" id="page-addons">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Planning / Add-on Services</div>
+        <h1>Add-on Services</h1>
+      </div>
+      <div class="controls">
+        <button class="btn primary">+ New schedule</button>
+      </div>
+    </div>
+
+    <div class="tabs" id="addons-tabs">
+      <div class="tab active" data-sub="svc-coffee">Coffee</div>
+      <div class="tab" data-sub="svc-fruits">Fruits</div>
+      <div class="tab" data-sub="svc-lunch">Business Lunch</div>
+    </div>
+
+    <div class="subview active" id="sub-svc-coffee">
+      <div class="card">
+        <h3>Coffee service — per-client service level</h3>
+        <div class="sub">machine, service level and monthly fee per client</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Client</th><th>Machine</th><th>Service level</th><th class="num">Monthly fee</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><b>ABB Zaventem</b></td><td>Jura X8</td><td>Beans + weekly maintenance</td><td class="num">€120.00</td><td><span class="badge ok">✓ Active</span></td><td><a href="#">Edit</a></td></tr>
+            <tr><td><b>Allianz Brussels</b></td><td>Jura Giga X3</td><td>Full service (beans, milk, maintenance)</td><td class="num">€185.00</td><td><span class="badge ok">✓ Active</span></td><td><a href="#">Edit</a></td></tr>
+            <tr><td><b>DPG Media</b></td><td>Jura X8</td><td>Beans only</td><td class="num">€80.00</td><td><span class="badge ok">✓ Active</span></td><td><a href="#">Edit</a></td></tr>
+            <tr><td><b>RTBF</b></td><td>—</td><td>Not subscribed</td><td class="num">—</td><td><span class="badge warn">— Off</span></td><td><a href="#">Edit</a></td></tr>
+            <tr><td><b>Zoetis LLN</b></td><td>Jura WE8</td><td>Beans + monthly maintenance</td><td class="num">€95.00</td><td><span class="badge ok">✓ Active</span></td><td><a href="#">Edit</a></td></tr>
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="subview" id="sub-svc-fruits">
+      <div class="card">
+        <h3>Fruit delivery — recurring schedules</h3>
+        <div class="sub">active schedules are <b>auto-added to the dispatch sheet</b> for the matching day</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Client</th><th class="num">Quantity</th><th>Schedule</th><th>Holidays</th><th>Active</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><b>ABB Zaventem</b></td><td class="num">5 kg</td><td>every Mon + Wed</td><td>excludes public holidays</td><td><span class="badge ok">✓ Active</span></td><td><a href="#">Edit</a></td></tr>
+            <tr><td><b>Allianz Brussels</b></td><td class="num">10 kg</td><td>every Mon</td><td>excludes public holidays</td><td><span class="badge ok">✓ Active</span></td><td><a href="#">Edit</a></td></tr>
+            <tr><td><b>DPG Media</b></td><td class="num">8 kg</td><td>every Tue + Thu</td><td>excludes public holidays</td><td><span class="badge ok">✓ Active</span></td><td><a href="#">Edit</a></td></tr>
+            <tr><td><b>RTBF</b></td><td class="num">12 kg</td><td>every Mon</td><td>excludes public holidays</td><td><span class="badge warn">Paused (summer)</span></td><td><a href="#">Edit</a></td></tr>
+            <tr><td><b>Zoetis LLN</b></td><td class="num">3 kg</td><td>every Wed</td><td>excludes public holidays</td><td><span class="badge ok">✓ Active</span></td><td><a href="#">Edit</a></td></tr>
+          </tbody>
+        </table>
+        </div>
+        <div class="callout mt">Next generation run: <b>Mon 6 Jul</b> — 3 fruit lines will be appended to that day's dispatch sheet automatically (skipped on Belgian public holidays).</div>
+      </div>
+    </div>
+
+    <div class="subview" id="sub-svc-lunch">
+      <div class="card">
+        <h3>Business lunch — orders</h3>
+        <div class="sub">one-off catering orders · linked to a PO reference · feeds "Business lunch CA" in the weekly summary</div>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Client</th><th>Date</th><th>PO reference</th><th class="num">Amount</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><b>Allianz Brussels</b></td><td>02 Jul 2026</td><td class="mono">2026-00361</td><td class="num">€840.00</td><td><span class="chip sent">Sent</span></td><td><a href="#">Open</a></td></tr>
+            <tr><td><b>DPG Media</b></td><td>26 Jun 2026</td><td class="mono">2026-00352</td><td class="num">€1,120.50</td><td><span class="chip received">Received</span> <span title="Scanned delivery note attached">📎</span></td><td><a href="#">Open</a></td></tr>
+            <tr><td><b>ABB Zaventem</b></td><td>19 Jun 2026</td><td class="mono">2026-00344</td><td class="num">€560.00</td><td><span class="chip received">Received</span> <span title="Scanned delivery note attached">📎</span></td><td><a href="#">Open</a></td></tr>
+            <tr><td><b>RTBF</b></td><td>12 Jun 2026</td><td class="mono">2026-00338</td><td class="num">€2,340.00</td><td><span class="chip cancelled">Cancelled</span></td><td><a href="#">Open</a></td></tr>
+            <tr class="total"><td>Total (Jun–Jul)</td><td></td><td></td><td class="num">€2,520.50</td><td></td><td></td></tr>
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+    <div class="note-src">Source: <span class="mono">GET/PUT /services/coffee</span> · <span class="mono">GET/POST /services/fruits/schedules</span> · <span class="mono">GET/POST /services/business-lunch</span> — from FrigoLoco dev briefing deck V5</div>
+  </section>
+
+  <!-- ═══════════ 14 · ALERTS ═══════════ -->
+  <section class="page-view" id="page-alerts">
+    <div class="topbar">
+      <div>
+        <div class="crumb">Operations / Alerts</div>
+        <h1>Alerts</h1>
+      </div>
+      <div class="controls">
+        <select><option>All severities</option><option>Critical</option><option>Warning</option><option>Info</option></select>
+        <select><option>All sources</option><option>Stock</option><option>Purchase orders</option><option>Restock verification</option><option>Targets</option><option>Sync</option></select>
+        <button class="btn">Mark all read</button>
+      </div>
+    </div>
+
+    <div class="grid kpis">
+      <div class="card tile"><div class="label">Open critical</div><div class="value" style="color:var(--critical)">2</div><div class="delta down">stock would go negative on confirm</div></div>
+      <div class="card tile"><div class="label">Warnings</div><div class="value" style="color:#8a6100">2</div><div class="delta">PO overdue · verification Δ</div></div>
+      <div class="card tile"><div class="label">Below-target fridges</div><div class="value">3</div><div class="delta">snacks &amp; drinks under target map</div></div>
+      <div class="card tile"><div class="label">Sync failures (24h)</div><div class="value">1</div><div class="delta"><span class="mono">/productreview</span> retrying</div></div>
+    </div>
+
+    <div class="card">
+      <h3>Alert inbox</h3>
+      <div class="sub">Operational alerts derived from entity state — one place instead of scanning every screen · click to open the source view</div>
+      <div class="table-scroll">
+      <table>
+        <thead><tr><th>Severity</th><th>Alert</th><th>Source</th><th>When</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><span class="badge crit">Critical</span></td><td><b>2 products would go below zero</b> — Poke Bowl Saumon (−6), Wrap Veggie Falafel (−3) block Tuesday dispatch</td><td>Stock</td><td>09:41</td><td><span class="chip saved">New</span></td><td><a href="#stock">Open stock →</a></td></tr>
+          <tr><td><span class="badge warn">Warning</span></td><td><b>PO 2026-00352 overdue</b> — expected 01 Jul, not yet received (Croc&amp;Go)</td><td>Purchase orders</td><td>08:15</td><td><span class="chip saved">New</span></td><td><a href="#orders">Open PO →</a></td></tr>
+          <tr><td><span class="badge warn">Warning</span></td><td><b>Restock verification Δ ≠ 0</b> — Tuesday dispatch: −44 units (−€212.40) added vs dispatched</td><td>Restock verification</td><td>Tue 14:05</td><td><span class="chip verified">Ack</span></td><td><a href="#verification">Open verification →</a></td></tr>
+          <tr><td><span class="badge info">Info</span></td><td><b>3 fridges below snack/drink target</b> — ABB Zaventem, RTBF, Zoetis LLN</td><td>Targets</td><td>07:52</td><td><span class="chip verified">Ack</span></td><td><a href="#targets">Open targets →</a></td></tr>
+          <tr><td><span class="badge warn">Warning</span></td><td><b>Sync retrying</b> — <span class="mono">/productreview</span> timed out (0 rows), next attempt 03:00</td><td>Sync</td><td>03:00</td><td><span class="chip draft">Muted</span></td><td><a href="#admin">Open sync →</a></td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="note-src">Source: <span class="mono">GET /alerts</span> · <span class="mono">POST /alerts/{id}/ack</span> · thresholds configured in Admin — emails rerouted in TEST MODE</div>
+    </div>
+
+    <div class="grid two-even mt">
+      <div class="card">
+        <h3>Empty state — no matching alerts</h3>
+        <div class="sub">Representative empty state (shared pattern used across every list/table view)</div>
+        <div class="empty-state">
+          <span class="ico" aria-hidden="true">✓</span>
+          <b>All clear</b>
+          No alerts match this filter. New alerts appear here in real time.
+        </div>
+      </div>
+      <div class="card">
+        <h3>Loading &amp; error states — shared design-system patterns</h3>
+        <div class="sub">Every React view needs loading (skeleton), empty, and error states — see AUDIT-coverage.md</div>
+        <div style="display:grid;gap:8px;margin-bottom:14px">
+          <div class="skeleton" style="width:70%"></div>
+          <div class="skeleton" style="width:90%"></div>
+          <div class="skeleton" style="width:55%"></div>
+        </div>
+        <!-- toast is normally rendered inside a fixed .toast-wrap; shown in-flow here as the canonical example -->
+        <div class="toast" style="margin-bottom:8px"><span class="tico">⚠</span><span><b>Save failed</b> — network error while saving the dispatch. Retrying…</span><span class="x">✕</span></div>
+        <div class="toast warn" style="margin-bottom:8px"><span class="tico">●</span><span><b>Sync degraded</b> — product reviews are stale (last OK 03 Jul).</span><span class="x">✕</span></div>
+        <div class="toast ok"><span class="tico">✓</span><span><b>Menu saved</b> — Week 27 · Tuesday.</span><span class="x">✕</span></div>
+      </div>
+    </div>
+  </section>
+
   </main>
 </div>
 
@@ -1083,25 +1432,39 @@ const CAT_COLORS = [
   "rgba(120,86,60,.15)","rgba(79,70,229,.13)"
 ];
 
-/* dispatch grid: category-grouped product columns */
-const DISPATCH_PRODUCTS = [
-  { cat: 0, name: "Salade Cesar C&G",        sup: "Croc&Go",                buy: 5.95, stock: 121 },
-  { cat: 0, name: "Salade falafels C&G",     sup: "Croc&Go",                buy: 5.95, stock: 38  },
-  { cat: 0, name: "Chicken Guacamole Salad", sup: "Croc&Go",                buy: 5.95, stock: 96  },
-  { cat: 1, name: "Bun chicken brasil",      sup: "Croc&Go",                buy: 3.90, stock: 84  },
-  { cat: 1, name: "Chicken pesto wrap",      sup: "Croc&Go",                buy: 3.90, stock: 77  },
-  { cat: 1, name: "Club Baguette",           sup: "Croc&Go",                buy: 2.76, stock: 63  },
-  { cat: 1, name: "Caesar Wrap BWL",         sup: "Bon - With Love",        buy: 3.88, stock: 92  },
-  { cat: 2, name: "Linguini Tartufata Gour", sup: "Gourmart",               buy: 6.85, stock: 41  },
-  { cat: 2, name: "Tikka Massala chicken",   sup: "Gourmart",               buy: 5.90, stock: 45  },
-  { cat: 3, name: "Chicken Tikka Massala",   sup: "Tastyfood",              buy: 4.18, stock: 58  },
-  { cat: 3, name: "Four-cheese penne MC",    sup: "Mister cook",            buy: 3.22, stock: 71  },
-  { cat: 3, name: "Archiduke Chicken",       sup: "Colors Kitchen",         buy: 5.92, stock: 40  },
-  { cat: 4, name: "100% Chocolate Cookie",   sup: "La Cantine de Géraldine",buy: 1.45, stock: 118 },
-  { cat: 4, name: "Mango Mousse",            sup: "La Cantine de Géraldine",buy: 3.00, stock: 66  },
-  { cat: 5, name: "Super Nuts bar",          sup: "Tropbon",                buy: 1.08, stock: 130 },
-  { cat: 5, name: "Waffle Vanilla",          sup: "Gaufrine",               buy: 1.29, stock: 105 }
+/* dispatch grid: category-grouped product columns — deck-mandated dispatch-sheet order */
+const DISPATCH_CATS = ["Hot","Frozen","Salads","Wraps","Granolas","Soups","Desserts","Drinks","Snacks"];
+const DCAT_COLORS = [
+  "rgba(227,73,72,.13)","rgba(79,70,229,.13)","rgba(42,120,214,.14)","rgba(27,175,122,.14)",
+  "rgba(234,110,20,.14)","rgba(120,86,60,.15)","rgba(147,86,220,.13)","rgba(2,132,199,.13)",
+  "rgba(13,148,136,.14)"
 ];
+const DISPATCH_PRODUCTS = [
+  { cat: 0, name: "Chicken Tikka Massala",   sup: "Tastyfood",              buy: 4.18, stock: 58  },
+  { cat: 0, name: "Four-cheese penne MC",    sup: "Mister cook",            buy: 3.22, stock: 71  },
+  { cat: 0, name: "Archiduke Chicken",       sup: "Colors Kitchen",         buy: 5.92, stock: 40  },
+  { cat: 1, name: "Lasagna veggie (Bio)",    sup: "Greenz",                 buy: 4.60, stock: 44  },
+  { cat: 1, name: "Chicken curry coco rice", sup: "Colors Kitchen",         buy: 5.10, stock: 39  },
+  { cat: 2, name: "Salade Cesar C&G",        sup: "Croc&Go",                buy: 5.95, stock: 121 },
+  { cat: 2, name: "Salade falafels C&G",     sup: "Croc&Go",                buy: 5.95, stock: 28  },
+  { cat: 2, name: "Chicken Guacamole Salad", sup: "Croc&Go",                buy: 5.95, stock: 96  },
+  { cat: 3, name: "Bun chicken brasil",      sup: "Croc&Go",                buy: 3.90, stock: 84  },
+  { cat: 3, name: "Chicken pesto wrap",      sup: "Croc&Go",                buy: 3.90, stock: 77  },
+  { cat: 3, name: "Club Baguette",           sup: "Croc&Go",                buy: 2.76, stock: 63  },
+  { cat: 3, name: "Caesar Wrap BWL",         sup: "Bon - With Love",        buy: 3.88, stock: 92  },
+  { cat: 4, name: "Granola bowl",            sup: "Bon - With Love",        buy: 2.90, stock: 51  },
+  { cat: 4, name: "Chia seeds",              sup: "Bon - With Love",        buy: 2.40, stock: 47  },
+  { cat: 5, name: "Butternut soup jar",      sup: "Gourmart",               buy: 3.40, stock: 40  },
+  { cat: 6, name: "100% Chocolate Cookie",   sup: "La Cantine de Géraldine",buy: 1.45, stock: 118 },
+  { cat: 6, name: "Mango Mousse",            sup: "La Cantine de Géraldine",buy: 3.00, stock: 66  },
+  { cat: 7, name: "Bru Sparkling Water 500ml",sup: "Eau vertueuse",         buy: 0.55, stock: 210 },
+  { cat: 7, name: "Buddy Ginger lemon",      sup: "Full-Iz",                buy: 1.85, stock: 96  },
+  { cat: 8, name: "Super Nuts bar",          sup: "Tropbon",                buy: 1.08, stock: 130 },
+  { cat: 8, name: "Waffle Vanilla",          sup: "Gaufrine",               buy: 1.29, stock: 105 }
+];
+/* fill-source indicators (sample cells): fc = forecast-filled, man = manual override */
+const CELL_MAN = new Set(["2-6", "5-9", "9-15"]);
+const CELL_FC  = new Set(["0-5", "4-9", "7-16", "10-18"]);
 const DISPATCH_FRIDGES = [
   "ABB Zaventem","Abbott Wavre","Allianz Brussels","Allnex","GSV Huppertz Wilrijk",
   "Kadans Droite","Kadans Gauche","Neuhaus Sint-Pieters","Police Tubize","RTBF",
@@ -1237,20 +1600,23 @@ const VERIF_ROWS = [
   { f: "ABB Zaventem",  p: "Croissant au beurre",  disp: 10, add: 9,  un: 0, dq: -1, de: -2.10 }
 ];
 
-/* product ratings (Product Rating sheet shape; weights 0.62 / 0.33 / 0.05) */
+/* product ratings — dual scoring model (deck V5):
+   g = global score (0.55 sold / 0.30 margin / 0.15 review) · f = fridge score for selected fridge (0.70 fridge sold / 0.30 fridge review)
+   new products (≤ 250 sales) carry the average global score (0.615) as placeholder */
+const NEW_PRODUCT_SALES_MAX = 250;
 const RATING_ROWS = [
-  { p: "Super Nuts bar",          c: 5, s: "Tropbon",                sh: 60, b: 1.08, sl: 2.50, m: 54.2, so: 176, ad: 209, ps: 84.2, pr: 1,  nr: 0, sc: 0.751 },
-  { p: "100% Chocolate Cookie",   c: 4, s: "La Cantine de Géraldine",sh: 21, b: 1.45, sl: 2.90, m: 47.1, so: 511, ad: 585, ps: 87.4, pr: 5,  nr: 1, sc: 0.731 },
-  { p: "Mango Mousse",            c: 4, s: "La Cantine de Géraldine",sh: 6,  b: 3.00, sl: 5.50, m: 42.3, so: 298, ad: 342, ps: 87.1, pr: 8,  nr: 0, sc: 0.730 },
-  { p: "Four-cheese penne MC",    c: 3, s: "Mister cook",            sh: 8,  b: 3.22, sl: 6.95, m: 50.9, so: 388, ad: 471, ps: 82.4, pr: 5,  nr: 0, sc: 0.729 },
-  { p: "Bun chicken brasil",      c: 1, s: "Croc&Go",                sh: 4,  b: 3.90, sl: 6.95, m: 40.5, so: 731, ad: 866, ps: 84.4, pr: 11, nr: 1, sc: 0.699 },
-  { p: "Waffle Vanilla",          c: 5, s: "Gaufrine",               sh: 30, b: 1.29, sl: 2.50, m: 45.3, so: 342, ad: 401, ps: 85.3, pr: 2,  nr: 1, sc: 0.695 },
-  { p: "Chicken pesto wrap",      c: 1, s: "Croc&Go",                sh: 4,  b: 3.90, sl: 6.95, m: 40.5, so: 654, ad: 812, ps: 80.5, pr: 7,  nr: 2, sc: 0.661 },
-  { p: "Salade Cesar C&G",        c: 0, s: "Croc&Go",                sh: 5,  b: 5.95, sl: 9.50, m: 33.6, so: 512, ad: 641, ps: 79.9, pr: 9,  nr: 2, sc: 0.632 },
-  { p: "Caesar Wrap BWL",         c: 1, s: "Bon - With Love",        sh: 4,  b: 3.88, sl: 6.95, m: 40.8, so: 402, ad: 560, ps: 71.8, pr: 4,  nr: 1, sc: 0.610 },
-  { p: "Salade falafels C&G",     c: 0, s: "Croc&Go",                sh: 5,  b: 5.95, sl: 9.50, m: 33.6, so: 365, ad: 493, ps: 74.0, pr: 6,  nr: 1, sc: 0.606 },
-  { p: "Linguini Tartufata Gour", c: 2, s: "Gourmart",               sh: 6,  b: 6.85, sl: 9.95, m: 27.0, so: 214, ad: 331, ps: 64.7, pr: 3,  nr: 1, sc: 0.515 },
-  { p: "Archiduke Chicken",       c: 3, s: "Colors Kitchen",         sh: 7,  b: 5.92, sl: 9.85, m: 36.3, so: 189, ad: 305, ps: 62.0, pr: 2,  nr: 2, sc: 0.504 }
+  { p: "Super Nuts bar",          c: 5, s: "Tropbon",                sh: 60, b: 1.08, sl: 2.50, m: 54.2, so: 176, ad: 209, ps: 84.2, pr: 1,  nr: 0, g: 0.615, f: 0.82 },
+  { p: "100% Chocolate Cookie",   c: 4, s: "La Cantine de Géraldine",sh: 21, b: 1.45, sl: 2.90, m: 47.1, so: 511, ad: 585, ps: 87.4, pr: 5,  nr: 1, g: 0.724, f: 0.79 },
+  { p: "Mango Mousse",            c: 4, s: "La Cantine de Géraldine",sh: 6,  b: 3.00, sl: 5.50, m: 42.3, so: 298, ad: 342, ps: 87.1, pr: 8,  nr: 0, g: 0.756, f: 0.71 },
+  { p: "Four-cheese penne MC",    c: 3, s: "Mister cook",            sh: 8,  b: 3.22, sl: 6.95, m: 50.9, so: 388, ad: 471, ps: 82.4, pr: 5,  nr: 0, g: 0.756, f: 0.68 },
+  { p: "Bun chicken brasil",      c: 1, s: "Croc&Go",                sh: 4,  b: 3.90, sl: 6.95, m: 40.5, so: 731, ad: 866, ps: 84.4, pr: 11, nr: 1, g: 0.711, f: 0.85 },
+  { p: "Waffle Vanilla",          c: 5, s: "Gaufrine",               sh: 30, b: 1.29, sl: 2.50, m: 45.3, so: 342, ad: 401, ps: 85.3, pr: 2,  nr: 1, g: 0.657, f: 0.63 },
+  { p: "Chicken pesto wrap",      c: 1, s: "Croc&Go",                sh: 4,  b: 3.90, sl: 6.95, m: 40.5, so: 654, ad: 812, ps: 80.5, pr: 7,  nr: 2, g: 0.647, f: 0.74 },
+  { p: "Salade Cesar C&G",        c: 0, s: "Croc&Go",                sh: 5,  b: 5.95, sl: 9.50, m: 33.6, so: 512, ad: 641, ps: 79.9, pr: 9,  nr: 2, g: 0.635, f: 0.66 },
+  { p: "Caesar Wrap BWL",         c: 1, s: "Bon - With Love",        sh: 4,  b: 3.88, sl: 6.95, m: 40.8, so: 402, ad: 560, ps: 71.8, pr: 4,  nr: 1, g: 0.607, f: 0.58 },
+  { p: "Salade falafels C&G",     c: 0, s: "Croc&Go",                sh: 5,  b: 5.95, sl: 9.50, m: 33.6, so: 365, ad: 493, ps: 74.0, pr: 6,  nr: 1, g: 0.610, f: 0.52 },
+  { p: "Linguini Tartufata Gour", c: 2, s: "Gourmart",               sh: 6,  b: 6.85, sl: 9.95, m: 27.0, so: 214, ad: 331, ps: 64.7, pr: 3,  nr: 1, g: 0.615, f: 0.49 },
+  { p: "Archiduke Chicken",       c: 3, s: "Colors Kitchen",         sh: 7,  b: 5.92, sl: 9.85, m: 36.3, so: 189, ad: 305, ps: 62.0, pr: 2,  nr: 2, g: 0.615, f: 0.41 }
 ];
 
 /* monthly analysis (June 2026, category dimension) */
@@ -1320,6 +1686,16 @@ function showTip(e, html) {
 function hideTip() { tooltip.style.display = "none"; }
 
 /* ── nav & tabs ─────────────────────────────── */
+/* a11y: nav items pair a decorative icon with a text label — expose them as focusable links with title/aria-label */
+document.querySelectorAll(".nav-item").forEach(item => {
+  const label = item.textContent.trim();
+  item.setAttribute("role", "link");
+  item.setAttribute("tabindex", "0");
+  item.setAttribute("title", label);
+  item.setAttribute("aria-label", label);
+  if (item.classList.contains("active")) item.setAttribute("aria-current", "page");
+  item.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); item.click(); } });
+});
 document.querySelectorAll(".nav-item").forEach(item => {
   item.addEventListener("click", () => {
     document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
@@ -1342,6 +1718,7 @@ function wireTabs(tabsId) {
 }
 wireTabs("reports-tabs");
 wireTabs("admin-tabs");
+wireTabs("addons-tabs");
 document.querySelectorAll('a[href^="#"]').forEach(a => {
   a.addEventListener("click", e => {
     const target = document.querySelector(`.nav-item[data-page="${a.getAttribute("href").slice(1)}"]`);
@@ -1415,9 +1792,13 @@ function renderDiag(client) {
   let head = `<thead><tr><th>Category</th><th class="num">Added</th><th class="num">Sold</th><th class="num">Sold ÷ Added</th></tr></thead>`;
   let body = rows.map(([a, s], i) => {
     const r = a ? s / a : 0;
-    const bad = a > 0 && r < 0.5;
+    const bad = a > 0 && r < 0.7;
+    const hot = a > 0 && r >= 0.9;
+    let style = "";
+    if (bad) style = 'style="background:rgba(208,59,59,.12);color:var(--critical);font-weight:600"';
+    else if (hot) style = 'style="background:rgba(250,178,25,.20);color:#8a6100;font-weight:600"';
     return `<tr><td><b>${CATEGORIES[i]}</b></td><td class="num">${a}</td><td class="num">${s}</td>
-      <td class="num ${bad ? "ratio-bad" : ""}" ${bad ? 'style="background:rgba(208,59,59,.12);color:var(--critical);font-weight:600"' : ""}>${a ? r.toFixed(2) : "—"}</td></tr>`;
+      <td class="num" ${style}>${a ? r.toFixed(2) : "—"}</td></tr>`;
   }).join("");
   tbl.innerHTML = head + `<tbody>${body}</tbody>`;
 }
@@ -1481,13 +1862,13 @@ document.getElementById("targets-table").innerHTML = TARGET_ROWS.map(r => {
     const cat = DISPATCH_PRODUCTS[i].cat;
     let span = 0;
     while (i + span < DISPATCH_PRODUCTS.length && DISPATCH_PRODUCTS[i + span].cat === cat) span++;
-    h1 += `<th colspan="${span}" style="background:${CAT_COLORS[cat]};text-align:center">${CATEGORIES[cat]}</th>`;
+    h1 += `<th colspan="${span}" style="background:${DCAT_COLORS[cat]};text-align:center">${DISPATCH_CATS[cat]}</th>`;
     i += span;
   }
   h1 += "</tr>";
   let h2 = `<tr class="h2">`;
   DISPATCH_PRODUCTS.forEach(p => {
-    h2 += `<th style="background:${CAT_COLORS[p.cat]}">${p.name}<span class="psub">${p.sup} · ${eur(p.buy, 2)} · stock ${p.stock}</span></th>`;
+    h2 += `<th style="background:${DCAT_COLORS[p.cat]}">${p.name}<span class="psub">${p.sup} · ${eur(p.buy, 2)} · stock ${p.stock}</span></th>`;
   });
   h2 += "</tr>";
 
@@ -1497,7 +1878,11 @@ document.getElementById("targets-table").innerHTML = TARGET_ROWS.map(r => {
     DISPATCH_PRODUCTS.forEach((p, pi) => {
       const q = qtyFor(fi, pi);
       totals[pi] += q;
-      row += `<td class="qty" data-f="${f}" data-p="${p.name}">${q || ""}</td>`;
+      const key = fi + "-" + pi;
+      let mark = "";
+      if (q && CELL_MAN.has(key)) mark = '<sup style="color:#8a6100;font-size:8.5px;font-weight:700"> man</sup>';
+      else if (q && CELL_FC.has(key)) mark = '<sup style="color:var(--series-1);font-size:8.5px;font-weight:700"> fc</sup>';
+      row += `<td class="qty${CELL_MAN.has(key) && q ? " manual" : ""}" data-f="${f}" data-p="${p.name}">${q ? q + mark : ""}</td>`;
     });
     return `<tr>${row}</tr>`;
   }).join("");
@@ -1521,7 +1906,7 @@ document.getElementById("orders-table").innerHTML = ORDERS.map(o => `
   <tr>
     <td class="mono"><b>${o.ref}</b></td><td>${o.sup}</td><td>${o.d}</td><td>${o.e}</td>
     <td class="num">${o.lines}</td><td class="num">${eur(o.tot, 2)}</td>
-    <td><span class="chip ${o.st}">${o.lbl}</span></td>
+    <td><span class="chip ${o.st}">${o.lbl}</span>${o.st === "received" ? ' <span title="Scanned delivery note attached">📎</span>' : ""}</td>
     <td><a href="#">${o.st === "sent" || o.st === "partial" ? "Receive" : "Open"}</a></td>
   </tr>`).join("");
 
@@ -1575,17 +1960,25 @@ document.getElementById("verif-table").innerHTML = VERIF_ROWS.map(r => `
     <td class="num">41</td><td class="num">38</td><td class="num">1</td>
     <td class="num neg">−3</td><td class="num neg">−€11.24</td></tr>`;
 
-/* ── PRODUCT RATINGS ─────────────────────── */
-document.getElementById("ratings-table").innerHTML = RATING_ROWS.map(r => `
+/* ── PRODUCT RATINGS — dual scoring (global / fridge / combined 50-50) ── */
+document.getElementById("ratings-table").innerHTML = RATING_ROWS
+  .map(r => ({ ...r, combined: (r.g + r.f) / 2 }))
+  .sort((a, b) => b.combined - a.combined)
+  .map(r => {
+    const isNew = r.so <= NEW_PRODUCT_SALES_MAX;
+    return `
   <tr>
-    <td><b>${r.p}</b></td><td style="color:var(--ink-3)">${CATEGORIES[r.c]}</td><td>${r.s}</td>
+    <td><b>${r.p}</b>${isNew ? ' <span class="badge warn" title="≤ 250 sales — global score is the average-global placeholder">new · avg</span>' : ""}</td>
+    <td style="color:var(--ink-3)">${CATEGORIES[r.c]}</td><td>${r.s}</td>
     <td class="num">${r.sh}d</td>
     <td class="num">${r.b.toFixed(2)}</td><td class="num">${r.sl.toFixed(2)}</td><td class="num">${pct(r.m)}</td>
     <td class="num">${r.so}</td><td class="num">${r.ad}</td><td class="num">${pct(r.ps)}</td>
     <td class="num posv">${r.pr}</td><td class="num ${r.nr ? "neg" : ""}">${r.nr}</td>
-    <td><span class="scorebar"><span class="track"><span class="fill" style="width:${(r.sc * 100).toFixed(0)}%"></span></span><span class="sv">${r.sc.toFixed(3)}</span></span></td>
+    <td class="num">${r.g.toFixed(3)}</td><td class="num">${r.f.toFixed(2)}</td>
+    <td><span class="scorebar"><span class="track"><span class="fill" style="width:${(r.combined * 100).toFixed(0)}%"></span></span><span class="sv">${r.combined.toFixed(3)}</span></span></td>
     <td><span class="badge ok">✓</span></td>
-  </tr>`).join("");
+  </tr>`;
+  }).join("");
 
 /* ── REPORTS: monthly table + chart ─────────────────────── */
 document.getElementById("monthly-table").innerHTML = MONTHLY_ROWS.map(r => `
@@ -1624,6 +2017,25 @@ function renderHBars(elId, data, label) {
   });
 }
 renderHBars("monthly-chart", MONTHLY_ROWS.map(r => ({ name: r.n, v: r.nm })), "Net margin");
+
+/* ── CLIENTS: picker rail ─────────────────────── */
+const CLIENT_RAIL = [
+  { n: "ABB Zaventem",     sub: "Zaventem · 320 workers · white collar" },
+  { n: "Allianz Brussels", sub: "Brussels · 850 workers · white collar" },
+  { n: "Allnex",           sub: "Drogenbos · 240 workers · blue collar" },
+  { n: "DPG Media",        sub: "Antwerpen · 1,100 workers · white collar" },
+  { n: "Kadans Droite",    sub: "LLN · 190 workers · white collar" },
+  { n: "Neuhaus Sint-Pieters", sub: "Vlezenbeek · 410 workers · blue collar" },
+  { n: "Police Tubize",    sub: "Tubize · 160 workers · mixed" },
+  { n: "RTBF",             sub: "Brussels · 2,000 workers · white collar" },
+  { n: "Zoetis LLN",       sub: "LLN · 140 workers · white collar" }
+];
+document.getElementById("client-rail").innerHTML = CLIENT_RAIL.map((c, i) => `
+  <li class="${i === 0 ? "active" : ""}"><b>${c.n}</b><span>${c.sub}</span></li>`).join("");
+document.querySelectorAll("#client-rail li").forEach(li => li.addEventListener("click", () => {
+  document.querySelectorAll("#client-rail li").forEach(x => x.classList.remove("active"));
+  li.classList.add("active");
+}));
 
 /* ── ADMIN tables ─────────────────────── */
 document.getElementById("admin-supp-table").innerHTML = ADMIN_SUPPLIERS.map(s => `

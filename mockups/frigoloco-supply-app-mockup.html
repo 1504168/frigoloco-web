@@ -23,6 +23,7 @@
     --good-text: #006300;
     --warning: #fab219;
     --critical: #d03b3b;
+    --teal: #0d9488;
     --seq-150: #b7d3f6;
     --seq-250: #86b6ef;
     --sidebar-bg: #14202e;
@@ -44,6 +45,7 @@
       --pos: #3987e5;
       --neg: #e66767;
       --good-text: #0ca30c;
+      --teal: #2dd4bf;
       --seq-150: #184f95;
       --seq-250: #1c5cab;
     }
@@ -66,6 +68,7 @@
     padding: 18px 0;
     position: sticky; top: 0; height: 100vh;
     display: flex; flex-direction: column;
+    overflow-y: auto;
   }
   .logo { padding: 4px 20px 18px; border-bottom: 1px solid rgba(255,255,255,.08); margin-bottom: 12px; }
   .logo .name { font-size: 17px; font-weight: 700; color: #fff; letter-spacing: .2px; }
@@ -107,8 +110,8 @@
   }
   .btn.primary { background: var(--series-1); border-color: transparent; color: #fff; }
   .btn.ghost { background: transparent; }
-  .btn.danger { color: var(--critical); }
-  .btn.sm { padding: 3px 10px; font-size: 12px; }
+  .btn.danger { background: var(--critical); border-color: transparent; color: #fff; }
+  .btn.sm { padding: 4px 10px; font-size: 12.5px; }
 
   .card {
     background: var(--surface-1);
@@ -255,6 +258,41 @@
   code, .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
   .mt { margin-top: 14px; }
   .note-src { font-size: 11px; color: var(--ink-3); margin-top: 10px; }
+
+  /* dark-mode refinements — parity with the other FrigoLoco apps */
+  @media (prefers-color-scheme: dark) { .chip.amber.active { color: #201800; } }
+  @media (prefers-color-scheme: dark) { .callout.crit { background: rgba(208,59,59,.11); } .badge.mut { color: var(--ink-2); } }
+
+  /* ── Empty / loading / error states — shared pattern (see AUDIT: every React view needs these) ── */
+  .empty-state { text-align: center; padding: 34px 20px; color: var(--ink-3); }
+  .empty-state .ico { font-size: 30px; opacity: .45; display: block; margin-bottom: 8px; }
+  .empty-state b { display: block; color: var(--ink-2); font-size: 13.5px; margin-bottom: 3px; }
+  .empty-state.err { color: var(--critical); }
+  .skeleton { height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--grid), var(--page), var(--grid)); background-size: 200% 100%; animation: sk 1.2s ease-in-out infinite; }
+  @keyframes sk { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  .toast-wrap { position: fixed; right: 16px; bottom: 46px; z-index: 120; display: flex; flex-direction: column; gap: 8px; }
+  .toast {
+    display: flex; align-items: center; gap: 10px; max-width: 400px;
+    background: var(--surface-1); color: var(--ink-1);
+    border: 1px solid var(--border); border-left: 4px solid var(--critical);
+    border-radius: 10px; padding: 11px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.22); font-size: 13px;
+  }
+  .toast .tico { color: var(--critical); font-weight: 700; }
+  .toast.ok   { border-left-color: var(--good); }    .toast.ok .tico   { color: var(--good-text); }
+  .toast.warn { border-left-color: var(--warning); } .toast.warn .tico { color: #8a6100; }
+  .toast .x { margin-left: auto; color: var(--ink-3); cursor: pointer; font-weight: 700; }
+  @media (prefers-color-scheme: dark) { .toast.warn .tico { color: #fab219; } }
+
+  /* ── Print — PO document (hide chrome, keep the paper block, black-on-white) ── */
+  @media print {
+    .sidebar, .mock-foot, .tooltip, .toast-wrap, .modal-overlay, .topbar .controls, .btn { display: none !important; }
+    .main { padding: 0; }
+    body { background: #fff; color: #000; }
+    .card { border: none; box-shadow: none; break-inside: avoid; }
+    .pdf-paper { box-shadow: none; border: none; }
+    .print-break { break-before: page; }
+    a { color: #000; text-decoration: none; }
+  }
 </style>
 </head>
 <body>
@@ -267,13 +305,13 @@
       <div class="sub">Supply &amp; Stock</div>
     </div>
     <div class="nav-section">Operations</div>
-    <div class="nav-item active" data-page="orders"><span class="ico">▤</span> Purchase Orders</div>
-    <div class="nav-item" data-page="stock"><span class="ico">▦</span> Stock</div>
+    <div class="nav-item active" data-page="orders"><span class="ico" aria-hidden="true">▤</span> Purchase Orders</div>
+    <div class="nav-item" data-page="stock"><span class="ico" aria-hidden="true">▦</span> Stock</div>
     <div class="nav-section">Master Data</div>
-    <div class="nav-item" data-page="clients"><span class="ico">▧</span> Clients &amp; Fridges</div>
-    <div class="nav-item" data-page="products"><span class="ico">◨</span> Products</div>
+    <div class="nav-item" data-page="clients"><span class="ico" aria-hidden="true">▧</span> Clients &amp; Fridges</div>
+    <div class="nav-item" data-page="products"><span class="ico" aria-hidden="true">◨</span> Products</div>
     <div class="nav-section">System</div>
-    <div class="nav-item" data-page="alerts"><span class="ico">⚑</span> Alerts &amp; Settings <span class="pill">7</span></div>
+    <div class="nav-item" data-page="alerts"><span class="ico" aria-hidden="true">⚑</span> Alerts &amp; Settings <span class="pill">7</span></div>
     <div class="foot"><b>ismail@alliedchb.com</b>Admin · v0.1 mockup</div>
   </nav>
 
@@ -838,6 +876,16 @@ const statusBadge = s => s === "Pending" ? '<span class="badge warn">● Pending
   : '<span class="badge mut">● Cancelled</span>';
 
 /* ── nav ─────────────────────────────── */
+/* a11y: nav items pair a decorative icon with a text label — expose them as focusable links with title/aria-label */
+document.querySelectorAll(".nav-item").forEach(item => {
+  const label = item.textContent.trim();
+  item.setAttribute("role", "link");
+  item.setAttribute("tabindex", "0");
+  item.setAttribute("title", label);
+  item.setAttribute("aria-label", label);
+  if (item.classList.contains("active")) item.setAttribute("aria-current", "page");
+  item.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); item.click(); } });
+});
 document.querySelectorAll(".nav-item").forEach(item => {
   item.addEventListener("click", () => {
     document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));

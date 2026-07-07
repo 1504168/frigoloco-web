@@ -957,6 +957,7 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
   <table>
     <thead><tr><th>Date (UTC)</th><th>Description</th></tr></thead>
     <tbody><tr><td>2026-07-02 08:20 PM UTC</td><td>Initial creation</td></tr>
+    <tr><td>2026-07-02 08:55 PM UTC</td><td>Folded in binding guidance from FrigoLoco_Dev_Presentation_V5_Final.pptx: React (TypeScript) frontend fixed by platform stack (Trade-off B flipped, Change Log + Phase 4 rewritten), Railway hosting noted, role model added to Q5 context, audit trail (user + timestamp on every write) added to migration 0002 and PUT /api/weeks, module scope + Phase-4-of-5 placement documented in Background</td></tr>
     <tr><td>2026-07-02 08:34 PM UTC</td><td>AI review pass: updated renumbered sibling-spec references (DB/backfill spec 0001 → 0004; parent umbrella spec 0001), aligned cron layer with spec 0004's job pattern, renamed <code>weekly_returns_refresh</code> → <code>weekly_completeness_check</code>, fixed view/table counts and Mermaid contradiction, specified <code>completeness_report</code> table + <code>discount_providers</code> seed, enumerated manual-input fields; added open questions Q9–Q10</td></tr></tbody>
   </table>
 </section>
@@ -966,7 +967,7 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
   <p class="summary-lead">Port the <strong>"Weekly &amp; Monthly Return V2.xlsx"</strong> workbook — FrigoLoco's weekly P&amp;L and monthly client/supplier/category profitability tool — to a database-backed web application. The spec covers all four layers and how they link: the <strong>database layer</strong> (SQL views over the spec&nbsp;0004 schema that replace every cell formula), the <strong>backend layer</strong> (FastAPI routers), the <strong>frontend</strong> (five screens, already mocked up in <code>mockups/frigoloco-returns-app-mockup.html</code>), and the <strong>cron layer</strong> (completeness checks and contract-expiry alerts following spec&nbsp;0004's cron-job pattern). Sales and restock data already flow into PostgreSQL via spec&nbsp;0004's Husky sync; this app reads those facts, accepts the operator's 8 manual weekly inputs, and computes every derived metric in SQL instead of Excel formulas.</p>
   <div class="summary-facts">
     <div class="summary-fact"><span class="summary-fact-label">Scope</span><span class="summary-fact-value">Returns web app · 4 layers (DB views · API · UI · cron)</span></div>
-    <div class="summary-fact"><span class="summary-fact-label">Files</span><span class="summary-fact-value">26 new · 2 modified</span></div>
+    <div class="summary-fact"><span class="summary-fact-label">Files</span><span class="summary-fact-value">~30 new · 2 modified</span></div>
     <div class="summary-fact"><span class="summary-fact-label">Effort</span><span class="summary-fact-value">~2 weeks</span></div>
     <div class="summary-fact"><span class="summary-fact-label">Risk</span><span class="summary-fact-value"><span class="spec-tag spec-tag--modified">Medium</span> — financial-number parity</span></div>
     <div class="summary-fact"><span class="summary-fact-label">Depends on</span><span class="summary-fact-value">Spec 0004 (DB + backfill + sync) · Spec 0002 (dispatch writes)</span></div>
@@ -990,6 +991,20 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
   <h2>Background &amp; Context</h2>
 
   <p><strong>Parent spec:</strong> 0001 — <em>FrigoLoco: Excel to Cloud ERP Port</em> (umbrella spec for the overall migration). The database/backfill spec referenced throughout this document is <strong>spec 0004 — Database Setup &amp; Husky Historical Backfill</strong> (previously numbered 0001 before the specs folder was renumbered).</p>
+
+  <h3>Guidance from the dev presentation (binding platform decisions)</h3>
+  <p><code>FrigoLoco_Dev_Presentation_V5_Final.pptx</code> (June 2026 dev briefing, v5) fixes several decisions this spec must follow rather than re-litigate:</p>
+  <table>
+    <thead><tr><th>Decision (slide)</th><th>Consequence for this spec</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Stack</strong> — React (TypeScript) frontend · FastAPI backend · PostgreSQL · Railway.com hosting · Azure Blob storage (slides 3, 16, 24)</td><td>The frontend is a React SPA, not server-rendered templates — Trade-off B is updated accordingly; the HTML mockup remains the visual contract. Deployment targets Railway.</td></tr>
+      <tr><td><strong>Module map</strong> — this app is the <em>"Finance &amp; returns"</em> module, one of 8 core modules (slide 3)</td><td>Scope boundary: forecast, menu, PO, stock, dispatch, routing and alerts live in sibling modules. This spec must not grow into them.</td></tr>
+      <tr><td><strong>Delivery plan</strong> — Returns / P&amp;L / consumption reports are <em>Phase 4 "Reporting"</em> of the 5-phase migration; <em>"Excel stays live until each module is validated"</em> (slide 15)</td><td>Confirms the parallel-run policy in Manual Steps as company policy, and sequences this app after Foundation (spec 0004) and alongside/after Dispatch (spec 0002).</td></tr>
+      <tr><td><strong>Roles</strong> — Ops manager (full), Warehouse (read-only finance), Driver (dispatch only), <em>Finance/reporting: read-only on returns and P&amp;L</em>, Admin (settings, master data) (slide 14)</td><td>Auth must be role-aware at least to the level of "ops can edit weeks / finance is read-only / admin edits settings" — reflected in Q5's context.</td></tr>
+      <tr><td><strong>Audit trail</strong> — <em>"Timestamp and user ID recorded on every dispatch save, stock change, and data entry. Non-negotiable."</em> (slide 23)</td><td>Every <code>weekly_summary</code> upsert and master-data edit records user + timestamp; migration 0002 adds <code>updated_by</code>/<code>updated_at</code> to <code>weekly_summary</code>.</td></tr>
+      <tr><td><strong>Client fees</strong> — the Client Management module tracks monthly fees per service type: fridge rental, coffee machine, fruit delivery, catering (slide 13)</td><td>The client-P&amp;L view's <code>yearly_fee/12 + service_additional</code> inputs will eventually be fed per-service-type by that module; the view reads fee data through one place (<code>fridge</code> + <code>service_additional</code>) so the source can be swapped without touching the formula.</td></tr>
+    </tbody>
+  </table>
 
   <h3>The workbook being replaced</h3>
   <table>
@@ -1047,7 +1062,7 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
 
 <section class="spec-section" id="proposed-solution">
   <h2>Proposed Solution</h2>
-  <p>One vertical slice on top of the spec&nbsp;0004 foundation, in four layers. Business rules live <strong>once, in SQL views</strong>; the backend is a thin typed pass-through; the frontend renders what the API returns; cron guards data completeness rather than moving data (spec&nbsp;0001's sync already does that).</p>
+  <p>One vertical slice on top of the spec&nbsp;0004 foundation, in four layers. Business rules live <strong>once, in SQL views</strong>; the backend is a thin typed pass-through; the frontend renders what the API returns; cron guards data completeness rather than moving data (spec&nbsp;0004's sync already does that).</p>
 
   <pre class="mermaid">flowchart TD
     subgraph SRC["Data sources"]
@@ -1108,10 +1123,10 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
       <tr><td><code>GET /api/export/monthly.xlsx?month=</code></td><td>Polars-generated Excel export</td><td>"COPY PASTE FOR AN EXPORT" workflow</td></tr>
     </tbody>
   </table>
-  <p>Every response body is a Pydantic model in <code>backend/app/schemas/returns.py</code> (e.g. <code>WeeklyKpis</code>, <code>WeekManualInputs</code>, <code>ClientPnlRow</code>) — no bare dicts cross the API boundary. Routers contain no arithmetic; they select from the views.</p>
+  <p>Every response body is a Pydantic model in <code>backend/app/schemas/returns.py</code> (e.g. <code>WeeklyKpis</code>, <code>WeekManualInputs</code>, <code>ClientPnlRow</code>) — no bare dicts cross the API boundary. Routers contain no arithmetic; they select from the views. Per the dev presentation's audit requirement (slide 23), every write endpoint stamps <code>updated_by</code> (authenticated user) and <code>updated_at</code> on the touched row — non-negotiable, enforced in <code>returns_service</code>, not left to the UI.</p>
 
   <h3>Layer 3 — Frontend (five screens, mockup is the contract)</h3>
-  <p>Server-rendered Jinja2 templates + a small vanilla-JS chart module, styled by porting the mockup's CSS (visual decisions are already made there). No build toolchain (see Trade-off B and Q1).</p>
+  <p>A React (TypeScript) SPA in the <code>frontend/</code> folder, per the stack fixed in the dev presentation (slides 3/16/24) — see Trade-off B and Q1. The mockup's CSS variables, layout and chart designs port into React components; the hand-rolled SVG line chart and diverging-bar renderers become <code>LineChart</code>/<code>DivergingBars</code> components rather than pulling in a chart library.</p>
   <figure class="spec-figure">
     <img src="reference-docs/mock_dashboard.png" alt="Dashboard mockup">
     <figcaption>Dashboard — KPI tiles, W18–W26 turnover trend, food-margin-by-category and by-fridge (top/bottom) charts. Real W26-2026 data.</figcaption>
@@ -1206,34 +1221,34 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
   <h3>B — Frontend stack</h3>
   <div class="spec-compare">
     <div class="spec-compare-col is-chosen">
-      <div class="spec-compare-head">Jinja2 + vanilla JS (port the mockup)</div>
+      <div class="spec-compare-head">React (TypeScript) SPA</div>
       <div class="spec-compare-body">
-        <span class="cmp-verdict cmp-verdict--win">Chosen (confirm in Q1)</span>
-        <p class="cmp-summary">Server-rendered pages; the mockup's CSS/JS ports almost verbatim; charts stay the hand-rolled SVG/div renderers already written.</p>
-        <ul class="cmp-pros"><li>No Node/build toolchain to maintain</li><li>Mockup → template is nearly mechanical</li><li>Fits a 1–3 internal-user tool</li></ul>
-        <ul class="cmp-cons"><li>Rich interactivity (inline editing everywhere) is more work later</li></ul>
+        <span class="cmp-verdict cmp-verdict--win">Chosen — fixed by the dev presentation</span>
+        <p class="cmp-summary">The June 2026 dev briefing (slides 3/16/24) fixes React (TypeScript) as the platform frontend for all 8 modules; this module follows it so the ERP feels like one system.</p>
+        <ul class="cmp-pros"><li>Consistent with spec 0002 and every future module</li><li>Handles the interactive pieces well (dispatch-matrix-style grids elsewhere in the platform)</li><li>Mockup CSS variables and chart designs port into components</li></ul>
+        <ul class="cmp-cons"><li>Node build toolchain to maintain</li><li>Slower first screen than server-rendered templates</li></ul>
       </div>
     </div>
     <div class="spec-compare-col">
-      <div class="spec-compare-head">Vue 3 SPA</div>
+      <div class="spec-compare-head">Jinja2 + vanilla JS (port the mockup)</div>
       <div class="spec-compare-body">
-        <span class="cmp-verdict cmp-verdict--alt">Alternative</span>
-        <p class="cmp-summary">Full SPA in the <code>frontend/</code> folder spec 0004 scaffolded.</p>
-        <ul class="cmp-pros"><li>Best long-term interactivity</li><li>Clean API separation</li></ul>
-        <ul class="cmp-cons"><li>Build pipeline + dependency churn for an internal tool</li><li>Slowest path to first usable screen</li></ul>
+        <span class="cmp-verdict cmp-verdict--alt">Alternative (rejected)</span>
+        <p class="cmp-summary">Server-rendered pages; the mockup's CSS/JS would port almost verbatim with no build toolchain.</p>
+        <ul class="cmp-pros"><li>Simplest for a 1–3 user internal tool in isolation</li></ul>
+        <ul class="cmp-cons"><li>Diverges from the platform stack decision — this module would be the odd one out</li><li>Rich interactivity is more work later</li></ul>
       </div>
     </div>
     <div class="spec-compare-col">
       <div class="spec-compare-head">Keep static mockup + fetch()</div>
       <div class="spec-compare-body">
-        <span class="cmp-verdict cmp-verdict--alt">Alternative</span>
+        <span class="cmp-verdict cmp-verdict--alt">Alternative (rejected)</span>
         <p class="cmp-summary">Serve the mockup file as-is and wire fetch calls into it.</p>
         <ul class="cmp-pros"><li>Fastest demo</li></ul>
-        <ul class="cmp-cons"><li>One 1,300-line file; no templating, auth injection, or per-page routing — becomes the SPA nobody designed</li></ul>
+        <ul class="cmp-cons"><li>One 1,300-line file; no auth injection or routing — becomes the SPA nobody designed</li></ul>
       </div>
     </div>
   </div>
-  <p><strong>Decision:</strong> Jinja2 + vanilla JS, reusing the mockup's stylesheet and chart renderers. Vue remains the documented escalation path if interactivity requirements grow.</p>
+  <p><strong>Decision:</strong> React (TypeScript), because the dev presentation fixes the platform stack and cross-module consistency outweighs this module's standalone simplicity argument. Q1 remains open only to confirm alignment with whatever scaffold spec 0002 establishes (shared component library, router layout) so the two apps don't drift.</p>
 
   <h3>C — Source for weekly sales aggregates</h3>
   <div class="spec-compare">
@@ -1293,7 +1308,7 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
         </li>
         <li class="tree-dir"><span class="tree-label">app</span>
           <ul>
-            <li class="tree-file tree-mod"><span class="tree-label">main.py</span><span class="tree-note">include routers, mount templates/static</span></li>
+            <li class="tree-file tree-mod"><span class="tree-label">main.py</span><span class="tree-note">include routers, CORS for the React dev server, serve the built SPA</span></li>
             <li class="tree-dir tree-new"><span class="tree-label">api</span>
               <ul>
                 <li class="tree-file tree-new"><span class="tree-label">__init__.py</span></li>
@@ -1304,7 +1319,6 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
                 <li class="tree-file tree-new"><span class="tree-label">master_data.py</span></li>
                 <li class="tree-file tree-new"><span class="tree-label">imports.py</span><span class="tree-note">interim PA dispatch ingest (Q4)</span></li>
                 <li class="tree-file tree-new"><span class="tree-label">export.py</span><span class="tree-note">Polars .xlsx export</span></li>
-                <li class="tree-file tree-new"><span class="tree-label">pages.py</span><span class="tree-note">Jinja2 page routes</span></li>
               </ul>
             </li>
             <li class="tree-dir"><span class="tree-label">schemas</span>
@@ -1318,22 +1332,6 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
                 <li class="tree-file tree-new"><span class="tree-label">returns_jobs.py</span><span class="tree-note">2 CLI job entrypoints, registered per spec 0004's scheduling mechanism</span></li>
               </ul>
             </li>
-            <li class="tree-dir tree-new"><span class="tree-label">templates</span>
-              <ul>
-                <li class="tree-file tree-new"><span class="tree-label">base.html</span><span class="tree-note">sidebar shell from mockup</span></li>
-                <li class="tree-file tree-new"><span class="tree-label">dashboard.html</span></li>
-                <li class="tree-file tree-new"><span class="tree-label">weekly.html</span></li>
-                <li class="tree-file tree-new"><span class="tree-label">monthly.html</span></li>
-                <li class="tree-file tree-new"><span class="tree-label">master_data.html</span></li>
-                <li class="tree-file tree-new"><span class="tree-label">imports.html</span></li>
-              </ul>
-            </li>
-            <li class="tree-dir tree-new"><span class="tree-label">static</span>
-              <ul>
-                <li class="tree-file tree-new"><span class="tree-label">returns.css</span><span class="tree-note">ported from mockup</span></li>
-                <li class="tree-file tree-new"><span class="tree-label">charts.js</span><span class="tree-note">line + diverging-bar renderers from mockup</span></li>
-              </ul>
-            </li>
           </ul>
         </li>
         <li class="tree-dir"><span class="tree-label">tests</span>
@@ -1345,7 +1343,32 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
             <li class="tree-file tree-new"><span class="tree-label">api/test_imports.py</span></li>
           </ul>
         </li>
-        <li class="tree-file tree-mod"><span class="tree-label">pyproject.toml</span><span class="tree-note">+ jinja2, polars, xlsxwriter</span></li>
+        <li class="tree-file tree-mod"><span class="tree-label">pyproject.toml</span><span class="tree-note">+ polars, xlsxwriter</span></li>
+      </ul>
+    </li>
+    <li class="tree-dir tree-new"><span class="tree-label">frontend</span>
+      <ul>
+        <li class="tree-file tree-new"><span class="tree-label">package.json · vite.config.ts · index.html · src/main.tsx</span><span class="tree-note">Vite + React (TypeScript) scaffold — reuse spec 0002's scaffold if it lands first</span></li>
+        <li class="tree-dir tree-new"><span class="tree-label">src/api</span>
+          <ul><li class="tree-file tree-new"><span class="tree-label">returnsClient.ts</span><span class="tree-note">typed fetch wrappers mirroring the Pydantic schemas</span></li></ul>
+        </li>
+        <li class="tree-dir tree-new"><span class="tree-label">src/components</span>
+          <ul>
+            <li class="tree-file tree-new"><span class="tree-label">Sidebar.tsx</span><span class="tree-note">shell from mockup</span></li>
+            <li class="tree-file tree-new"><span class="tree-label">charts/LineChart.tsx</span><span class="tree-note">SVG line w/ gap handling + tooltips, from mockup</span></li>
+            <li class="tree-file tree-new"><span class="tree-label">charts/DivergingBars.tsx</span><span class="tree-note">pos/neg margin bars, from mockup</span></li>
+          </ul>
+        </li>
+        <li class="tree-dir tree-new"><span class="tree-label">src/pages</span>
+          <ul>
+            <li class="tree-file tree-new"><span class="tree-label">DashboardPage.tsx</span></li>
+            <li class="tree-file tree-new"><span class="tree-label">WeeklyReturnsPage.tsx</span></li>
+            <li class="tree-file tree-new"><span class="tree-label">MonthlyAnalysisPage.tsx</span></li>
+            <li class="tree-file tree-new"><span class="tree-label">MasterDataPage.tsx</span></li>
+            <li class="tree-file tree-new"><span class="tree-label">ImportsPage.tsx</span></li>
+          </ul>
+        </li>
+        <li class="tree-file tree-new"><span class="tree-label">src/styles/theme.css</span><span class="tree-note">mockup CSS variables (light/dark)</span></li>
       </ul>
     </li>
   </ul>
@@ -1353,10 +1376,10 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
   <table>
     <thead><tr><th>Category</th><th>Count</th><th>Notes</th></tr></thead>
     <tbody>
-      <tr><td>Files to create</td><td>26</td><td>listed above</td></tr>
+      <tr><td>Files to create</td><td>~30</td><td>17 backend (listed above) + ~13 frontend (React pages, components, client, scaffold)</td></tr>
       <tr><td>Files to modify</td><td>2</td><td><code>app/main.py</code>, <code>pyproject.toml</code> — cron registration lives in the deploy config (or spec 0004's scheduler module if its open scheduling question lands on APScheduler)</td></tr>
       <tr><td>Files to delete</td><td>0</td><td>Workbook + Office Scripts are retired operationally (Manual Steps), not deleted from disk</td></tr>
-      <tr><td>Dependencies to add</td><td>3</td><td><code>jinja2</code>, <code>polars</code>, <code>xlsxwriter</code> (Polars' Excel engine)</td></tr>
+      <tr><td>Dependencies to add</td><td>2 backend + frontend scaffold</td><td><code>polars</code>, <code>xlsxwriter</code> (Polars' Excel engine); frontend: <code>react</code>, <code>react-router-dom</code>, <code>typescript</code>, <code>vite</code> (per the platform stack — no chart library, renderers are hand-rolled)</td></tr>
     </tbody>
   </table>
 </section>
@@ -1378,8 +1401,8 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
       <div class="phase-meta">7 steps · 8 files</div></div></li>
     <li class="spec-phase"><div class="phase-marker">4</div><div class="phase-body">
       <div class="phase-title">Phase 4 — Frontend</div>
-      <div class="phase-goal">Port the mockup into Jinja2 templates wired to the API.</div>
-      <div class="phase-meta">4 steps · 9 files</div></div></li>
+      <div class="phase-goal">Port the mockup into a React (TypeScript) SPA wired to the API.</div>
+      <div class="phase-meta">4 steps · ~13 files</div></div></li>
     <li class="spec-phase"><div class="phase-marker">5</div><div class="phase-body">
       <div class="phase-title">Phase 5 — Cron jobs</div>
       <div class="phase-goal">Completeness check + contract-expiry alert following spec 0004's job pattern.</div>
@@ -1394,7 +1417,7 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
   <table>
     <thead><tr><th>#</th><th>Action</th><th>File</th><th>Detail &amp; check</th></tr></thead>
     <tbody>
-      <tr><td>1.1</td><td>Create</td><td><code>backend/alembic/versions/0002_returns_views.py</code></td><td>Alembic migration creating <code>v_weekly_sales</code> (per-week aggregation of <code>purchase</code>: gross, refunds, discount-vs-credit split via <code>app_setting.discount_providers</code>, items sold), <code>v_weekly_kpis</code>, <code>v_monthly_client_pnl</code>, <code>v_monthly_supplier_pnl</code>, <code>v_monthly_category_pnl</code>, using the formula table in Proposed Solution verbatim. The same migration creates the two small operational tables <code>dispatch_weekly_agg</code> (interim ingest, Q4) and <code>completeness_report</code> (<code>iso_year, week_no, purchases_present, dispatch_present, inputs_present, checked_at</code>; PK <code>(iso_year, week_no)</code>), and seeds the <code>app_setting</code> key <code>discount_providers</code> with the <code>FrigolocoDiscountProvider</code> named-range values (spec 0004 does not seed this key). Money stays in cents until the outermost SELECT. Downgrade drops all views and both tables. <strong>Check:</strong> <code>alembic upgrade head</code> then <code>SELECT count(*) FROM v_weekly_kpis</code> succeeds.</td></tr>
+      <tr><td>1.1</td><td>Create</td><td><code>backend/alembic/versions/0002_returns_views.py</code></td><td>Alembic migration creating <code>v_weekly_sales</code> (per-week aggregation of <code>purchase</code>: gross, refunds, discount-vs-credit split via <code>app_setting.discount_providers</code>, items sold), <code>v_weekly_kpis</code>, <code>v_monthly_client_pnl</code>, <code>v_monthly_supplier_pnl</code>, <code>v_monthly_category_pnl</code>, using the formula table in Proposed Solution verbatim. The same migration creates the two small operational tables <code>dispatch_weekly_agg</code> (interim ingest, Q4) and <code>completeness_report</code> (<code>iso_year, week_no, purchases_present, dispatch_present, inputs_present, checked_at</code>; PK <code>(iso_year, week_no)</code>), and seeds the <code>app_setting</code> key <code>discount_providers</code> with the <code>FrigolocoDiscountProvider</code> named-range values (spec 0004 does not seed this key). The migration also adds <code>updated_by text</code> / <code>updated_at timestamptz</code> columns to <code>weekly_summary</code> (audit requirement, dev presentation slide 23). Money stays in cents until the outermost SELECT. Downgrade drops all views, both tables, and the audit columns. <strong>Check:</strong> <code>alembic upgrade head</code> then <code>SELECT count(*) FROM v_weekly_kpis</code> succeeds.</td></tr>
       <tr><td>1.2</td><td>Create</td><td><code>backend/tests/sql/test_views_parity.py</code></td><td>Pytest against the backfilled DB. Pins the Background reference values: W26-2026 turnover €16,903.54 (±€1), fridge count 41, April-2026 ABB Zaventem net €473.29 (±€1), Croc&amp;Go April net €8,612.58 (±€5). Weeks 43–49 of 2025 asserted against <em>recomputed</em> values, not the corrupted workbook cells, with a comment block explaining each tolerated diff. <strong>Check:</strong> <code>pytest tests/sql -x</code> green.</td></tr>
       <tr><td>1.3</td><td>Verify</td><td>—</td><td>Run an ad-hoc full-history diff (all 39 weeks: turnover, food margin, net margin) and save the CSV to the spec folder's <code>reference-docs/</code>. <strong>Check:</strong> every diff is explained by a known Excel bug or documented rounding tolerance.</td></tr>
     </tbody>
@@ -1413,9 +1436,9 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
   <table>
     <thead><tr><th>#</th><th>Action</th><th>File</th><th>Detail &amp; check</th></tr></thead>
     <tbody>
-      <tr><td>3.1</td><td>Create</td><td><code>backend/app/api/deps.py</code>, <code>__init__.py</code></td><td>Session dependency (reuse spec 0004 <code>db.py</code>), HTTP Basic auth dependency reading credentials from env (upgradeable per Q5). <strong>Check:</strong> unauthenticated request → 401.</td></tr>
+      <tr><td>3.1</td><td>Create</td><td><code>backend/app/api/deps.py</code>, <code>__init__.py</code></td><td>Session dependency (reuse spec 0004 <code>db.py</code>), auth dependency (mechanism per Q5) that yields the authenticated username — required for <code>updated_by</code> audit stamping (dev presentation slide 23). <strong>Check:</strong> unauthenticated request → 401.</td></tr>
       <tr><td>3.2</td><td>Create</td><td><code>backend/app/api/dashboard.py</code></td><td><code>GET /api/dashboard/weekly</code>: KPIs for the selected week, 9-week trend, margin-by-category, top/bottom-6 margin-by-fridge, completeness warnings. <strong>Check:</strong> <code>test_dashboard.py</code> asserts W26 fixture values.</td></tr>
-      <tr><td>3.3</td><td>Create</td><td><code>backend/app/api/weeks.py</code></td><td><code>GET /api/weeks</code> (history list), <code>GET/PUT /api/weeks/{year}/{week}</code> (PUT body = <code>WeekManualInputs</code>, calls <code>upsert_week_inputs</code>; unknown year/week pair → 404, week without Husky data → 409 with the completeness report). <strong>Check:</strong> <code>test_weeks.py</code> covers PUT-then-GET round-trip and both error paths.</td></tr>
+      <tr><td>3.3</td><td>Create</td><td><code>backend/app/api/weeks.py</code></td><td><code>GET /api/weeks</code> (history list), <code>GET/PUT /api/weeks/{year}/{week}</code> (PUT body = <code>WeekManualInputs</code>, calls <code>upsert_week_inputs</code>; unknown year/week pair → 404, week without Husky data → 409 with the completeness report). Every successful PUT stamps <code>updated_by</code>/<code>updated_at</code> on the row (audit, slide 23). <strong>Check:</strong> <code>test_weeks.py</code> covers PUT-then-GET round-trip, both error paths, and the audit stamp.</td></tr>
       <tr><td>3.4</td><td>Create</td><td><code>backend/app/api/analysis.py</code></td><td><code>GET /api/analysis/monthly/{dimension}?month=YYYY-MM&amp;compare=YYYY-MM</code>, dimension ∈ clients|suppliers|categories; response includes totals row; compare month returns side-by-side values. <strong>Check:</strong> <code>test_analysis.py</code> pins April-2026 client rows.</td></tr>
       <tr><td>3.5</td><td>Create</td><td><code>backend/app/api/master_data.py</code></td><td>CRUD for fridges (fee, contract date), fractions, service additionals, suppliers, categories, settings. PATCH only touches provided fields. For rate-like <code>app_setting</code> keys (<code>pos_software_pct</code>, <code>rfid_fee_cents</code>) the write behavior — overwrite the single value vs effective-dated history — is decided by Q9; spec 0004's <code>app_setting</code> is a plain key/value table with no versioning. <strong>Check:</strong> CRUD round-trip test.</td></tr>
       <tr><td>3.6</td><td>Create</td><td><code>backend/app/api/imports.py</code></td><td><code>POST /api/imports/dispatch</code> accepting <code>DispatchIngestPayload</code> (the PA JSON verbatim); writes weekly fridge-grain rows into a lightweight <code>dispatch_weekly_agg</code> table created in the same migration as the views (used by the views via COALESCE with line-level data — line-level wins when present). Logs an <code>import_run</code>-style audit row. Marked clearly as interim (Q4). <strong>Check:</strong> <code>test_imports.py</code> posts a captured PA payload and sees food cost appear in <code>v_weekly_kpis</code>.</td></tr>
@@ -1427,10 +1450,10 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
   <table>
     <thead><tr><th>#</th><th>Action</th><th>File</th><th>Detail &amp; check</th></tr></thead>
     <tbody>
-      <tr><td>4.1</td><td>Create</td><td><code>templates/base.html</code>, <code>static/returns.css</code></td><td>Port the mockup's sidebar shell, cards, tables, badges, form styles, and light/dark CSS variables verbatim. <strong>Check:</strong> a blank page extending base renders the sidebar identical to the mockup screenshot.</td></tr>
-      <tr><td>4.2</td><td>Create</td><td><code>static/charts.js</code></td><td>Port the mockup's SVG line-chart (with W21-style gap handling and hover tooltips) and diverging horizontal-bar renderers; both read JSON from <code>data-</code> attributes. <strong>Check:</strong> dashboard charts visually match the mockup for W26 data.</td></tr>
-      <tr><td>4.3</td><td>Create</td><td><code>templates/dashboard.html</code>, <code>weekly.html</code>, <code>monthly.html</code></td><td>Dashboard (tiles + 3 charts + completeness warnings), Weekly (entry form posting to PUT /api/weeks, history table), Monthly (3 tabs, month + compare selectors). Week/month selectors are real controls driving query params. <strong>Check:</strong> manual walkthrough of each screen against the mockup.</td></tr>
-      <tr><td>4.4</td><td>Create</td><td><code>templates/master_data.html</code>, <code>imports.html</code>, <code>app/api/pages.py</code></td><td>Master-data tabs (fridges with renewal badges, suppliers, categories, settings) and Imports page (ingest audit rows, unmapped-name list from spec 0004's mapping table). <code>pages.py</code> serves all five pages. <strong>Check:</strong> every sidebar item navigates; no dead buttons for shipped features (unshipped mockup elements are removed, not stubbed).</td></tr>
+      <tr><td>4.1</td><td>Create</td><td><code>frontend/</code> scaffold, <code>src/styles/theme.css</code>, <code>src/components/Sidebar.tsx</code></td><td>Vite + React (TypeScript) scaffold (reuse spec 0002's if it exists — same router layout and component conventions). Port the mockup's CSS variables, card/table/badge/form styles and sidebar shell. <strong>Check:</strong> <code>npm run build</code> succeeds; an empty routed page renders the sidebar identical to the mockup screenshot.</td></tr>
+      <tr><td>4.2</td><td>Create</td><td><code>src/api/returnsClient.ts</code>, <code>src/components/charts/LineChart.tsx</code>, <code>DivergingBars.tsx</code></td><td>Typed fetch client mirroring the Pydantic schemas (hand-written interfaces; OpenAPI codegen optional later). Port the mockup's SVG line chart (W21-style gap handling, hover tooltips) and diverging horizontal bars as props-driven components. <strong>Check:</strong> Storybook-less smoke render with W26 fixture data visually matches the mockup.</td></tr>
+      <tr><td>4.3</td><td>Create</td><td><code>src/pages/DashboardPage.tsx</code>, <code>WeeklyReturnsPage.tsx</code>, <code>MonthlyAnalysisPage.tsx</code></td><td>Dashboard (tiles + 3 charts + completeness warnings), Weekly (entry form calling PUT /api/weeks, history table), Monthly (3 tabs, month + compare selectors). Week/month selectors drive query params via the router. <strong>Check:</strong> manual walkthrough of each screen against the mockup.</td></tr>
+      <tr><td>4.4</td><td>Create/Modify</td><td><code>src/pages/MasterDataPage.tsx</code>, <code>ImportsPage.tsx</code>, <code>backend/app/main.py</code></td><td>Master-data tabs (fridges with renewal badges, suppliers, categories, settings) and Imports page (ingest audit rows, unmapped-name list from spec 0004's mapping table). <code>main.py</code> gains CORS for the dev server and serves the built SPA in production. <strong>Check:</strong> every sidebar item navigates; no dead buttons for shipped features (unshipped mockup elements are removed, not stubbed).</td></tr>
     </tbody>
   </table>
 
@@ -1459,7 +1482,7 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
   <table>
     <thead><tr><th>Test file</th><th>Type</th><th>Covers</th></tr></thead>
     <tbody>
-      <tr><td><code>tests/sql/test_views_parity.py</code></td><td>Integration (DB)</td><td>All four views vs pinned workbook values; RFID/W43+ bug tolerances documented in-code</td></tr>
+      <tr><td><code>tests/sql/test_views_parity.py</code></td><td>Integration (DB)</td><td>All five views vs pinned workbook values; RFID/W43+ bug tolerances documented in-code</td></tr>
       <tr><td><code>tests/api/test_dashboard.py</code></td><td>API</td><td>KPI payload, trend gap for empty weeks (W21-2026), top/bottom fridge selection</td></tr>
       <tr><td><code>tests/api/test_weeks.py</code></td><td>API</td><td>PUT→GET round-trip, 404 unknown week, 409 incomplete week, recalculated fields change after input edit</td></tr>
       <tr><td><code>tests/api/test_analysis.py</code></td><td>API</td><td>April-2026 client/supplier/category rows, totals row, compare-month payload</td></tr>
@@ -1558,25 +1581,25 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
 [
   {
     "id": "Q1",
-    "question": "Which frontend stack should the Returns app use?",
-    "context": "The spec's working assumption (Trade-off B) is server-rendered Jinja2 + vanilla JS, porting the mockup's CSS and chart renderers with no build toolchain. Spec 0004 scaffolded an empty frontend/ folder, so a Vue SPA is also viable. This affects Phase 4 entirely and should match whatever spec 0002 (Forecasting web app) chooses so the two apps feel like one system.",
+    "question": "React (TypeScript) is fixed by the dev presentation as the platform frontend. How should this module align its React scaffold with spec 0002?",
+    "context": "FrigoLoco_Dev_Presentation_V5_Final.pptx (slides 3/16/24) fixes the stack: React (TypeScript) + FastAPI + PostgreSQL + Railway + Azure Blob, so the stack itself is no longer open (Trade-off B documents the rejected alternatives). What remains open is scaffolding: whether this module shares spec 0002's Vite scaffold, router and component library in one frontend app, or ships as a separate React app. Affects Phase 4.1 and long-term navigation between modules.",
     "section": "Trade-off Analysis",
     "type": "single",
     "options": [
       {
-        "value": "jinja",
-        "label": "Jinja2 + vanilla JS (spec's assumption)",
-        "detail": "No build pipeline; mockup ports almost verbatim; fastest to ship"
+        "value": "shared-app",
+        "label": "One shared React app with spec 0002 (module routes)",
+        "detail": "Single scaffold, shared sidebar/components; modules are route groups; requires coordinating with 0002's structure"
       },
       {
-        "value": "vue",
-        "label": "Vue 3 SPA in frontend/",
-        "detail": "Better long-term interactivity; adds Node toolchain; slower first screen"
+        "value": "separate-app",
+        "label": "Separate React app for Returns",
+        "detail": "Independent deploys and timelines; duplicated shell components; users switch apps"
       },
       {
-        "value": "match-0002",
-        "label": "Whatever spec 0002 chose",
-        "detail": "Consistency across the two apps outweighs this spec's preference"
+        "value": "separate-then-merge",
+        "label": "Separate now, merge when 0002 stabilizes",
+        "detail": "Unblocks this module immediately; planned consolidation later"
       }
     ],
     "answer": null,
@@ -1663,24 +1686,24 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
   {
     "id": "Q5",
     "question": "What authentication does the app need at launch?",
-    "context": "The workbook is effectively single-user (Mathieu, plus Ismail). The spec assumes HTTP Basic auth from env vars behind HTTPS, upgradeable later. Multi-user accounts with roles (e.g. operator can enter weeks, admin can edit settings) would add a user table and login UI now.",
+    "context": "The dev presentation (slide 14) defines platform roles - Ops manager (full access), Finance/reporting (read-only on returns and P&L), Admin (settings, master data) - and slide 23 makes user+timestamp audit on every write non-negotiable, which requires knowing WHO is logged in. The question is how much of the role model ships at this module's launch vs arriving with the platform-wide auth (Phase 1 'Foundation' scope). A shared login cannot populate updated_by meaningfully.",
     "section": "Proposed Solution",
     "type": "single",
     "options": [
       {
-        "value": "basic",
-        "label": "Single shared login (HTTP Basic, env-configured)",
-        "detail": "Minutes to implement; no per-user audit trail"
-      },
-      {
         "value": "users",
         "label": "Per-user accounts, single role",
-        "detail": "Names in the audit trail; small user table + login page"
+        "detail": "Satisfies the audit requirement (real names in updated_by); role enforcement deferred to platform auth"
       },
       {
         "value": "roles",
-        "label": "Per-user accounts with operator/admin roles",
-        "detail": "Settings and master data locked to admin; most work"
+        "label": "Per-user accounts with ops/finance-readonly/admin roles",
+        "detail": "Implements slide 14's model for this module now; most work"
+      },
+      {
+        "value": "platform",
+        "label": "Reuse the platform auth from spec 0004/0002 as-is",
+        "detail": "No new auth code in this spec; blocked until that auth exists"
       }
     ],
     "answer": null,
@@ -1754,6 +1777,58 @@ table.spec-matrix thead .col-chosen { color: var(--green); }
         "value": "later",
         "label": "UI now, channel decision in a follow-up spec",
         "detail": "Keeps this spec's scope tight"
+      }
+    ],
+    "answer": null,
+    "status": "open"
+  },
+  {
+    "id": "Q9",
+    "question": "When a rate-like setting (POS software fee %, RFID fee) changes, how should historical weeks be computed?",
+    "context": "Spec 0004's app_setting table is a plain key/value store (key PRIMARY KEY, jsonb value) with no versioning, but this spec's master-data endpoint originally said rate edits should append as versioned history. Because every metric is computed live from views, changing pos_software_pct or rfid_fee_cents today would silently recompute every historical week's fees and net margin. Affects the master-data PATCH behavior (step 3.5), the view formulas (Layer 1), and the parity guarantees (Phase 1/6).",
+    "section": "Implementation Plan",
+    "type": "single",
+    "options": [
+      {
+        "value": "effective-dated",
+        "label": "Effective-dated settings",
+        "detail": "Add a valid_from-style history (column or setting_history table); views join the rate in force for each week; reported history never changes"
+      },
+      {
+        "value": "current-only",
+        "label": "Single current value",
+        "detail": "Keep spec 0004's schema as-is; accept that a rate change recomputes all history"
+      },
+      {
+        "value": "snapshot-weekly",
+        "label": "Snapshot fees into weekly rows at close",
+        "detail": "Persist computed fee amounts per closed week; views use the snapshot for closed weeks and the live rate for the current week"
+      }
+    ],
+    "answer": null,
+    "status": "open"
+  },
+  {
+    "id": "Q10",
+    "question": "Is the weekly fridge count a manual input or derived from data?",
+    "context": "The spec describes 8 manual weekly inputs and weekly_summary (spec 0004) has a fridge_count column, but the mockup's weekly entry form shows only 7 editable fields (Business lunch CA, TGTG CA, Business lunch food cost, Logistics cost, # of drops, Unsold items, Remarks) and no fridge-count field. Affects the WeekManualInputs model (step 2.1), the weekly form (step 4.3), and the W26-2026 parity fixture (fridge count 41).",
+    "section": "Proposed Solution",
+    "type": "single",
+    "options": [
+      {
+        "value": "manual",
+        "label": "Manual 8th field",
+        "detail": "Operator types it like in the workbook; add the field to the entry form"
+      },
+      {
+        "value": "derived-sales",
+        "label": "Derived - fridges with sales that week",
+        "detail": "COUNT(DISTINCT fridge_id) from purchase for the week; form stays at 7 fields"
+      },
+      {
+        "value": "derived-contract",
+        "label": "Derived - active fridges by contract dates",
+        "detail": "Count fridges whose contract covers the week; form stays at 7 fields"
       }
     ],
     "answer": null,
