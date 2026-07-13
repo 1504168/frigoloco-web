@@ -1,6 +1,7 @@
 /** Finance-local formatting + numeric helpers (money stays as euro strings). */
 
 import { API_BASE_URL } from '@/lib/api'
+import { EMPTY_PLACEHOLDER } from '@/lib/format'
 
 const PERCENT_FORMATTER = new Intl.NumberFormat('nl-BE', {
   style: 'percent',
@@ -17,9 +18,9 @@ export function toNumber(value: string | number | null | undefined): number {
   return Number.isNaN(numeric) ? 0 : numeric
 }
 
-/** Format a fraction (e.g. 0.272) as a percent string, or em dash for null. */
+/** Format a fraction (e.g. 0.272) as a percent string, or the placeholder for null. */
 export function formatPercent(fraction: number | null | undefined): string {
-  if (fraction === null || fraction === undefined || Number.isNaN(fraction)) return '—'
+  if (fraction === null || fraction === undefined || Number.isNaN(fraction)) return EMPTY_PLACEHOLDER
   return PERCENT_FORMATTER.format(fraction)
 }
 

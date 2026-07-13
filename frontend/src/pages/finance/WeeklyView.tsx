@@ -102,7 +102,7 @@ export function WeeklyView() {
   })
   const trendLoading = trendQueries.some((query) => query.isLoading)
 
-  // Editable manual inputs — synced whenever a different week's data arrives.
+  // Editable manual inputs - synced whenever a different week's data arrives.
   const [form, setForm] = React.useState<FormState | null>(null)
   const loadedKey = weeklyQuery.data ? `${weeklyQuery.data.year}-${weeklyQuery.data.iso_week}` : null
   React.useEffect(() => {
@@ -199,7 +199,7 @@ export function WeeklyView() {
             <KpiTile
               label="Fridge food cost"
               value={formatEuro(pnl.fridge_food_cost_added)}
-              caption="ADDED / restock basis — not dispatched"
+              caption="ADDED / restock basis - not dispatched"
             />
             <KpiTile
               label="POS & software fee"
@@ -227,7 +227,7 @@ export function WeeklyView() {
 
           {/* Trend chart */}
           <SectionCard
-            title={`Sales turnover & net margin — last ${TREND_WEEKS} weeks`}
+            title={`Sales turnover & net margin - last ${TREND_WEEKS} weeks`}
             description="Turnover ex VAT (blue, € left axis) and net margin % (green, right axis). Weeks with no recorded activity show no margin point. Rendered with d3."
           >
             {trendLoading ? (
@@ -248,7 +248,7 @@ export function WeeklyView() {
           {/* Manual inputs form */}
           {form ? (
             <SectionCard
-              title="Week entry — manual inputs"
+              title="Week entry - manual inputs"
               description="White fields are typed in; the KPI tiles above recalculate on the backend after saving."
               actions={
                 <Button onClick={handleSave} disabled={saveMutation.isPending}>
@@ -304,7 +304,7 @@ export function WeeklyView() {
                     onChange={(event) => setField('unsold_items', event.target.value)}
                   />
                 </FormField>
-                <FormField label="# of Fridges" hint="Manual weekly input — persisted with the week">
+                <FormField label="# of Fridges" hint="Manual weekly input - persisted with the week">
 
                   <Input
                     type="number"
@@ -321,8 +321,8 @@ export function WeeklyView() {
                 </FormField>
               </div>
               <div className="mt-4 rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-foreground">
-                <b>Cost basis — weekly view:</b> fridge food cost uses the <b>ADDED (restock)</b>{' '}
-                value. The Monthly by-fridge P&amp;L uses <b>DISPATCHED</b> value — a deliberate
+                <b>Cost basis - weekly view:</b> fridge food cost uses the <b>ADDED (restock)</b>{' '}
+                value. The Monthly by-fridge P&amp;L uses <b>DISPATCHED</b> value - a deliberate
                 legacy inconsistency, surfaced so the two are never mixed.
               </div>
             </SectionCard>

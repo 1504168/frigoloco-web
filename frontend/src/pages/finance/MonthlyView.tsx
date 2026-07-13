@@ -18,7 +18,7 @@ import {
 import { ErrorState } from '@/components/shared/ErrorState'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { formatEuro } from '@/lib/format'
+import { EMPTY_PLACEHOLDER, formatEuro } from '@/lib/format'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { MonthlyAnalysis, MonthlyAnalysisRow, MonthlyDimension } from '@/pages/finance/types'
@@ -145,7 +145,7 @@ export function MonthlyView() {
 
       {dimension === 'client' ? (
         <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-foreground">
-          <b>Cost basis — monthly by-fridge:</b> food cost uses the <b>DISPATCHED</b> value —
+          <b>Cost basis, monthly by-fridge:</b> food cost uses the <b>DISPATCHED</b> value,
           intentionally different from the Weekly view (which uses <b>ADDED / restock</b> value).
         </div>
       ) : null}
@@ -162,7 +162,7 @@ export function MonthlyView() {
       ) : (
         <>
           <SectionCard
-            title={`${NAME_HEADER[dimension]} P&L — ${formatMonthLabel(month)}`}
+            title={`${NAME_HEADER[dimension]} P&L: ${formatMonthLabel(month)}`}
             description={
               compareMonth
                 ? `${rows.length} rows · Δ column vs ${formatMonthLabel(compareMonth)}`
@@ -211,7 +211,7 @@ export function MonthlyView() {
                               delta !== null && signedClass(delta),
                             )}
                           >
-                            {delta === null ? '—' : formatEuro(delta)}
+                            {delta === null ? EMPTY_PLACEHOLDER : formatEuro(delta)}
                           </TableCell>
                         ) : null}
                       </TableRow>

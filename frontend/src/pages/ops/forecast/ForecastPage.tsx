@@ -203,7 +203,7 @@ interface ActualsGridProps {
  * Actuals side block: the same fridge × category axes as the forecast grid,
  * showing added → sold quantities over the forecast's 3-week window with a
  * colour-coded sell-through ratio. Fridge/category keys with no recorded
- * activity render as 0 → 0 with an em-dash ratio.
+ * activity render as 0 → 0 with a placeholder ratio.
  */
 function ActualsGrid({ run, actuals, fridgeName, categories }: ActualsGridProps) {
   const cellByKey = React.useMemo(() => {

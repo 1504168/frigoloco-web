@@ -5,7 +5,7 @@
  *   - supplier/category: rfid_fee only (sales/pos_fee come back null)
  * FM% is computed client-side as food_margin ÷ sales.
  */
-import { formatEuro } from '@/lib/format'
+import { EMPTY_PLACEHOLDER, formatEuro } from '@/lib/format'
 import type { MonthlyAnalysisRow, MonthlyDimension } from '@/pages/finance/types'
 import { formatPercent, safeRatio, toNumber } from '@/pages/finance/utils'
 
@@ -32,7 +32,7 @@ const euroCol = (
   header,
   signed,
   value: (row) => (accessor(row) === null ? null : toNumber(accessor(row))),
-  render: (row) => (accessor(row) === null ? '—' : formatEuro(accessor(row))),
+  render: (row) => (accessor(row) === null ? EMPTY_PLACEHOLDER : formatEuro(accessor(row))),
 })
 
 const foodMarginPctCol: MonthlyColumn = {

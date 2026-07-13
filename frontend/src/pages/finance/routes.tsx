@@ -9,9 +9,9 @@ import { SettingsPage } from '@/pages/finance/SettingsPage'
  * of AppLayout by src/routes.tsx.
  *
  * Claimed paths (matching placeholders removed from src/routes.tsx):
- *   /finance      — weekly & monthly financials + fridge report
- *   /verification — dispatch reconciliation runs
- *   /settings     — business settings editor
+ *   /finance      - weekly & monthly financials + fridge report
+ *   /verification - dispatch reconciliation runs
+ *   /settings     - business settings editor
  */
 export const financeRoutes: RouteObject[] = [
   { path: '/finance', element: <FinancePage /> },

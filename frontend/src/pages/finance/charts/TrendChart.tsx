@@ -141,7 +141,7 @@ export function TrendChart({ data, height = 240 }: TrendChartProps) {
       .attr('r', 3)
       .style('fill', 'var(--series-1)')
 
-    // Margin % line (right axis) — split into segments across null gaps.
+    // Margin % line (right axis) - split into segments across null gaps.
     const marginLine = d3
       .line<TrendPoint>()
       .defined((d) => d.marginPct !== null)

@@ -21,15 +21,15 @@ export interface ScorecardRow {
   buying_price: string
   sold_price: string
   vat_rate: string
-  /** Fraction 0..1 — null when the sell price ex-VAT is not positive. */
+  /** Fraction 0..1 - null when the sell price ex-VAT is not positive. */
   profit_margin: string | null
   total_sold_qty: number
   total_added_qty: number
-  /** Fraction 0..1 — null when nothing was added in the window. */
+  /** Fraction 0..1 - null when nothing was added in the window. */
   pct_sold: string | null
   positive_reviews: number
   negative_reviews: number
-  /** Fraction 0..1 — null when the product has no reviews in the window. */
+  /** Fraction 0..1 - null when the product has no reviews in the window. */
   pct_positive_review: string | null
   final_score: string
 }

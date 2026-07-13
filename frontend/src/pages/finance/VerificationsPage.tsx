@@ -163,7 +163,7 @@ export function VerificationsPage() {
       <PageHeader
         breadcrumb="Operations / Verification"
         title="Verification"
-        description="Dispatch reconciliation runs — compares dispatched vs added quantities per fridge, product and category."
+        description="Dispatch reconciliation runs - compares dispatched vs added quantities per fridge, product and category."
         actions={
           <div className="flex flex-wrap items-end gap-2">
             <Select value={dispatchId} onValueChange={setDispatchId}>
@@ -239,7 +239,7 @@ function VerificationDetailView({ detailQuery, categoryName, fridgeName }: Detai
   return (
     <div className="space-y-6">
       <SectionCard
-        title={`Category totals — verification #${detail.id}`}
+        title={`Category totals - verification #${detail.id}`}
         description={`Dispatch #${detail.dispatch_id} · run ${formatDateTime(detail.run_at)}`}
       >
         <ReconTable

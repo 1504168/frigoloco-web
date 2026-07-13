@@ -10,7 +10,7 @@ export interface KpiTileProps {
   label: string
   /** Pre-formatted main value (money, percent, count). */
   value: React.ReactNode
-  /** Small caption under the value — used for formula/basis captions. */
+  /** Small caption under the value - used for formula/basis captions. */
   caption?: React.ReactNode
   /** Highlight the value in the good/critical token, e.g. for net margin sign. */
   tone?: 'default' | 'good' | 'critical'

@@ -7,7 +7,7 @@ import { RatingPage } from '@/pages/rating/RatingPage'
  * src/routes.tsx.
  *
  * Claimed paths:
- *   /rating — full product scorecard (server-side sort + pagination + recompute)
+ *   /rating - full product scorecard (server-side sort + pagination + recompute)
  */
 export const ratingRoutes: RouteObject[] = [
   { path: '/rating', element: <RatingPage /> },

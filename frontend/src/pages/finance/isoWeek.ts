@@ -25,7 +25,7 @@ export function isoWeekToMonday(year: number, week: number): Date {
 export function dateToIsoWeek(date: Date): IsoWeek {
   const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
   const dow = target.getUTCDay() || 7
-  // Shift to the Thursday of this week — its calendar year is the ISO year.
+  // Shift to the Thursday of this week - its calendar year is the ISO year.
   target.setUTCDate(target.getUTCDate() + 4 - dow)
   const isoYear = target.getUTCFullYear()
   const yearStart = new Date(Date.UTC(isoYear, 0, 1))

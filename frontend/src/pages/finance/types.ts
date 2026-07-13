@@ -150,7 +150,7 @@ export interface VerificationDetail {
   category_totals: CategoryReconTotal[]
 }
 
-/** Dispatch summary (schema: DispatchRead) — used by the verify picker. */
+/** Dispatch summary (schema: DispatchRead) - used by the verify picker. */
 export interface Dispatch {
   id: number
   delivery_date: string

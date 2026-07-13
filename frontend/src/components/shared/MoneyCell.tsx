@@ -9,7 +9,7 @@ export interface MoneyCellProps {
 
 /**
  * Right-aligned, tabular-nums euro amount. Use inside a `<TableCell>` for
- * money columns. Renders an em dash for null/blank values.
+ * money columns. Renders the empty placeholder for null/blank values.
  */
 export function MoneyCell({ value, className }: MoneyCellProps) {
   return (
