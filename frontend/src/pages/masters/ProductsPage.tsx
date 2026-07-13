@@ -6,7 +6,9 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { MoneyCell } from '@/components/shared/MoneyCell'
 import { Input } from '@/components/ui/input'
 import { api, type Page } from '@/lib/api'
-import type { Product } from '@/lib/types'
+import { EMPTY_PLACEHOLDER } from '@/lib/format'
+import { REFERENCE_CATEGORIES_KEY } from '@/lib/query-keys'
+import type { Category, Product } from '@/lib/types'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import {
   EffectiveStatusBadge,
@@ -18,13 +20,13 @@ import type { StatusFilter } from '@/pages/masters/sync/types'
 
 const PAGE_SIZE = 25
 
-/** Query key prefix for the products list — the sync flow invalidates this. */
+/** Query key prefix for the products list: the sync flow invalidates this. */
 const PRODUCTS_QUERY_KEY = ['products']
 
 /** Percent display for the VAT decimal fraction (e.g. "0.0600" -> "6%"). */
 function formatVat(fraction: string): string {
   const numeric = Number(fraction)
-  if (Number.isNaN(numeric)) return '—'
+  if (Number.isNaN(numeric)) return EMPTY_PLACEHOLDER
   return `${(numeric * 100).toFixed(numeric * 100 % 1 === 0 ? 0 : 2)}%`
 }
 
@@ -63,9 +65,8 @@ export function ProductsPage() {
 
   // Note: GET /api/v1/categories returns a bare array (not a Page<T>).
   const categoriesQuery = useQuery({
-    queryKey: ['categories'],
-    queryFn: ({ signal }) =>
-      api.get<Array<{ id: number; name: string }>>('/api/v1/categories', { signal }),
+    queryKey: REFERENCE_CATEGORIES_KEY,
+    queryFn: ({ signal }) => api.get<Category[]>('/api/v1/categories', { signal }),
     staleTime: 5 * 60_000,
     select: (items) => new Map(items.map((category) => [category.id, category.name])),
   })

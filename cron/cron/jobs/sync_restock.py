@@ -1,4 +1,4 @@
-"""sync_restock — hourly :10.
+"""sync_restock - hourly :10.
 
 Thin scheduler/CLI wrapper. The Husky ``/restock`` -> ``restock_events`` sync
 logic lives in :func:`app.husky.sync.sync_restock_window` (shared with the

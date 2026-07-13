@@ -1,4 +1,4 @@
-# FrigoLoco ERP — Database Layer
+# FrigoLoco ERP - Database Layer
 
 PostgreSQL 16 schema for the FrigoLoco cloud ERP (smart-fridge catering ops).
 Replaces the two Excel workbooks, three template files, 26 Office Scripts and
@@ -9,7 +9,7 @@ Deliverable: pure SQL DDL (`schema.sql`). SQLAlchemy models and Alembic
 migrations are generated from this later (Phase 1.2 turns it into
 `alembic/versions/0001_*.py`).
 
-## ER overview — five aggregates
+## ER overview - five aggregates
 
 | Aggregate | Tables |
 |---|---|
@@ -40,7 +40,7 @@ DROP SCHEMA public CASCADE; CREATE SCHEMA public;
 
 then re-apply the file.
 
-## Stock ledger semantics (slide 24 — non-negotiable)
+## Stock ledger semantics (slide 24 - non-negotiable)
 
 `stock_movements` is an **append-only signed ledger**; warehouse balance is
 `SUM(qty)` per product.
@@ -53,14 +53,14 @@ then re-apply the file.
   are compensating movements, never edits.
 - **Sign conventions** (CHECK-enforced): `po_receipt` > 0, `dispatch` < 0,
   `cancellation_reversal` < 0 (cancelling a *received* PO explicitly removes
-  the stock — fixes the Excel cancel bug), `adjustment` either sign but always
+  the stock - fixes the Excel cancel bug), `adjustment` either sign but always
   with a non-empty `reason`.
 - **`v_stock_balances`** restates the Excel *Stock & Ordered* rule (R6) for
   the ledger design:
-  - `physical_qty` = `SUM(stock_movements.qty)` — what is in the warehouse
+  - `physical_qty` = `SUM(stock_movements.qty)` - what is in the warehouse
   - `on_order_qty` = `SUM(GREATEST(qty_ordered − qty_received, 0))` over lines
     of **pending** POs only (received/cancelled POs contribute nothing)
-  - `available_qty` = `on_order_qty + physical_qty` — the Excel "available"
+  - `available_qty` = `on_order_qty + physical_qty` - the Excel "available"
 
 ## Order numbering (R4)
 
@@ -76,9 +76,9 @@ acceptable).
 `PARTITION BY RANGE` with **one partition per month**. Partitions for
 **2025-01 through 2027-01** are pre-created by the schema (50 child tables).
 
-- `create_event_partitions_for_month(date)` — creates both tables' partitions
+- `create_event_partitions_for_month(date)` - creates both tables' partitions
   for the month containing the given date (idempotent).
-- `create_next_month_event_partitions()` — ensures current + next month exist;
+- `create_next_month_event_partitions()` - ensures current + next month exist;
   schedule this monthly from the backend scheduler (APScheduler nightly job is
   the natural home). An insert for a month with no partition **fails**, so
   keep this job alive or pre-create further years.
@@ -107,21 +107,21 @@ acceptable).
 | Fee List / Service Additionals | `client_fees`, `client_service_charges` |
 | Tunable cells in both workbooks | `settings` (seeded: scoring weights 0.62/0.05/0.33, per-category forecast margins 0, POS fee 9 %, RFID fee €0.10, expiry alert 2 days) |
 | PA alert emails | `alerts` |
-| — (new: slides 13/14/23) | `users`, `clients`, `client_interventions`, `fridge_product_prices`, `menu_product_caps`, `audit_log` |
+| - (new: slides 13/14/23) | `users`, `clients`, `client_interventions`, `fridge_product_prices`, `menu_product_caps`, `audit_log` |
 
 Every table also carries a `COMMENT ON TABLE` in the schema saying what it
 replaces.
 
-## Migration sources (one-time import — Phase 1.7)
+## Migration sources (one-time import - Phase 1.7)
 
-- **`Excel Files/Forecasting Tool/Smart Fridge Forecasting Tool V5.xlsx`** —
+- **`Excel Files/Forecasting Tool/Smart Fridge Forecasting Tool V5.xlsx`**:
   suppliers, delivery configs, targets, order history (517 orders / 2,588
   lines), dispatch history (20,692 lines), settings cells.
-- **`Excel Files/Forecasting Tool/Weekly & Monthly Return V2.xlsx`** — weekly
+- **`Excel Files/Forecasting Tool/Weekly & Monthly Return V2.xlsx`** - weekly
   financials (30 weeks), fee list, fraction list, service additionals.
 - **`Excel Files/templates/DispatchTemplate.xlsx`** (42 sheets) + Husky
-  facility API — fridges/clients, delivery addresses & instructions.
-- **Husky RFID API backfill** — 12+ months of `purchases`, `restock`,
+  facility API - fridges/clients, delivery addresses & instructions.
+- **Husky RFID API backfill** - 12+ months of `purchases`, `restock`,
   `productreview` into the event tables (idempotent upsert on `husky_ref`);
   product catalogue from `producttype`. Normalize at ingestion: cent-integer
   prices → euros, comma-decimal buy prices, tag statuses, and both

@@ -3,7 +3,7 @@
 APScheduler worker + one-off CLI jobs that ingest the Intelligent Fridges
 ("Husky") API into PostgreSQL. This package depends on the backend
 (`frigoloco-backend`) for `Settings`, the ORM models, the DB session and the
-`app.husky` client — the cron layer only orchestrates; the API contract and
+`app.husky` client - the cron layer only orchestrates; the API contract and
 data model live in the backend.
 
 ```

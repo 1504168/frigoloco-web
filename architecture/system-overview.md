@@ -1,4 +1,4 @@
-# FrigoLoco Cloud ERP — System Overview: How the Layers Link Up
+# FrigoLoco Cloud ERP - System Overview: How the Layers Link Up
 
 > Companion to spec [`specs/0001-frigoloco-excel-to-cloud-erp_2026-07-02_0810PM_UTC/`](../specs/0001-frigoloco-excel-to-cloud-erp_2026-07-02_0810PM_UTC/).
 > This document is the map; the per-layer documents are the territory.
@@ -104,7 +104,7 @@ flowchart TB
     J5 --> D6
 ```
 
-Reading the diagram top-to-bottom: **pages call routers, routers call services, services own tables**. The cron layer is the only writer of the raw event tables (`sales_events`, `restock_events`, `product_reviews`) and the only caller of the Husky API besides the pass-through live-stock endpoint — every user-facing feature reads local data.
+Reading the diagram top-to-bottom: **pages call routers, routers call services, services own tables**. The cron layer is the only writer of the raw event tables (`sales_events`, `restock_events`, `product_reviews`) and the only caller of the Husky API besides the pass-through live-stock endpoint - every user-facing feature reads local data.
 
 ## Page → endpoint → service → table contract
 
@@ -114,11 +114,11 @@ Reading the diagram top-to-bottom: **pages call routers, routers call services, 
 | Menu Planner (dispatch app) | `GET/POST /menus`, `POST /menus/{id}/copy`, `PUT …/products` | `menu_allocation.py` | `weekly_menus`, `menu_products`, `menu_product_caps`, `product_targets` | `husky_catalogue_sync` keeps the product picker current |
 | Forecast (dispatch app) | `POST /forecasts/run`, `GET /forecasts/latest`, `GET /forecasts/performance` | `forecast.py`, `scoring.py` | `forecast_runs`, `forecast_results`, `sales_events`, `product_scores` | `husky_sync_purchases`, `recompute_product_scores` |
 | Restock Verification (dispatch app) | `POST /dispatches/{id}/reconcile`, `GET` report | `reconciliation.py` | `restock_verifications(_lines)`, `restock_events`, `dispatch_lines` | `husky_sync_restock` |
-| Driver View (dispatch app) | `GET /dispatches?date=today` (role: driver) | `dispatch.py`, `documents.py` | `dispatch_lines`, fridge master data | — |
-| Purchase Orders (supply app) | `GET/POST /purchase-orders`, `…/send`, `…/receive`, `…/cancel`, `draft-from-dispatch` | `orders.py`, `documents.py`, `email.py` | `purchase_orders`, `purchase_order_lines`, `stock_movements` | — |
+| Driver View (dispatch app) | `GET /dispatches?date=today` (role: driver) | `dispatch.py`, `documents.py` | `dispatch_lines`, fridge master data | - |
+| Purchase Orders (supply app) | `GET/POST /purchase-orders`, `…/send`, `…/receive`, `…/cancel`, `draft-from-dispatch` | `orders.py`, `documents.py`, `email.py` | `purchase_orders`, `purchase_order_lines`, `stock_movements` | - |
 | Stock (supply app) | `GET /stock/balances`, `POST /stock/adjustments`, `GET /stock/movements` | `stock.py` | `stock_movements`, `v_stock_balances` | `low_stock_alerts` |
 | Clients & Fridges / Products (supply app) | CRUD `/clients`, `/fridges`, `/products` | thin CRUD | `clients`, `fridges`, `fridge_delivery_config`, `products`, `fridge_product_prices` | `husky_catalogue_sync` |
-| Alerts & Settings (supply app) | `GET /alerts`, `PUT /alerts/{id}/ack`, `GET/PUT /settings` | — | `alerts`, `settings` | all alert scan jobs |
+| Alerts & Settings (supply app) | `GET /alerts`, `PUT /alerts/{id}/ack`, `GET/PUT /settings` | - | `alerts`, `settings` | all alert scan jobs |
 | Weekly / Monthly Returns (returns app) | `GET/PUT /finance/weekly/{y}/{w}`, `GET /finance/monthly`, `GET /finance/fridge-report` | `finance.py` | `weekly_financials`, `sales_events`, `client_fees`, `client_service_charges` | `husky_sync_purchases` |
 
 ## The operating cycle across all layers
@@ -154,14 +154,14 @@ sequenceDiagram
 
 ## Cross-layer invariants
 
-1. **Stock can never go negative** — enforced by a database trigger on `stock_movements` (layer: DB), surfaced as HTTP 409 (layer: backend), rendered as blocking red cells / toasts (layer: frontend), and logged as a `negative_blocked` alert (layer: cron digest).
-2. **Raw RFID events are append-only and cron-owned** — services never write them; syncs are idempotent on the Husky reference so re-runs are safe (this is what makes every report reproducible).
-3. **Prices are snapshotted at transaction time** — `dispatch_lines` and `purchase_order_lines` carry their own unit prices; catalogue price changes never rewrite history (Excel had this right via copied values; the DB keeps it).
-4. **Every mutation is attributed** — `created_by` + `audit_log` from the backend's auth context; the Excel system's "no timestamp on saves" defect cannot recur.
-5. **One tunable configuration source** — scoring weights, forecast margins, fees, thresholds live in `settings` (DB) and are read by services and cron jobs alike; no constants buried in code, mirroring (but centralizing) the workbook's tunable cells.
+1. **Stock can never go negative** - enforced by a database trigger on `stock_movements` (layer: DB), surfaced as HTTP 409 (layer: backend), rendered as blocking red cells / toasts (layer: frontend), and logged as a `negative_blocked` alert (layer: cron digest).
+2. **Raw RFID events are append-only and cron-owned** - services never write them; syncs are idempotent on the Husky reference so re-runs are safe (this is what makes every report reproducible).
+3. **Prices are snapshotted at transaction time** - `dispatch_lines` and `purchase_order_lines` carry their own unit prices; catalogue price changes never rewrite history (Excel had this right via copied values; the DB keeps it).
+4. **Every mutation is attributed** - `created_by` + `audit_log` from the backend's auth context; the Excel system's "no timestamp on saves" defect cannot recur.
+5. **One tunable configuration source** - scoring weights, forecast margins, fees, thresholds live in `settings` (DB) and are read by services and cron jobs alike; no constants buried in code, mirroring (but centralizing) the workbook's tunable cells.
 
-> **Known delta:** the cron layer defines six support tables of its own (`sync_cursors`, `job_runs`, `backfill_checkpoints`, `live_stock_snapshot`, `generated_documents`, `reconciliation_daily` — see [cron/README.md](cron/README.md)). They are deliberately not in `schema.sql` (which covers the domain model verified against Postgres) and land as the first Alembic migration in Phase 1.
+> **Known delta:** the cron layer defines six support tables of its own (`sync_cursors`, `job_runs`, `backfill_checkpoints`, `live_stock_snapshot`, `generated_documents`, `reconciliation_daily` - see [cron/README.md](cron/README.md)). They are deliberately not in `schema.sql` (which covers the domain model verified against Postgres) and land as the first Alembic migration in Phase 1.
 
 ## Deployment topology
 
-Single Railway project: one PostgreSQL instance, one backend service (FastAPI + APScheduler in-process, Postgres advisory lock guards against double-scheduling if scaled), one static frontend. Azure Blob holds generated PO/dispatch documents. All secrets (Husky credentials, JWT secret, email, blob connection) are Railway environment variables — nothing in code.
+Single Railway project: one PostgreSQL instance, one backend service (FastAPI + APScheduler in-process, Postgres advisory lock guards against double-scheduling if scaled), one static frontend. Azure Blob holds generated PO/dispatch documents. All secrets (Husky credentials, JWT secret, email, blob connection) are Railway environment variables - nothing in code.

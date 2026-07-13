@@ -1,4 +1,4 @@
-# FrigoLoco cron worker — APScheduler container.
+# FrigoLoco cron worker - APScheduler container.
 # Builds the backend (editable) + cron package, then runs the scheduler.
 FROM python:3.12-slim
 

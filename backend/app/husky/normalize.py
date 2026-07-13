@@ -4,11 +4,11 @@ Design notes
 ------------
 * Prices arrive as ``int64`` *minor units* (cents). The DB stores money as
   ``BIGINT`` cents too (migration 0002, 2026-07-03), so ingestion writes the
-  vendor cents RAW — no conversion. ``minor_units_to_euros`` and
+  vendor cents RAW - no conversion. ``minor_units_to_euros`` and
   ``sum_discount_paid`` remain for *presentation* only (unit-tested);
   ``sum_discount_minor_units`` is the raw-cents ingestion counterpart.
 * ``is_refunded`` = any ``refundStatus`` entry whose status string contains
-  "refunded" (case-insensitive) — per the implementation brief.
+  "refunded" (case-insensitive) - per the implementation brief.
 * VAT is delivered "as a percentage" (e.g. ``6.0`` for 6 %); the DB column is a
   fraction in ``[0, 1)`` (``vat_rate``), so ``normalize_vat_fraction`` divides
   by 100 when the value looks like a percentage.
@@ -116,7 +116,7 @@ def normalize_vat_fraction(value: Any) -> Decimal | None:
 def sum_discount_paid(discounts: list[dict[str, Any]] | None) -> Decimal:
     """Sum the ``paidAmount`` minor units across a product's discounts (euros).
 
-    Presentation helper — for ingestion use :func:`sum_discount_minor_units`.
+    Presentation helper - for ingestion use :func:`sum_discount_minor_units`.
     """
     total = Decimal(0)
     if not discounts:

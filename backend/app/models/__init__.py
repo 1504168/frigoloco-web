@@ -50,7 +50,7 @@ from app.models.planning import (
 )
 from app.models.sync import StockSnapshot, SyncRun
 
-# The two tables NOT in schema.sql — created via metadata create_all().
+# The two tables NOT in schema.sql - created via metadata create_all().
 SYNC_TABLES = (SyncRun.__table__, StockSnapshot.__table__)
 
 __all__ = [

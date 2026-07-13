@@ -23,11 +23,15 @@ import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { MoneyCell } from '@/components/shared/MoneyCell'
 import { toast } from '@/components/ui/sonner'
-import { formatEuro } from '@/lib/format'
+import { formatEuro, formatFraction, formatFridgeName } from '@/lib/format'
 import { api, type Page } from '@/lib/api'
+import { REFERENCE_FRIDGES_KEY, REFERENCE_FRIDGES_LIMIT } from '@/lib/query-keys'
 import type { Fridge, FridgeReport } from '@/pages/finance/types'
-import { KpiTile, SectionCard } from '@/pages/finance/components'
+import { KpiTile, SectionCard, type KpiTileProps } from '@/pages/finance/components'
 import { downloadFileFromApi, formatCount, toNumber } from '@/pages/finance/utils'
+
+/** Shown wherever the backend sends null, matching the Excel export's own wording. */
+const NOT_AVAILABLE = 'n/a'
 
 /** First/last day of the previous calendar month, ISO date strings. */
 function defaultRange(): { from: string; to: string } {
@@ -39,10 +43,20 @@ function defaultRange(): { from: string; to: string } {
   return { from: iso(firstPrev), to: iso(lastPrev) }
 }
 
-/** Format the backend margin-percent string (e.g. "100.00") for display. */
-function formatMarginPct(value: string | null | undefined): string {
-  const numeric = toNumber(value)
-  return `${numeric.toFixed(1)}%`
+/**
+ * Format the backend margin fraction (e.g. "0.6000") for display. The backend
+ * sends null when there is no ex-VAT revenue to divide by: that is an undefined
+ * margin, not a 0% one, so it must not be coerced to a number.
+ */
+function formatMarginPct(value: string | null): string {
+  if (value === null) return NOT_AVAILABLE
+  return formatFraction(value, 1)
+}
+
+/** An undefined margin is neutral: only a real percentage earns good/critical. */
+function marginPctTone(value: string | null): KpiTileProps['tone'] {
+  if (value === null) return 'default'
+  return toNumber(value) >= 0 ? 'good' : 'critical'
 }
 
 export function FridgeReportCard() {
@@ -52,9 +66,12 @@ export function FridgeReportCard() {
   const [to, setTo] = React.useState(initial.to)
 
   const fridgesQuery = useQuery({
-    queryKey: ['fridges', 'all'],
+    queryKey: REFERENCE_FRIDGES_KEY,
     queryFn: ({ signal }) =>
-      api.get<Page<Fridge>>('/api/v1/fridges', { params: { limit: 500 }, signal }),
+      api.get<Page<Fridge>>('/api/v1/fridges', {
+        params: { limit: REFERENCE_FRIDGES_LIMIT },
+        signal,
+      }),
     staleTime: 5 * 60_000,
   })
 
@@ -98,7 +115,7 @@ export function FridgeReportCard() {
               <SelectContent className="max-h-72">
                 {fridges.map((fridge) => (
                   <SelectItem key={fridge.id} value={String(fridge.id)}>
-                    {fridge.friendly_name || fridge.husky_name}
+                    {formatFridgeName(fridge)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -144,7 +161,7 @@ export function FridgeReportCard() {
             <KpiTile
               label="Margin %"
               value={formatMarginPct(report.margin_pct)}
-              tone={toNumber(report.margin_pct) >= 0 ? 'good' : 'critical'}
+              tone={marginPctTone(report.margin_pct)}
               caption="Food margin / revenue"
             />
           </div>
@@ -172,7 +189,9 @@ export function FridgeReportCard() {
                     <TableRow key={row.product_id}>
                       <TableCell className="font-mono text-xs">{row.code}</TableCell>
                       <TableCell className="font-medium">{row.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{row.category}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {row.category ?? NOT_AVAILABLE}
+                      </TableCell>
                       <TableCell className="text-right tabular-nums">{formatCount(row.added_qty)}</TableCell>
                       <TableCell className="text-right">
                         <MoneyCell value={row.unit_buying_price} />

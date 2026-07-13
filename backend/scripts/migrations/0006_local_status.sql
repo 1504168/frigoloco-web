@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 0006 — Manual status override (local_status) on products & fridges
+-- Migration 0006 - Manual status override (local_status) on products & fridges
 -- ============================================================================
 -- Requirement (work-order D5, 2026-07-03): fridge + product data auto-syncs
 -- from Husky, but a user's manual status marking must survive every sync.

@@ -1,4 +1,4 @@
-"""Database partition maintenance (D1.2) — importable domain layer.
+"""Database partition maintenance (D1.2) - importable domain layer.
 
 ``dispatch_lines``, ``sales_events`` and ``restock_events`` are RANGE-partitioned
 monthly on their date key. An insert dated beyond the last pre-created partition
@@ -7,7 +7,7 @@ fails with *"no partition of relation ... found for row"*. The schema function
 NEXT month's partitions exist for all three tables.
 
 This module is the single importable entry point the monthly APScheduler job
-(``cron.jobs.partition_maintenance``) — and any operator — calls, mirroring the
+(``cron.jobs.partition_maintenance``) - and any operator - calls, mirroring the
 Husky ``cron -> backend`` thin-wrapper pattern. It is DB-only: no vendor call.
 """
 
@@ -30,7 +30,7 @@ _PARTITIONED_TABLES: tuple[str, ...] = ("sales_events", "restock_events", "dispa
 
 @dataclass
 class PartitionMaintenanceOutcome:
-    """What a maintenance run ensured — for CLI output and test assertions."""
+    """What a maintenance run ensured - for CLI output and test assertions."""
 
     months: list[str] = field(default_factory=list)  # e.g. ["2026_07", "2026_08"]
     ensured_partitions: list[str] = field(default_factory=list)

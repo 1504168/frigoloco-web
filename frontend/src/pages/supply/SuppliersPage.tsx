@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { toast } from '@/components/ui/sonner'
 import { api, ApiError, type Page } from '@/lib/api'
+import { EMPTY_PLACEHOLDER } from '@/lib/format'
 import { Dialog } from './components/Dialog'
 import { Field, Textarea, fieldErrorsFromApiError, generalErrorMessage } from './components/form'
 import type { Supplier, SupplierCreate } from './types'
@@ -70,7 +71,7 @@ export function SuppliersPage() {
         id: 'email',
         header: 'Email',
         cell: (row) => (
-          <span className="text-muted-foreground">{row.email ?? '—'}</span>
+          <span className="text-muted-foreground">{row.email ?? EMPTY_PLACEHOLDER}</span>
         ),
         sortValue: (row) => row.email ?? '',
       },
@@ -78,7 +79,7 @@ export function SuppliersPage() {
         id: 'warehouse',
         header: 'Warehouse address',
         cell: (row) => (
-          <span className="text-muted-foreground">{row.warehouse_address ?? '—'}</span>
+          <span className="text-muted-foreground">{row.warehouse_address ?? EMPTY_PLACEHOLDER}</span>
         ),
       },
       {

@@ -2,17 +2,17 @@
 
 Decision (2026-07-03, user): every monetary column is stored as ``bigint`` minor
 units (cents), matching the Husky API's ``int64`` contract. Euros exist only as a
-presentation format — the HTTP JSON contract is unchanged (a fixed 2-decimal euro
+presentation format - the HTTP JSON contract is unchanged (a fixed 2-decimal euro
 string such as ``"123.45"``), so the frontend is untouched.
 
 This module is the single home for the three boundary conversions:
 
-* :func:`euros_to_cents` — parse a euro amount (decimal string/number) written by
+* :func:`euros_to_cents` - parse a euro amount (decimal string/number) written by
   a client into integer cents on the way *in*.
-* :func:`cents_to_euro_str` — render stored integer cents as a euro string on the
+* :func:`cents_to_euro_str` - render stored integer cents as a euro string on the
   way *out* (the ``MoneyCell``-compatible ``"123.45"`` format).
-* :func:`to_cents` — round a cents-valued ``Decimal`` (produced wherever a
-  division/fraction is unavoidable — VAT splits, margins, fee percentages) to a
+* :func:`to_cents` - round a cents-valued ``Decimal`` (produced wherever a
+  division/fraction is unavoidable - VAT splits, margins, fee percentages) to a
   whole-cent ``int``, half-up.
 
 The Pydantic annotations :data:`MoneyIn` (request) and :data:`MoneyStr` (response)
@@ -33,7 +33,7 @@ _WHOLE = Decimal("1")
 def euros_to_cents(value: Decimal | int | float | str) -> int:
     """Parse a euro amount into integer minor units (cents), rounded half-up.
 
-    Accepts anything ``Decimal(str(...))`` can parse — decimal strings such as
+    Accepts anything ``Decimal(str(...))`` can parse - decimal strings such as
     ``"12.34"`` (the client wire format), ints, floats and ``Decimal``.
     """
     return int((Decimal(str(value)) * _CENTS).quantize(_WHOLE, rounding=ROUND_HALF_UP))

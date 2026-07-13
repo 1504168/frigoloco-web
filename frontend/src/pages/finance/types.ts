@@ -1,12 +1,16 @@
 /**
- * Finance / Verification / Settings entity types, mirrored from the FastAPI
- * OpenAPI schema (verified live against http://localhost:8000/openapi.json).
+ * Finance / Verification / Settings types, mirrored from the FastAPI OpenAPI
+ * schema (verified live against http://localhost:8000/openapi.json). The
+ * cross-domain entities this page reads (Fridge, Category, Setting) are defined
+ * once in src/lib/types.ts and re-exported here.
  *
  * MONEY CONTRACT: every money field arrives as a decimal-euro string (e.g.
  * "16904.00"). A concurrent backend migration is moving internal storage to
- * cents, but the API contract (euro strings) is guaranteed stable — this code
+ * cents, but the API contract (euro strings) is guaranteed stable: this code
  * only ever reads/writes euro strings.
  */
+
+export type { Category, Fridge, Setting } from '@/lib/types'
 
 /** Manual weekly entries echoed back on GET (schema: WeeklyInputsRead). */
 export interface WeeklyInputs {
@@ -87,7 +91,8 @@ export interface FridgeReportRow {
   product_id: number
   code: string
   name: string
-  category: string
+  /** Null for a product with no category. */
+  category: string | null
   added_qty: number
   unit_buying_price: string
   unit_selling_price: string
@@ -102,8 +107,8 @@ export interface FridgeReport {
   food_cost: string
   revenue: string
   margin: string
-  /** Food margin as a percentage string, e.g. "100.00". */
-  margin_pct: string
+  /** Food margin as a 0..1 fraction string, e.g. "0.6000". Null when there is no ex-VAT revenue to divide by. */
+  margin_pct: string | null
   rows: FridgeReportRow[]
 }
 
@@ -145,14 +150,6 @@ export interface VerificationDetail {
   category_totals: CategoryReconTotal[]
 }
 
-/** GET /api/v1/settings item (schema: SettingRead). `value` is untyped JSON. */
-export interface Setting {
-  key: string
-  value: unknown
-  description: string | null
-  updated_at: string
-}
-
 /** Dispatch summary (schema: DispatchRead) — used by the verify picker. */
 export interface Dispatch {
   id: number
@@ -160,12 +157,4 @@ export interface Dispatch {
   iso_week: number
   weekday: number
   status: string
-}
-
-/** Fridge (schema: FridgeRead) — used for name maps and the fridge-report picker. */
-export interface Fridge {
-  id: number
-  friendly_name: string
-  husky_name: string
-  is_active: boolean
 }

@@ -1,4 +1,4 @@
-"""Master data models — SECTION 2 of schema.sql plus the ``settings`` table
+"""Master data models - SECTION 2 of schema.sql plus the ``settings`` table
 (SECTION 9). Mirrors: users, suppliers, categories, products, clients, fridges,
 fridge_product_prices, fridge_delivery_config, client_fees,
 client_service_charges, client_interventions, product_targets,
@@ -112,14 +112,14 @@ class Product(Base):
     supplier_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("suppliers.id")
     )
-    # Money in minor units (cents), BIGINT — see schema.sql header convention.
+    # Money in minor units (cents), BIGINT - see schema.sql header convention.
     purchase_price: Mapped[int] = mapped_column(
         BigInteger, nullable=False, server_default=text("0")
     )
     sales_price: Mapped[int] = mapped_column(
         BigInteger, nullable=False, server_default=text("0")
     )
-    # VAT as a fraction (R5): 0.06 = 6 %. NOT money — stays NUMERIC.
+    # VAT as a fraction (R5): 0.06 = 6 %. NOT money - stays NUMERIC.
     vat_rate: Mapped[Decimal] = mapped_column(
         Numeric(6, 4), nullable=False, server_default=text("0")
     )
@@ -129,7 +129,7 @@ class Product(Base):
         Boolean, nullable=False, server_default=text("true")
     )
     # Manual status override (D5): NULL follows Husky, else user-forced and wins
-    # over sync. LOCAL-owned — the Husky sync contract never writes this column.
+    # over sync. LOCAL-owned - the Husky sync contract never writes this column.
     local_status: Mapped[str | None] = mapped_column(Text)
     husky_synced_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True)
@@ -191,7 +191,7 @@ class Fridge(Base):
         Boolean, nullable=False, server_default=text("true")
     )
     # Manual status override (D5): NULL follows Husky, else user-forced and wins
-    # over sync. LOCAL-owned — the Husky sync contract never writes this column.
+    # over sync. LOCAL-owned - the Husky sync contract never writes this column.
     local_status: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

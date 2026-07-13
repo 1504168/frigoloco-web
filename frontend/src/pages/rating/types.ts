@@ -1,11 +1,12 @@
 /**
  * Product rating scorecard types, mirrored from the FastAPI schema
- * (GET /api/v1/rating/scorecard, verified live against http://localhost:8100).
+ * (GET /api/v1/rating/scorecard, app/schemas/rating.py).
  *
- * MONEY / RATIO CONTRACT: money fields arrive as decimal-euro strings ("8.50").
- * `profit_margin` and `pct_positive_review` are fraction strings (0..1);
- * `pct_sold` is already expressed in percent units. `final_score` is a decimal
- * string. Nulls are possible for brand, supplier, shelf life and review ratio.
+ * MONEY / RATIO CONTRACT: money fields (`buying_price`, `sold_price`) arrive as
+ * decimal-euro strings ("8.50"). Every ratio the backend emits is a 0..1
+ * FRACTION string: `vat_rate` ("0.0600"), `profit_margin`, `pct_sold`,
+ * `pct_positive_review` and the `ScorecardWeights` blend. None of them is
+ * pre-multiplied into percent units. `final_score` is a plain decimal string.
  */
 
 /** One row of the scorecard (schema: ScorecardRow). */
@@ -13,19 +14,22 @@ export interface ScorecardRow {
   product_id: number
   name: string
   code: string
-  category: string
+  category: string | null
   brand: string | null
   supplier_id: number | null
   shelf_life_days: number | null
   buying_price: string
   sold_price: string
   vat_rate: string
-  profit_margin: string
+  /** Fraction 0..1 — null when the sell price ex-VAT is not positive. */
+  profit_margin: string | null
   total_sold_qty: number
   total_added_qty: number
-  pct_sold: string
+  /** Fraction 0..1 — null when nothing was added in the window. */
+  pct_sold: string | null
   positive_reviews: number
   negative_reviews: number
+  /** Fraction 0..1 — null when the product has no reviews in the window. */
   pct_positive_review: string | null
   final_score: string
 }
@@ -37,7 +41,7 @@ export interface ScorecardWeights {
   review: string
 }
 
-/** GET /api/v1/rating/scorecard response (schema: ScorecardResponse). */
+/** GET /api/v1/rating/scorecard response (schema: ScorecardPage). */
 export interface ScorecardResponse {
   items: ScorecardRow[]
   total: number

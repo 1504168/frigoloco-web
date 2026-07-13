@@ -3,7 +3,7 @@
 Design notes
 ------------
 * Every response model sets ``extra='allow'`` so the vendor can add fields
-  without breaking ingestion — we only pin the columns we actually read.
+  without breaking ingestion - we only pin the columns we actually read.
 * Prices arrive as ``int64`` *minor units* (cents); the euro conversion lives in
   :mod:`app.husky.normalize` (``minor_units_to_euros``), not here.
 """
@@ -16,7 +16,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 # ---------------------------------------------------------------------------
-# Response models — pinned columns only, extra='allow' for forward-compat.
+# Response models - pinned columns only, extra='allow' for forward-compat.
 # ---------------------------------------------------------------------------
 
 _MODEL_CONFIG = ConfigDict(extra="allow", populate_by_name=True)

@@ -2,8 +2,18 @@
  * Backend entity types for the OPS pipeline (Forecast → Menu → Dispatch).
  * Mirrored verbatim from the live FastAPI OpenAPI schema at
  * http://localhost:8100/openapi.json and the wave-2 API contract. Everything
- * keys on the (iso_year, week_no, day_name) pipeline triple.
+ * keys on the (iso_year, week_no, day_name) pipeline triple. The reference
+ * entities the pipeline reads (Fridge, Category, Supplier, Setting,
+ * PurchaseOrder) are defined once in src/lib/types.ts and re-exported here.
  */
+
+export type {
+  Category,
+  Fridge,
+  PurchaseOrder,
+  Setting,
+  Supplier,
+} from '@/lib/types'
 
 // ── Forecast ───────────────────────────────────────────────────────────────
 
@@ -138,7 +148,7 @@ export interface MenuSaveRequest {
 
 export type DispatchStatus = 'draft' | 'saved' | 'dispatched' | 'reconciled'
 
-/** GET /api/v1/dispatches/saved response (schema: DispatchRead) — metadata only. */
+/** GET /api/v1/dispatches/saved response (schema: DispatchRead) - metadata only. */
 export interface DispatchRead {
   id: number
   delivery_date: string
@@ -186,48 +196,8 @@ export interface StockBlockedEntry {
 
 // ── Reference / catalogue ──────────────────────────────────────────────────
 
-/** GET /api/v1/fridges item (subset used by ops pages). */
-export interface Fridge {
-  id: number
-  friendly_name: string
-  husky_name: string
-  is_active: boolean
-}
-
-/** GET /api/v1/categories item (bare array, not a Page<T>). */
-export interface Category {
-  id: number
-  name: string
-  display_order: number
-  dispatch_print_order: number
-}
-
-/** GET /api/v1/suppliers item (subset). */
-export interface Supplier {
-  id: number
-  name: string
-  is_active: boolean
-}
-
-/** GET /api/v1/settings item (schema: SettingRead). */
-export interface Setting {
-  key: string
-  value: unknown
-  description: string | null
-  updated_at: string
-}
-
 /** GET /api/v1/rating/scorecard item (subset used for the Menu score row). */
 export interface ScorecardItem {
   product_id: number
   final_score: string
-}
-
-/** GET /api/v1/purchase-orders draft response (schema: PurchaseOrderRead, subset). */
-export interface PurchaseOrder {
-  id: number
-  order_no: string
-  supplier_id: number
-  status: string
-  total_incl_vat: string
 }

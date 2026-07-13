@@ -1,4 +1,4 @@
-"""catalogue_sync — daily 02:00.
+"""catalogue_sync - daily 02:00.
 
 Thin scheduler/CLI wrapper. The Husky master-catalogue sync logic lives in
 :func:`app.husky.sync.sync_catalogue` (shared with the FastAPI sync API).

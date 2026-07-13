@@ -86,7 +86,7 @@ def envelope(func: Callable) -> Callable:
 
     Routers use ``from __future__ import annotations`` (PEP 563), so their
     endpoint annotations are *strings*. FastAPI resolves those strings against
-    the callable's ``__globals__`` — which, for the wrapper, is THIS module, not
+    the callable's ``__globals__`` - which, for the wrapper, is THIS module, not
     the router module. Body-model classes (e.g. ``WeeklyFinancialInputs``) live
     in the router's namespace and are absent here, so the string would fail to
     resolve and FastAPI would misclassify the body param as a query param. We
@@ -613,7 +613,7 @@ def draft_purchase_orders_from_dispatch(
 
 
 # ===========================================================================
-# D2 — draft a purchase order from a SAVED menu (per supplier)
+# D2 - draft a purchase order from a SAVED menu (per supplier)
 # ===========================================================================
 # APPEND-ONLY (WORKORDER D2 ownership contract): the menus router owns the
 # (iso_year, week_no, day_name) menu key and passes the already-aggregated

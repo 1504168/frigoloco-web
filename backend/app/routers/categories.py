@@ -1,4 +1,4 @@
-"""Categories — read-only list (seeded fixed set, R8 print order)."""
+"""Categories - read-only list (seeded fixed set, R8 print order)."""
 
 from __future__ import annotations
 

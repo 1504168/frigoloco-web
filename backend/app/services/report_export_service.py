@@ -11,7 +11,7 @@ The fridge-report workbook is built in two passes, exactly as required:
 
 Keeping the two engines in separate passes (Polars writes, openpyxl decorates)
 avoids mixing incompatible workbook objects and yields a plain ``.xlsx`` any
-consumer — including openpyxl itself — can open.
+consumer - including openpyxl itself - can open.
 """
 
 from __future__ import annotations
@@ -32,6 +32,11 @@ _SHEET_NAME = "Fridge Report"
 _TABLE_ANCHOR = "A11"
 _EURO_FORMAT = "#,##0.00"
 _QTY_FORMAT = "#,##0"
+
+# Ratios travel through the app as 0..1 fractions; only this display edge shows
+# them in percent units.
+_PERCENT_SCALE = Decimal("100")
+_PERCENT_QUANTUM = Decimal("0.01")
 
 _TABLE_COLUMNS = (
     "Product",
@@ -56,8 +61,15 @@ class ExcelDocument:
 
 
 def _euro(cents: int) -> float:
-    """Cents → euros as a float for a numeric Excel cell."""
+    """Cents to euros as a float for a numeric Excel cell."""
     return float(cents_to_euro_decimal(cents))
+
+
+def _percent(fraction: Decimal | None) -> str:
+    """A 0..1 fraction as a 2-decimal percentage string (0.6000 -> "60.00%")."""
+    if fraction is None:
+        return "n/a"
+    return f"{(fraction * _PERCENT_SCALE).quantize(_PERCENT_QUANTUM)}%"
 
 
 def _build_table_frame(data: FridgeReportData) -> pl.DataFrame:
@@ -99,15 +111,12 @@ def _write_summary_block(worksheet, data: FridgeReportData) -> None:
     worksheet["A3"].font = bold
     worksheet["B3"] = f"{data.date_from.isoformat()} → {data.date_to.isoformat()}"
 
-    margin_pct = (
-        f"{data.margin_pct}%" if data.margin_pct is not None else "n/a"
-    )
     kpis: list[tuple[str, object, str | None]] = [
         ("Total Added Qty", data.total_added_qty, _QTY_FORMAT),
         ("Food Cost (EUR)", _euro(data.food_cost), _EURO_FORMAT),
         ("Revenue (EUR)", _euro(data.revenue), _EURO_FORMAT),
         ("Food Margin (EUR)", _euro(data.margin), _EURO_FORMAT),
-        ("Food Margin %", margin_pct, None),
+        ("Food Margin %", _percent(data.margin_pct), None),
     ]
     for index, (label, value, number_format) in enumerate(kpis):
         row_no = 5 + index

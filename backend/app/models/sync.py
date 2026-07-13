@@ -1,11 +1,11 @@
-"""Sync bookkeeping tables — NOT present in schema.sql (introduced by spec 0004).
+"""Sync bookkeeping tables - NOT present in schema.sql (introduced by spec 0004).
 
 These two tables are created from ORM metadata via ``create_all(checkfirst=True)``
 in ``scripts/apply_schema.py`` (schema.sql does not define them):
 
-* ``sync_run``        — one row per Husky sync chunk (raw-first ELT audit trail,
+* ``sync_run``        - one row per Husky sync chunk (raw-first ELT audit trail,
                         resumable/auditable).
-* ``stock_snapshots`` — point-in-time stock captures (GET /stock/current is
+* ``stock_snapshots`` - point-in-time stock captures (GET /stock/current is
                         point-in-time only, so history must be snapshotted).
 """
 

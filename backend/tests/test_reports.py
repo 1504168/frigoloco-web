@@ -159,7 +159,7 @@ def _add_reviews(session, seed, reviewed_at, positive, negative) -> None:
 
 
 # ===========================================================================
-# Fridge report (JSON) — rows + summary
+# Fridge report (JSON) - rows + summary
 # ===========================================================================
 
 
@@ -181,7 +181,7 @@ def test_fridge_report_rows_and_summary(client, seed, db_session) -> None:
     assert body["food_cost"] == "8.00"
     assert body["revenue"] == "21.20"  # 2 x 10.60
     assert body["margin"] == "12.00"   # 21.20/1.06 - 8.00 = 20.00 - 8.00
-    assert body["margin_pct"] == "60.00"  # 12.00 / 20.00 * 100
+    assert body["margin_pct"] == "0.6000"  # fraction: 12.00 / 20.00
 
     # Per-product rows.
     assert len(body["rows"]) == 1
@@ -195,7 +195,7 @@ def test_fridge_report_rows_and_summary(client, seed, db_session) -> None:
 
 
 # ===========================================================================
-# Fridge report Excel export — summary on top, table below
+# Fridge report Excel export - summary on top, table below
 # ===========================================================================
 
 

@@ -1,9 +1,9 @@
-"""Husky sync API — trigger syncs and read the checkpoint history.
+"""Husky sync API - trigger syncs and read the checkpoint history.
 
-* ``POST /api/v1/sync/husky/{feed}`` — schedule a sync of ``feed`` via
+* ``POST /api/v1/sync/husky/{feed}`` - schedule a sync of ``feed`` via
   ``BackgroundTasks``; the ``sync_run`` checkpoint row is created synchronously
   so its id is returned immediately while the work runs in the background.
-* ``GET  /api/v1/sync/runs?endpoint&limit`` — recent ``sync_run`` checkpoints.
+* ``GET  /api/v1/sync/runs?endpoint&limit`` - recent ``sync_run`` checkpoints.
 
 All sync logic lives in :mod:`app.husky.sync`; this router only maps a feed to
 its domain function and manages the background scheduling + checkpoint reads.

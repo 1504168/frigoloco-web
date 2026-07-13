@@ -1,7 +1,7 @@
 """Typed httpx client for the Intelligent Fridges ("Husky") API.
 
 * Basic auth from backend ``Settings`` (``FRIGOLOCO_API_USERNAME/PASSWORD``).
-* Base URL ``{FRIGOLOCO_API_BASE_URL}/{merchant}`` — the merchant path segment
+* Base URL ``{FRIGOLOCO_API_BASE_URL}/{merchant}`` - the merchant path segment
   is part of every endpoint.
 * Client-side throttle to ``settings.husky_throttle_rps`` (no documented vendor
   rate limit; ~1 req/s keeps the full backfill well-behaved).

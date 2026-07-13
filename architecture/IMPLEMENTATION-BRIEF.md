@@ -1,4 +1,4 @@
-# Implementation Brief — Canonical Decisions (Verifier-resolved)
+# Implementation Brief - Canonical Decisions (Verifier-resolved)
 
 > Produced 2026-07-03 by the verifier session from a full digest of specs 0002/0003/0004, `architecture/*`, and CLAUDE.md.
 > The sources contain 19 documented contradictions (§E below). Implementers follow THIS sheet; deviations recorded here, not re-litigated.
@@ -22,13 +22,13 @@
 | 12 | Weeks | ISO-8601 week + explicit `week_start` DATE everywhere; finance parity deltas vs legacy anchoring documented in tests, not replicated | CLAUDE.md normalisation rule |
 | 13 | Live stock | `stock_snapshots` table fed every 15 min by APScheduler; no request-time Husky proxy | Request path never calls vendor API (data-sync README) |
 | 14 | Charts | Frontend uses **d3.js**; mockups stay self-contained inline SVG | User decision 2026-07-03 |
-| 15 | Auth | JWT per backend/README is **deferred** — routers ship without auth dependencies for now (single-tenant internal tool); role matrix wired in a later phase | Keeps this phase verifiable end-to-end; flagged in final checklist |
+| 15 | Auth | JWT per backend/README is **deferred** - routers ship without auth dependencies for now (single-tenant internal tool); role matrix wired in a later phase | Keeps this phase verifiable end-to-end; flagged in final checklist |
 
-## Load-bearing business formulas (verified against workbooks — do not deviate)
+## Load-bearing business formulas (verified against workbooks - do not deviate)
 
 - Sales turnover ex-VAT = `(gross_sales + customer_credit − refunds) / 1.06`
-- POS & Software fee = `0.09 × gross_sales` (VAT-INCLUSIVE gross — verified: `=[Total Sales]*Settings!$C$3`)
-- RFID fee = `0.10 × items_sold` (rate × items; Excel's rate-only subtraction was a bug — do not replicate)
+- POS & Software fee = `0.09 × gross_sales` (VAT-INCLUSIVE gross - verified: `=[Total Sales]*Settings!$C$3`)
+- RFID fee = `0.10 × items_sold` (rate × items; Excel's rate-only subtraction was a bug - do not replicate)
 - Weekly net margin = `(turnover + catering + tgtg) − (fridge_food_cost[ADDED] + catering_food_cost + logistics) − pos_fee − rfid_fee`
 - Monthly client net margin = `yearly_fee/12 + food_margin[DISPATCHED] + service_additionals − fraction×logistics − pos_pct×sales`
 - Monthly supplier/category net margin = `food_margin − rfid_fee(items)`
@@ -56,5 +56,5 @@
 
 Every job: raw-first archive (local `raw_archive/` dir now, blob later), `sync_run` row per run/chunk, per-job advisory lock, idempotent upserts.
 
-## Appendix E — full contradiction list
+## Appendix E - full contradiction list
 (Preserved from the doc digest for audit; resolutions above.) 1 Alembic; 2 API prefix; 3 scheduler; 4 cost basis; 5 money type; 6 dual weights; 7 table names; 8 table counts; 9 stock view vs ledger; 10 dedupe keys; 11 cursors; 12 test-mode envs; 13 husky env keys; 14 folder layout; 15 week anchoring; 16 is_active naming; 17 review idempotency; 18 restock filter scope; 19 open questions (0004 Q3/Q9/Q10, 0003 Q3/Q4/Q9, 0002 Q2/Q6).

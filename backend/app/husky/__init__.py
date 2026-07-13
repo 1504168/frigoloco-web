@@ -2,11 +2,11 @@
 
 The *only* layer that talks to the vendor API. Split into:
 
-* ``client``    — typed httpx client (Basic auth, throttle, tenacity retry).
-* ``schemas``   — pydantic response models (``extra='allow'``).
-* ``normalize`` — pure field-normalisation helpers (cents -> euros, refund
+* ``client``    - typed httpx client (Basic auth, throttle, tenacity retry).
+* ``schemas``   - pydantic response models (``extra='allow'``).
+* ``normalize`` - pure field-normalisation helpers (cents -> euros, refund
                   flag, VAT fraction, …).
-* ``archive``   — gzip raw payloads to the raw-first ELT archive.
+* ``archive``   - gzip raw payloads to the raw-first ELT archive.
 
 Nothing here imports the cron jobs; the dependency direction is
 ``cron.jobs -> app.husky -> app.{config,models}``.

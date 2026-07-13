@@ -6,7 +6,7 @@ Two tiers:
   ensures the current AND next month's partitions exist for all three
   range-partitioned tables, and is idempotent (safe to re-run).
 * The underlying schema building block actually CREATES a partition when one is
-  missing and stays a no-op on re-run — proven inside a rolled-back transaction
+  missing and stays a no-op on re-run - proven inside a rolled-back transaction
   (DDL is transactional in PostgreSQL) so no artifact leaks into the DB.
 """
 
@@ -73,7 +73,7 @@ def test_create_partition_for_missing_future_month_is_idempotent() -> None:
         assert exists(dispatch_part)
         assert exists(sales_part)
 
-        # Second call is a no-op (CREATE TABLE IF NOT EXISTS) — no error, still one.
+        # Second call is a no-op (CREATE TABLE IF NOT EXISTS) - no error, still one.
         connection.execute(
             text("SELECT create_dispatch_line_partition_for_month(:m)"), {"m": month_start}
         )

@@ -3,7 +3,7 @@
 Exercises the full Forecast -> Menu -> Dispatch -> PO pipeline against the live
 Railway DB on synthetic week 2027-W2 (Wednesday, delivery_date 2027-01-13;
 partitions exist through 2027-12). Like ``test_ops_routers``, everything runs
-inside one outer transaction rolled back on teardown — nothing (including
+inside one outer transaction rolled back on teardown - nothing (including
 append-only ``stock_movements`` / ``menu_lines`` rows) is ever persisted. Names
 use a ``ZZWF-`` prefix as a second line of defence.
 
@@ -286,7 +286,7 @@ def test_full_workflow_pipeline_2027_w2(ctx):
     di_cell = next(c for c in di.json()["cells"] if c["product_id"] == product_id)
     assert di_cell["qty"] == 6
 
-    # 9) save PLANNED dispatch — stock MUST NOT change.
+    # 9) save PLANNED dispatch - stock MUST NOT change.
     disp_save = {
         "year": YEAR,
         "week": WEEK,
@@ -310,7 +310,7 @@ def test_full_workflow_pipeline_2027_w2(ctx):
     )
     assert ds.status_code == 200 and ds.json()["status"] == "saved"
 
-    # 11) create individual dispatch — the ONLY stock-writing path.
+    # 11) create individual dispatch - the ONLY stock-writing path.
     ci = client.post(
         f"{PREFIX}/dispatches/create-individual",
         params={"year": YEAR, "week": WEEK, "day_name": DAY_NAME, "force": True},

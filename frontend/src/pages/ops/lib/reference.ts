@@ -6,6 +6,12 @@
  */
 import { useQuery } from '@tanstack/react-query'
 import { api, type Page } from '@/lib/api'
+import { formatFridgeName } from '@/lib/format'
+import {
+  REFERENCE_CATEGORIES_KEY,
+  REFERENCE_FRIDGES_KEY,
+  REFERENCE_FRIDGES_LIMIT,
+} from '@/lib/query-keys'
 import type { Product } from '@/lib/types'
 import type {
   Category,
@@ -23,19 +29,21 @@ const DEFAULT_MENU_COLUMNS = 6
 /** Map of fridge id -> friendly name. Loads all active fridges once. */
 export function useFridgeMap() {
   return useQuery({
-    queryKey: ['ops', 'fridges', 'map'],
+    queryKey: REFERENCE_FRIDGES_KEY,
     queryFn: ({ signal }) =>
-      api.get<Page<Fridge>>('/api/v1/fridges', { params: { limit: 500 }, signal }),
+      api.get<Page<Fridge>>('/api/v1/fridges', {
+        params: { limit: REFERENCE_FRIDGES_LIMIT },
+        signal,
+      }),
     staleTime: REFERENCE_STALE_MS,
-    select: (page) =>
-      new Map(page.items.map((fridge) => [fridge.id, fridge.friendly_name || fridge.husky_name])),
+    select: (page) => new Map(page.items.map((fridge) => [fridge.id, formatFridgeName(fridge)])),
   })
 }
 
 /** Ordered category list (by display_order) plus an id -> name map. */
 export function useCategories() {
   return useQuery({
-    queryKey: ['ops', 'categories'],
+    queryKey: REFERENCE_CATEGORIES_KEY,
     queryFn: ({ signal }) => api.get<Category[]>('/api/v1/categories', { signal }),
     staleTime: REFERENCE_STALE_MS,
     select: (items) => {
@@ -108,7 +116,7 @@ export function useScoreMap() {
       }
       return all
     },
-    // A missing scorecard is non-fatal — the score row simply shows em dashes.
+    // A missing scorecard is non-fatal - the score row simply shows placeholders.
     retry: false,
     select: (items) => new Map(items.map((item) => [item.product_id, item.final_score])),
   })

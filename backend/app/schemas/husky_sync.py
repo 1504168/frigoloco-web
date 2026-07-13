@@ -25,7 +25,7 @@ SyncFeed = Literal[
 
 
 class SyncTriggerResponse(ApiModel):
-    """Returned immediately when a sync is scheduled — carries the checkpoint id."""
+    """Returned immediately when a sync is scheduled - carries the checkpoint id."""
 
     sync_run_id: int
     feed: SyncFeed

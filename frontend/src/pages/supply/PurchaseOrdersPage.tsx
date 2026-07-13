@@ -176,7 +176,7 @@ export function PurchaseOrdersPage() {
       <PageHeader
         breadcrumb="Operations / Purchase Orders"
         title="Purchase Orders"
-        description="Supplier POs — raise, receive stock, and cancel with reversal."
+        description="Supplier POs: raise, receive stock, and cancel with reversal."
         actions={
           <Button onClick={() => setCreating(true)}>
             <Plus className="h-4 w-4" /> New PO
@@ -403,7 +403,7 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
           <Input
             value={deliveryAddress}
             onChange={(event) => setDeliveryAddress(event.target.value)}
-            placeholder="FrigoLoco Depot — Nivelles"
+            placeholder="FrigoLoco Depot - Nivelles"
           />
         </Field>
 
@@ -667,7 +667,7 @@ function PoDetailDialog({ poId, supplierName, onClose }: PoDetailDialogProps) {
 
           {isPending ? (
             <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[#8a6100] dark:text-warning">
-              Receiving fewer units than ordered? Enter the actual quantity received per line — the
+              Receiving fewer units than ordered? Enter the actual quantity received per line - the
               difference is logged and stock increases only by the received amount.
             </div>
           ) : null}

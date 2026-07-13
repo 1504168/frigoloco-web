@@ -1,4 +1,4 @@
-"""Raw RFID event store — SECTION 7 of schema.sql. Mirrors: sales_events and
+"""Raw RFID event store - SECTION 7 of schema.sql. Mirrors: sales_events and
 restock_events (both RANGE-partitioned by their timestamp), and product_reviews.
 
 The partition parents and their monthly children, plus the

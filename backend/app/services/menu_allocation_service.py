@@ -1,4 +1,4 @@
-"""Menu allocation engine — implementation of R3.
+"""Menu allocation engine - implementation of R3.
 
 Splits each fridge×category forecast across that category's menu products in
 proportion to product score:
@@ -6,7 +6,7 @@ proportion to product score:
     alloc_i = round(forecast * score_i / Σ score)
 
 using the largest-remainder method so the per-product integer allocations sum
-back to ``round(forecast)`` — leftover units go to the highest-remainder (and, on
+back to ``round(forecast)`` - leftover units go to the highest-remainder (and, on
 ties, highest-scored) product, and any product whose exact share exceeds 0.5 is
 rounded up rather than silently dropped. Per-product ``menu_product_caps`` are
 respected, with capped overflow redistributed to remaining products.

@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 0003 — Native PG ENUM types -> TEXT + NAMED CHECK constraints
+-- Migration 0003 - Native PG ENUM types -> TEXT + NAMED CHECK constraints
 -- ============================================================================
 -- Decision (2026-07-03, user): drop native PostgreSQL ENUM types entirely. Every
 -- former enum column becomes plain TEXT guarded by a NAMED CHECK listing the
@@ -71,7 +71,7 @@ BEGIN
        AND column_name  = p_col;
 
     IF cur_type IS NULL THEN
-        RAISE NOTICE 'migration 0003: %.% not found — skipped', p_table, p_col;
+        RAISE NOTICE 'migration 0003: %.% not found - skipped', p_table, p_col;
         RETURN;
     END IF;
 

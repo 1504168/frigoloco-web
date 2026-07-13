@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { formatEuro } from '@/lib/format'
+import { EMPTY_PLACEHOLDER, formatEuro } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { GridCategory, GridFridge } from '@/pages/ops/lib/types'
 
@@ -314,24 +314,24 @@ export function PlanningGrid({
             <th className="sticky right-0 z-10 border-b border-l border-border bg-card px-2 py-2" />
           </tr>
           {/* Detail rows */}
-          {detailRow('Code', (column) => productMeta(column.productId!)?.code ?? '—')}
+          {detailRow('Code', (column) => productMeta(column.productId!)?.code ?? EMPTY_PLACEHOLDER)}
           {detailRow('Purchase', (column) => formatEuro(productMeta(column.productId!)?.purchasePrice))}
           {detailRow('Sales', (column) => formatEuro(productMeta(column.productId!)?.salesPrice))}
           {detailRow('VAT %', (column) => {
             const rate = Number(productMeta(column.productId!)?.vatRate)
-            return Number.isFinite(rate) ? `${(rate * 100).toFixed(0)}%` : '—'
+            return Number.isFinite(rate) ? `${(rate * 100).toFixed(0)}%` : EMPTY_PLACEHOLDER
           })}
           {detailRow('Margin', (column) => {
             const margin = productMeta(column.productId!)?.marginPct
-            return margin === null || margin === undefined ? '—' : `${(margin * 100).toFixed(0)}%`
+            return margin === null || margin === undefined ? EMPTY_PLACEHOLDER : `${(margin * 100).toFixed(0)}%`
           })}
           {detailRow('Score', (column) => {
             const score = productMeta(column.productId!)?.score
-            return score ? Number(score).toFixed(2) : '—'
+            return score ? Number(score).toFixed(2) : EMPTY_PLACEHOLDER
           })}
           {detailRow('Shelf life', (column) => {
             const days = productMeta(column.productId!)?.shelfLifeDays
-            return days === null || days === undefined ? '—' : `${days}d`
+            return days === null || days === undefined ? EMPTY_PLACEHOLDER : `${days}d`
           })}
           {/* Total qty per product column */}
           <tr>

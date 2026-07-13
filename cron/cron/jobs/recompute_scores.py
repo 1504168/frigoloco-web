@@ -1,7 +1,7 @@
-"""recompute_scores — daily 02:30.
+"""recompute_scores - daily 02:30.
 
 Thin wrapper that delegates to the backend scoring service
-(``app.services.scoring_service.recompute_scores``) — the scoring math lives in
+(``app.services.scoring_service.recompute_scores``) - the scoring math lives in
 the backend and is NOT duplicated here (Criticizer finding S2-6). If the service
 is not importable yet, the job logs and exits 0 so the schedule stays green
 while the backend catches up.

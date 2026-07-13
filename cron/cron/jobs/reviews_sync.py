@@ -1,4 +1,4 @@
-"""reviews_sync — daily 02:15.
+"""reviews_sync - daily 02:15.
 
 Thin scheduler/CLI wrapper. The Husky ``/productreview`` -> ``product_reviews``
 sync logic lives in :func:`app.husky.sync.sync_reviews_window` (shared with the

@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select'
 import { toast } from '@/components/ui/sonner'
 import { api, ApiError, type Page } from '@/lib/api'
-import { formatEuro, formatDateTime } from '@/lib/format'
+import { EMPTY_PLACEHOLDER, formatEuro, formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Dialog } from './components/Dialog'
 import { Field, Textarea, fieldErrorsFromApiError, generalErrorMessage } from './components/form'
@@ -87,7 +87,7 @@ export function ClientsPage() {
       {
         id: 'location',
         header: 'Location',
-        cell: (row) => <span className="text-muted-foreground">{row.location ?? '—'}</span>,
+        cell: (row) => <span className="text-muted-foreground">{row.location ?? EMPTY_PLACEHOLDER}</span>,
         sortValue: (row) => row.location ?? '',
       },
       {
@@ -95,14 +95,14 @@ export function ClientsPage() {
         header: 'Workers',
         align: 'right',
         cell: (row) => (
-          <span className="tabular-nums">{row.workers_count ?? '—'}</span>
+          <span className="tabular-nums">{row.workers_count ?? EMPTY_PLACEHOLDER}</span>
         ),
         sortValue: (row) => row.workers_count ?? -1,
       },
       {
         id: 'worker_type',
         header: 'Worker type',
-        cell: (row) => <span className="text-muted-foreground">{row.worker_type ?? '—'}</span>,
+        cell: (row) => <span className="text-muted-foreground">{row.worker_type ?? EMPTY_PLACEHOLDER}</span>,
         sortValue: (row) => row.worker_type ?? '',
       },
       {
@@ -425,7 +425,7 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   return (
     <div className="flex justify-between gap-4 border-b border-border py-2 text-sm last:border-0">
       <span className="text-muted-foreground">{label}</span>
-      <span className="text-right font-medium text-foreground">{value || '—'}</span>
+      <span className="text-right font-medium text-foreground">{value || EMPTY_PLACEHOLDER}</span>
     </div>
   )
 }
@@ -497,7 +497,7 @@ function ClientFeesTab({ clientId }: { clientId: number }) {
                 <tr key={fee.id} className="border-t border-border">
                   <td className="px-3 py-2 font-medium tabular-nums">{formatEuro(fee.yearly_fee)}</td>
                   <td className="px-3 py-2">{fee.contract_start}</td>
-                  <td className="px-3 py-2">{fee.contract_end ?? '—'}</td>
+                  <td className="px-3 py-2">{fee.contract_end ?? EMPTY_PLACEHOLDER}</td>
                 </tr>
               ))}
             </tbody>

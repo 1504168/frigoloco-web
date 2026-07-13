@@ -1,5 +1,5 @@
 -- ============================================================================
--- FrigoLoco Cloud ERP — PostgreSQL 16 Database Schema
+-- FrigoLoco Cloud ERP - PostgreSQL 16 Database Schema
 -- ============================================================================
 -- Source spec : specs/0001-frigoloco-excel-to-cloud-erp_2026-07-02_0810PM_UTC
 -- Replaces    : Smart Fridge Forecasting Tool V5.xlsx,
@@ -15,10 +15,10 @@
 --                                     euros exist only at the API presentation
 --                                     edge (the JSON stays a 2-decimal euro
 --                                     string, so the frontend is untouched).
---   * VAT rates / score fractions ... NUMERIC(6,4) fractions (0.06 = 6 %) — NOT
+--   * VAT rates / score fractions ... NUMERIC(6,4) fractions (0.06 = 6 %) - NOT
 --                                     money, unchanged. So are forecast_qty and
 --                                     pos_fee_pct_snapshot.
---   * Product codes ................. TEXT, never integers — barcodes keep
+--   * Product codes ................. TEXT, never integers - barcodes keep
 --                                     their leading zeros.
 --   * Audit columns ................. created_at/updated_at TIMESTAMPTZ.
 --   * Weekdays ...................... ISO smallint, 1 = Monday … 7 = Sunday.
@@ -33,7 +33,7 @@
 BEGIN;
 
 -- ============================================================================
--- SECTION 1 — STATUS / TYPE DOMAINS (TEXT + NAMED CHECK, not native ENUM)
+-- SECTION 1 - STATUS / TYPE DOMAINS (TEXT + NAMED CHECK, not native ENUM)
 -- ============================================================================
 -- Decision (2026-07-03, migration 0003): FrigoLoco does NOT use native PostgreSQL
 -- ENUM types. Each status/type column is plain TEXT guarded by a NAMED CHECK that
@@ -53,7 +53,7 @@ BEGIN;
 --   alerts.alert_type          IN ('expiry','low_stock','below_target','negative_blocked','rfid_offline')
 
 -- ============================================================================
--- SECTION 2 — IDENTITY & MASTER DATA (users, catalogue, clients, fridges)
+-- SECTION 2 - IDENTITY & MASTER DATA (users, catalogue, clients, fridges)
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS users (
@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS products (
     name             TEXT           NOT NULL,
     category_id      INTEGER        NOT NULL REFERENCES categories(id),
     supplier_id      INTEGER        REFERENCES suppliers(id),
-    -- Money in minor units (cents), BIGINT — see header convention.
+    -- Money in minor units (cents), BIGINT - see header convention.
     purchase_price   BIGINT         NOT NULL DEFAULT 0 CHECK (purchase_price >= 0),
     sales_price      BIGINT         NOT NULL DEFAULT 0 CHECK (sales_price >= 0),
     -- VAT as a fraction (R5): 0.06 = 6 %.
@@ -126,7 +126,7 @@ CREATE TABLE IF NOT EXISTS clients (
 CREATE TABLE IF NOT EXISTS fridges (
     id                     INTEGER      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     -- Husky device id, e.g. 'if-0001120'. Scripts join on friendlyName OR
-    -- fridge.name inconsistently — both map to this one internal row.
+    -- fridge.name inconsistently - both map to this one internal row.
     husky_id               TEXT         NOT NULL UNIQUE,
     husky_name             TEXT,
     friendly_name          TEXT         NOT NULL UNIQUE,
@@ -208,7 +208,7 @@ CREATE TABLE IF NOT EXISTS menu_product_caps (
 );
 
 -- ============================================================================
--- SECTION 3 — PURCHASE ORDERS & PER-YEAR ORDER NUMBERING (R4, R5)
+-- SECTION 3 - PURCHASE ORDERS & PER-YEAR ORDER NUMBERING (R4, R5)
 -- ============================================================================
 
 -- Per-year counter behind next_order_no(). ON CONFLICT ... DO UPDATE takes a
@@ -260,7 +260,7 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
     created_at               TIMESTAMPTZ    NOT NULL DEFAULT now(),
     updated_at               TIMESTAMPTZ    NOT NULL DEFAULT now(),
     -- R4: delivery cannot precede the order date. ("No past dates" at creation
-    -- time is an application/API rule — a table CHECK against CURRENT_DATE
+    -- time is an application/API rule - a table CHECK against CURRENT_DATE
     -- would wrongly reject historical rows migrated from Order History.)
     CHECK (expected_delivery_date >= order_date)
 );
@@ -277,7 +277,7 @@ CREATE TABLE IF NOT EXISTS purchase_order_lines (
 );
 
 -- ============================================================================
--- SECTION 4 — MENUS, FORECASTS, SCORES (R1, R2, R3)
+-- SECTION 4 - MENUS, FORECASTS, SCORES (R1, R2, R3)
 -- ============================================================================
 
 -- day_name (ISO weekday name) completes the (year, iso_week, day_name) natural
@@ -333,7 +333,7 @@ CREATE TABLE IF NOT EXISTS forecast_runs (
     is_saved       BOOLEAN      NOT NULL DEFAULT false,
     day_name       TEXT,
     -- Snapshot of the parameters the run used: window weeks, scoring weights,
-    -- per-category margins — keeps every run reproducible (R1).
+    -- per-category margins - keeps every run reproducible (R1).
     params         JSONB        NOT NULL DEFAULT '{}'::jsonb,
     created_by     INTEGER      REFERENCES users(id)
 );
@@ -381,7 +381,7 @@ CREATE TABLE IF NOT EXISTS fridge_product_scores (
 );
 
 -- ============================================================================
--- SECTION 5 — DISPATCH (R7, R8)
+-- SECTION 5 - DISPATCH (R7, R8)
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS dispatches (
@@ -411,7 +411,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_dispatches_delivery_date
 -- DENORMALISED from the parent dispatches row (immutable, never drifts) so it can
 -- serve as the partition key. The partition key must be part of every unique key,
 -- hence the composite PK (id, delivery_date) and the delivery_date-extended
--- natural key — mirrors the sales_events pattern. Partitions are created below in
+-- natural key - mirrors the sales_events pattern. Partitions are created below in
 -- SECTION 7 alongside the event-table partitions.
 CREATE TABLE IF NOT EXISTS dispatch_lines (
     id                   INTEGER        GENERATED ALWAYS AS IDENTITY,
@@ -424,7 +424,7 @@ CREATE TABLE IF NOT EXISTS dispatch_lines (
     source               TEXT           NOT NULL DEFAULT 'manual'
                                         CONSTRAINT chk_dispatch_lines_source
                                         CHECK (source IN ('forecast', 'manual')),
-    -- Price snapshots taken at confirm time — P&L must not drift when the
+    -- Price snapshots taken at confirm time - P&L must not drift when the
     -- catalogue price changes later.
     unit_purchase_price  BIGINT,        -- cents
     unit_sales_price     BIGINT,        -- cents
@@ -439,13 +439,13 @@ CREATE TABLE IF NOT EXISTS dispatch_lines (
 ) PARTITION BY RANGE (delivery_date);
 
 -- delivery_date is the partition key and MUST be supplied by the caller (it is
--- denormalised from the parent dispatch). A trigger cannot backfill it —
+-- denormalised from the parent dispatch). A trigger cannot backfill it:
 -- PostgreSQL rejects a NULL partition key during tuple routing, before any
 -- BEFORE-INSERT trigger on the parent could run. The dispatch service sets
 -- delivery_date = dispatch.delivery_date on every insert.
 
 -- ============================================================================
--- SECTION 6 — STOCK LEDGER (append-only, non-negative — slide 24, R6)
+-- SECTION 6 - STOCK LEDGER (append-only, non-negative - slide 24, R6)
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS stock_movements (
@@ -546,11 +546,11 @@ CREATE TRIGGER trg_stock_movements_append_only
     EXECUTE FUNCTION block_stock_movement_mutation();
 
 -- ============================================================================
--- SECTION 7 — RAW RFID EVENT STORE (partitioned; the 20–30M-row layer)
+-- SECTION 7 - RAW RFID EVENT STORE (partitioned; the 20–30M-row layer)
 -- ============================================================================
 
 -- One row per unit sold, from Husky GET /purchases. Prices stored RAW as the
--- Husky int64 minor units (cents) — no conversion at ingestion. Refunded sales
+-- Husky int64 minor units (cents) - no conversion at ingestion. Refunded sales
 -- stay in (is_refunded = TRUE) because the
 -- Excel logic counts them as sold; P&L nets them out (R10).
 CREATE TABLE IF NOT EXISTS sales_events (
@@ -617,7 +617,7 @@ END;
 $$;
 
 -- dispatch_lines is RANGE-partitioned monthly on delivery_date (migration 0004).
--- Its partition maintenance mirrors the event tables' — same monthly cadence.
+-- Its partition maintenance mirrors the event tables' - same monthly cadence.
 CREATE OR REPLACE FUNCTION create_dispatch_line_partition_for_month(month_start DATE)
 RETURNS VOID
 LANGUAGE plpgsql
@@ -640,7 +640,7 @@ RETURNS VOID
 LANGUAGE plpgsql
 AS $$
 -- Scheduler hook: call monthly (e.g. from the APScheduler nightly job) to make
--- sure the current AND next month's partitions always exist ahead of inserts —
+-- sure the current AND next month's partitions always exist ahead of inserts
 -- for sales_events, restock_events AND dispatch_lines.
 DECLARE
     next_month DATE := (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')::DATE;
@@ -693,7 +693,7 @@ CREATE TABLE IF NOT EXISTS product_reviews (
 );
 
 -- ============================================================================
--- SECTION 8 — RECONCILIATION (R9)
+-- SECTION 8 - RECONCILIATION (R9)
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS restock_verifications (
@@ -719,14 +719,14 @@ CREATE TABLE IF NOT EXISTS restock_verification_lines (
 );
 
 -- ============================================================================
--- SECTION 9 — FINANCE, SETTINGS, ALERTS, AUDIT (R10–R12)
+-- SECTION 9 - FINANCE, SETTINGS, ALERTS, AUDIT (R10–R12)
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS weekly_financials (
     id                    INTEGER        GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     year                  INTEGER        NOT NULL CHECK (year BETWEEN 2020 AND 2100),
     iso_week              INTEGER        NOT NULL CHECK (iso_week BETWEEN 1 AND 53),
-    -- Manual weekly inputs (R10) — everything else is computed from events.
+    -- Manual weekly inputs (R10) - everything else is computed from events.
     catering_turnover     BIGINT         NOT NULL DEFAULT 0,  -- cents
     catering_food_cost    BIGINT         NOT NULL DEFAULT 0,  -- cents
     tgtg_turnover         BIGINT         NOT NULL DEFAULT 0,  -- cents
@@ -779,14 +779,14 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 
 -- ============================================================================
--- SECTION 10 — STOCK BALANCES VIEW
+-- SECTION 10 - STOCK BALANCES VIEW
 -- ============================================================================
 -- Excel rule (Refresh Stock And Ordered / R6), restated for the ledger design:
 --   physical_qty  = SUM(stock_movements.qty)          -- what is in the warehouse
 --   on_order_qty  = SUM(qty_ordered - qty_received)   -- over lines of PENDING POs
 --                   (clamped at 0 per line; received/cancelled POs contribute 0)
 --   available_qty = on_order_qty + physical_qty       -- the Excel "available"
--- "On order" comes from PO lines, NOT from movements — this is the deliberate
+-- "On order" comes from PO lines, NOT from movements - this is the deliberate
 -- split between "on order" and "in warehouse" (spec Decision 2).
 CREATE OR REPLACE VIEW v_stock_balances AS
 WITH physical AS (
@@ -814,7 +814,7 @@ SELECT p.id                                                          AS product_
   LEFT JOIN on_order oo ON oo.product_id = p.id;
 
 -- ============================================================================
--- SECTION 11 — INDEXES
+-- SECTION 11 - INDEXES
 -- ============================================================================
 
 -- Event queries: forecast window scans per fridge and per product.
@@ -860,20 +860,20 @@ CREATE INDEX IF NOT EXISTS ix_audit_log_entity
     ON audit_log (entity, entity_id, at);
 
 -- ============================================================================
--- SECTION 12 — TABLE COMMENTS (Excel artifact each table replaces)
+-- SECTION 12 - TABLE COMMENTS (Excel artifact each table replaces)
 -- ============================================================================
 
-COMMENT ON TABLE users                      IS 'New (briefing slide 14): named accounts with roles — the shared workbook had no users or permissions.';
+COMMENT ON TABLE users                      IS 'New (briefing slide 14): named accounts with roles - the shared workbook had no users or permissions.';
 COMMENT ON TABLE suppliers                  IS 'Replaces SupplierInfoTable in Smart Fridge Forecasting Tool V5.xlsx.';
-COMMENT ON TABLE categories                 IS 'Replaces the hardcoded category lists scattered across Office Scripts (10 in one script, 9 in another) — normalized here once, with the fixed dispatch print order (R8).';
+COMMENT ON TABLE categories                 IS 'Replaces the hardcoded category lists scattered across Office Scripts (10 in one script, 9 in another) - normalized here once, with the fixed dispatch print order (R8).';
 COMMENT ON TABLE products                   IS 'Replaces the producttype API cache + Menu sheet header rows: the 540-product catalogue with prices, VAT and shelf life.';
-COMMENT ON TABLE fridge_product_prices      IS 'New (slide 24): per-fridge sales-price overrides — Excel had a single price per product.';
+COMMENT ON TABLE fridge_product_prices      IS 'New (slide 24): per-fridge sales-price overrides - Excel had a single price per product.';
 COMMENT ON TABLE clients                    IS 'New (slide 13 client page): client master data; today only implicit in fridge naming.';
 COMMENT ON TABLE fridges                    IS 'Replaces DispatchTemplate.xlsx header rows + Husky facility API data; maps both friendlyName and fridge.name join keys to one internal id.';
 COMMENT ON TABLE fridge_delivery_config     IS 'Replaces Forecast V2 columns C–E: per-weekday minimum daily qty (holiday filter) and days-to-fill (R1 inputs).';
 COMMENT ON TABLE client_fees                IS 'Replaces the Fee List sheet in Weekly & Monthly Return V2.xlsx (yearly client fee + contract dates, R12).';
 COMMENT ON TABLE client_service_charges     IS 'Replaces the Service Additionals sheet in Weekly & Monthly Return V2.xlsx (one-off per-client monthly charges, R12).';
-COMMENT ON TABLE client_interventions       IS 'New (slide 13): intervention log per fridge — no Excel equivalent existed.';
+COMMENT ON TABLE client_interventions       IS 'New (slide 13): intervention log per fridge - no Excel equivalent existed.';
 COMMENT ON TABLE product_targets            IS 'Replaces the Snacks & Drinks Target Map sheet (3,522 rows): target-based replenishment quantities per fridge x product (R3).';
 COMMENT ON TABLE menu_product_caps          IS 'New (slide 8): max units of a product per fridge per dispatch.';
 COMMENT ON TABLE order_no_counters          IS 'Helper for next_order_no(): per-year sequence behind the YYYY-NNNNN order numbers (R4). Replaces the max-existing-order-number scan in Create Purchase Order.osts.';
@@ -881,14 +881,14 @@ COMMENT ON TABLE purchase_orders            IS 'Replaces OrdersSummaryTable (Ord
 COMMENT ON TABLE purchase_order_lines       IS 'Replaces OrdersLineItemsTable in the Forecasting workbook.';
 COMMENT ON TABLE weekly_menus               IS 'Replaces the weekly Menu sheet tabs (slide 6) in the Forecasting workbook.';
 COMMENT ON TABLE menu_products              IS 'Replaces the Menu sheet product columns: which products are on a given week''s menu.';
-COMMENT ON TABLE forecast_runs              IS 'Replaces each execution of Update Forecast.osts — a stored, reproducible run with its parameter snapshot.';
+COMMENT ON TABLE forecast_runs              IS 'Replaces each execution of Update Forecast.osts - a stored, reproducible run with its parameter snapshot.';
 COMMENT ON TABLE forecast_results           IS 'Replaces the Forecast V2 sheet output block: per fridge x category forecast quantities.';
 COMMENT ON TABLE product_scores             IS 'Replaces the Product Rating yearly scorecard sheet (R2), recomputed nightly.';
 COMMENT ON TABLE fridge_product_scores      IS 'New (briefing slide 18): per-fridge product scores for the target dual 50/50 scoring model (R2 target model).';
 COMMENT ON TABLE dispatches                 IS 'Replaces the Global Dispatch History batch key (ISO week, weekday, week start) + its summary table (R7). One batch per delivery date.';
-COMMENT ON TABLE dispatch_lines             IS 'Replaces GlobalDispatchHistoryTable rows (20,692 and growing) — with price snapshots and no full-sheet backup copy on every save. RANGE-partitioned monthly on delivery_date (denormalised from dispatches; migration 0004).';
+COMMENT ON TABLE dispatch_lines             IS 'Replaces GlobalDispatchHistoryTable rows (20,692 and growing) - with price snapshots and no full-sheet backup copy on every save. RANGE-partitioned monthly on delivery_date (denormalised from dispatches; migration 0004).';
 COMMENT ON TABLE stock_movements            IS 'Replaces the StockAndOrderedTable recompute with an append-only signed ledger: balance = SUM(qty), non-negativity enforced by trigger (slide 24), cancellations are explicit reversals (fixes the Excel cancel bug).';
-COMMENT ON TABLE sales_events               IS 'Replaces the Husky /purchases pulls the scripts re-fetched on demand — the 20-30M-row store Excel could never hold. Monthly partitions on sold_at.';
+COMMENT ON TABLE sales_events               IS 'Replaces the Husky /purchases pulls the scripts re-fetched on demand - the 20-30M-row store Excel could never hold. Monthly partitions on sold_at.';
 COMMENT ON TABLE restock_events             IS 'Replaces the Husky /restock pulls: ADDED/REMOVED tag events feeding reconciliation (R9) and scoring denominators. Monthly partitions on occurred_at.';
 COMMENT ON TABLE product_reviews            IS 'Replaces the Husky /productreview pulls feeding the review component of product scoring (R2).';
 COMMENT ON TABLE restock_verifications      IS 'Replaces RestockVerificationTemplate.xlsx: one reconciliation run per dispatch (R9).';
@@ -896,7 +896,7 @@ COMMENT ON TABLE restock_verification_lines IS 'Replaces the RestockVerification
 COMMENT ON TABLE weekly_financials          IS 'Replaces the Weekly View manual inputs + WeeklySummaryDataTable in Weekly & Monthly Return V2.xlsx (R10); the 18 aggregate tables become queries over raw events.';
 COMMENT ON TABLE settings                   IS 'Replaces the tunable cells scattered across both workbooks: scoring weights, forecast margins, POS %, RFID fee, alert thresholds.';
 COMMENT ON TABLE alerts                     IS 'Replaces the Power Automate alert emails (slide 12): expiry, low stock, below target, negative-blocked, RFID offline.';
-COMMENT ON TABLE audit_log                  IS 'New (slide 23): user + timestamp + before/after for every mutating action — Excel had no audit trail on saves.';
+COMMENT ON TABLE audit_log                  IS 'New (slide 23): user + timestamp + before/after for every mutating action - Excel had no audit trail on saves.';
 
 COMMENT ON VIEW v_stock_balances IS
     'Warehouse stock per product: physical_qty = SUM(ledger), on_order_qty = pending PO remainder, available_qty = on_order + physical (Excel Stock & Ordered rule, R6).';
@@ -910,7 +910,7 @@ COMMENT ON FUNCTION create_next_month_event_partitions() IS
     'Scheduler hook: ensures current and next month partitions exist for sales_events, restock_events and dispatch_lines.';
 
 -- ============================================================================
--- SECTION 13 — SEED DATA
+-- SECTION 13 - SEED DATA
 -- ============================================================================
 
 -- The 10 product categories. display_order = the numeric prefix used across

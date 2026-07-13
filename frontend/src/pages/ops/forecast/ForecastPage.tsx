@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select'
 import { toast } from '@/components/ui/sonner'
 import { api, ApiError } from '@/lib/api'
-import { formatDateTime } from '@/lib/format'
+import { EMPTY_PLACEHOLDER, formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { WeekDayPicker } from '@/pages/ops/components/WeekDayPicker'
 import { ConfirmDialog } from '@/pages/ops/components/ConfirmDialog'
@@ -143,10 +143,10 @@ function ForecastGrid({ run, fridgeName, categories }: ForecastGridProps) {
                   {fridgeName(fridgeId)}
                 </td>
                 <td className="border-b border-border px-2 py-1.5 text-right tabular-nums text-muted-foreground">
-                  {config ? config.min_daily_qty : '—'}
+                  {config ? config.min_daily_qty : EMPTY_PLACEHOLDER}
                 </td>
                 <td className="border-b border-border px-2 py-1.5 text-right tabular-nums text-muted-foreground">
-                  {config ? config.days_to_fill : '—'}
+                  {config ? config.days_to_fill : EMPTY_PLACEHOLDER}
                 </td>
                 {categoryIds.map((categoryId) => {
                   const cell = cellByKey.get(`${fridgeId}:${categoryId}`)
@@ -267,7 +267,7 @@ function ActualsGrid({ run, actuals, fridgeName, categories }: ActualsGridProps)
                       {added} → {sold}
                     </div>
                     <div className={cn('text-[11px] font-medium tabular-nums', ratioClass(ratio))}>
-                      {ratio === null ? '—' : Number(ratio).toFixed(2)}
+                      {ratio === null ? EMPTY_PLACEHOLDER : Number(ratio).toFixed(2)}
                     </div>
                   </td>
                 )
@@ -297,7 +297,7 @@ export function ForecastPage() {
   const deliveryDate = deliveryDateFromKey(key)
   const showRun = runMatchesKey(run, key)
 
-  // Actuals for the same pipeline key — fetched only once a forecast is on screen.
+  // Actuals for the same pipeline key: fetched only once a forecast is on screen.
   const actualsQuery = useQuery({
     queryKey: ['ops', 'forecast', 'actuals', key.year, key.week, key.dayName],
     queryFn: ({ signal }) =>
@@ -314,7 +314,7 @@ export function ForecastPage() {
       api.post<ForecastRun>('/api/v1/forecasts/run', { delivery_date: deliveryDate, model }),
     onSuccess: (result) => {
       setRun(result)
-      toast.success(`Forecast computed — ${result.results.length} rows for ${result.delivery_date}`)
+      toast.success(`Forecast computed: ${result.results.length} rows for ${result.delivery_date}`)
     },
     onError: (error) => {
       if (error instanceof ApiError && error.code === 'no_delivery_config') {

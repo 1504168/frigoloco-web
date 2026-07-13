@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 0008 — dispatch_lines.vat_rate [0,1) CHECK
+-- Migration 0008 - dispatch_lines.vat_rate [0,1) CHECK
 -- ============================================================================
 -- WHY (REWORK-VALIDATION residual #5): the work order requires every VAT-rate
 -- fraction column to be bounded to [0, 1). products.vat_rate and

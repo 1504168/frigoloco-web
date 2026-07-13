@@ -1,11 +1,11 @@
 -- ============================================================================
--- Migration 0002 — Money columns: NUMERIC(10,2) euros -> BIGINT minor units (cents)
+-- Migration 0002 - Money columns: NUMERIC(10,2) euros -> BIGINT minor units (cents)
 -- ============================================================================
 -- Decision (2026-07-03, user): store every monetary column as int64 minor units
 -- (cents), matching the Husky API's int64 contract. Euros exist only at the API
 -- presentation edge; the JSON contract (a 2-decimal euro string) is unchanged.
 --
--- Columns are NOT renamed — purchase_price/sales_price/etc keep their names; the
+-- Columns are NOT renamed - purchase_price/sales_price/etc keep their names; the
 -- semantic change (euros -> cents) is documented in schema.sql and CLAUDE.md.
 --
 -- Idempotent: each column is converted through a temp helper that checks
@@ -36,7 +36,7 @@ BEGIN
        AND column_name  = p_col;
 
     IF cur_type IS NULL THEN
-        RAISE NOTICE 'migration 0002: %.% not found — skipped', p_table, p_col;
+        RAISE NOTICE 'migration 0002: %.% not found - skipped', p_table, p_col;
         RETURN;
     END IF;
 

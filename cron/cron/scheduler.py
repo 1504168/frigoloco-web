@@ -1,4 +1,4 @@
-"""APScheduler worker — the long-running cron container.
+"""APScheduler worker - the long-running cron container.
 
 Runs the operational Husky jobs on Europe/Brussels wall-clock per the cron
 catalogue in ``architecture/IMPLEMENTATION-BRIEF.md``:

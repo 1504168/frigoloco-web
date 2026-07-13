@@ -1,4 +1,4 @@
-"""Product scoring engine — legacy parity implementation of R2.
+"""Product scoring engine - legacy parity implementation of R2.
 
     score = w_pct * (sold / added)
           + w_margin * ((sell_ex_vat - buy) / sell_ex_vat)

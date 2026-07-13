@@ -3,7 +3,7 @@
  * Both stages consume the same MenuGridOut/DispatchMatrix shape, so the grid
  * state (fridges, category→product columns, editable quantities, locally-added
  * products) and the product-metadata lookup live here and are reused by both
- * pages — the only differences are the import/save endpoints they call.
+ * pages - the only differences are the import/save endpoints they call.
  */
 import * as React from 'react'
 import type { Product } from '@/lib/types'

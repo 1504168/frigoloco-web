@@ -3,7 +3,7 @@
 Batch identity is one row per ``delivery_date`` (DB UNIQUE). Confirm is a single
 all-or-nothing transaction: validate status, block past dates without ``force``,
 snapshot line prices from the catalogue, then write one negative ``dispatch``
-movement per line. The DB non-negativity trigger is the source of truth — a
+movement per line. The DB non-negativity trigger is the source of truth - a
 rejection is rolled back, recorded as a ``negative_blocked`` alert, and surfaced
 as HTTP 409 ``stock_blocked``.
 """
@@ -251,7 +251,7 @@ def _replace_lines(
                 dispatch_id=dispatch.id,
                 fridge_id=line.fridge_id,
                 product_id=line.product_id,
-                # Denormalised partition key — always the parent's delivery date.
+                # Denormalised partition key - always the parent's delivery date.
                 delivery_date=dispatch.delivery_date,
                 qty=line.qty,
                 source=line.source,
@@ -523,7 +523,7 @@ def confirm_dispatch(
 
 
 # ===========================================================================
-# D2 — (iso_year, week_no, day_name) workflow: import-from-menu, save (PLANNED,
+# D2 - (iso_year, week_no, day_name) workflow: import-from-menu, save (PLANNED,
 # no stock), load-saved, create-individual (the only stock-writing path).
 # ===========================================================================
 
@@ -594,7 +594,7 @@ def save_planned(
     user_id: int | None,
     session: Session,
 ) -> Dispatch:
-    """Save a PLANNED dispatch for the key — status 'saved', NO stock effect (D2).
+    """Save a PLANNED dispatch for the key - status 'saved', NO stock effect (D2).
 
     Stock is only ever moved by :func:`confirm_dispatch` ("create individual
     dispatch"); saving merely records the planned lines. A dispatch already

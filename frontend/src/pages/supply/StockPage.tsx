@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { toast } from '@/components/ui/sonner'
 import { api, ApiError, type Page } from '@/lib/api'
-import { formatDateTime } from '@/lib/format'
+import { EMPTY_PLACEHOLDER, formatDateTime } from '@/lib/format'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { cn } from '@/lib/utils'
 import { Dialog } from './components/Dialog'
@@ -224,7 +224,7 @@ function MovementsPanel({ selected }: { selected: StockBalance | null }) {
     <Card className="flex flex-col self-start p-5">
       <h3 className="text-sm font-semibold text-foreground">
         Movement history
-        {selected ? <span className="ml-1 text-muted-foreground">— {selected.product_name}</span> : null}
+        {selected ? <span className="ml-1 text-muted-foreground">- {selected.product_name}</span> : null}
       </h3>
       <p className="mt-0.5 text-xs text-muted-foreground">
         {selected
@@ -268,7 +268,7 @@ function MovementsPanel({ selected }: { selected: StockBalance | null }) {
                       >
                         {movement.qty > 0 ? `+${movement.qty}` : movement.qty}
                       </td>
-                      <td className="px-3 py-2 text-muted-foreground">{movement.reason ?? '—'}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{movement.reason ?? EMPTY_PLACEHOLDER}</td>
                     </tr>
                   ))}
                 </tbody>

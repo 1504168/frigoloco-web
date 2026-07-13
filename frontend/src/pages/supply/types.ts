@@ -1,24 +1,22 @@
 /**
- * Supply-domain entity types mirrored from the FastAPI OpenAPI schema.
- *
- * OWNED BY: the supply page-agent. Lives alongside the supply pages rather than
- * in src/lib/types.ts (which the foundation owns) so this domain can evolve its
- * shapes without cross-domain churn. Money/decimal fields are decimal STRINGS as
- * the backend serialises them.
+ * Supply-domain types: the request bodies and page-local shapes that only this
+ * domain uses. The server-mirrored entities it reads (Supplier, Fridge,
+ * PurchaseOrder, …) are defined once in src/lib/types.ts and re-exported here so
+ * the supply pages keep importing everything from './types'. Money/decimal fields
+ * are decimal STRINGS as the backend serialises them.
  */
 
-// ─────────────────────────────── Suppliers ───────────────────────────────
+import type { Product } from '@/lib/types'
 
-/** GET /api/v1/suppliers item (schema: SupplierRead). */
-export interface Supplier {
-  id: number
-  name: string
-  email: string | null
-  warehouse_address: string | null
-  is_active: boolean
-  created_at: string
-  updated_at: string
-}
+export type {
+  Fridge,
+  PoStatus,
+  PurchaseOrder,
+  PurchaseOrderLine,
+  Supplier,
+} from '@/lib/types'
+
+// ─────────────────────────────── Suppliers ───────────────────────────────
 
 /** POST /api/v1/suppliers body (schema: SupplierCreate). */
 export interface SupplierCreate {
@@ -96,24 +94,6 @@ export interface ClientInterventionCreate {
 
 // ──────────────────────────────── Fridges ────────────────────────────────
 
-/** GET /api/v1/fridges item (schema: FridgeRead). */
-export interface Fridge {
-  id: number
-  husky_id: string
-  husky_name: string | null
-  friendly_name: string
-  client_id: number | null
-  delivery_address: string | null
-  delivery_instructions: string | null
-  is_active: boolean
-  /** Manual override (D5): null = follow Husky; else user-forced. */
-  local_status: 'inactive' | 'cancelled' | null
-  /** Husky-derived effective activity shown on the status badge. */
-  effective_status: 'active' | 'inactive' | 'cancelled'
-  created_at: string
-  updated_at: string
-}
-
 /** POST /api/v1/fridges body (schema: FridgeCreate). */
 export interface FridgeCreate {
   husky_id: string
@@ -135,40 +115,6 @@ export interface DeliveryConfigItem {
 }
 
 // ──────────────────────────── Purchase Orders ────────────────────────────
-
-export type PoStatus = 'pending' | 'received' | 'cancelled'
-
-/** GET /api/v1/purchase-orders line (schema: PurchaseOrderLineRead). */
-export interface PurchaseOrderLine {
-  id: number
-  product_id: number
-  product_code: string
-  product_name: string
-  qty_ordered: number
-  qty_received: number
-  unit_price: string
-  vat_rate: string
-  line_ex_vat: string
-  line_vat: string
-  line_incl_vat: string
-}
-
-/** GET /api/v1/purchase-orders item (schema: PurchaseOrderRead). */
-export interface PurchaseOrder {
-  id: number
-  order_no: string
-  supplier_id: number
-  status: PoStatus
-  order_date: string
-  expected_delivery_date: string
-  delivery_address: string | null
-  comment: string | null
-  total_ex_vat: string
-  total_vat: string
-  total_incl_vat: string
-  created_at: string
-  lines: PurchaseOrderLine[]
-}
 
 /** POST /api/v1/purchase-orders line (schema: PoLineCreate). */
 export interface PoLineCreate {
@@ -238,7 +184,7 @@ export interface StockMovement {
   created_at: string
 }
 
-/** GET /api/v1/stock/movements response (schema: MovementsPage) — keyset paginated. */
+/** GET /api/v1/stock/movements response (schema: MovementsPage) - keyset paginated. */
 export interface MovementsPage {
   items: StockMovement[]
   limit: number
@@ -256,10 +202,4 @@ export interface AdjustmentRequest {
 // ──────────────────────────── Shared product ─────────────────────────────
 
 /** Minimal product shape used by the PO line editor / stock lookups. */
-export interface ProductLite {
-  id: number
-  code: string
-  name: string
-  purchase_price: string
-  vat_rate: string
-}
+export type ProductLite = Pick<Product, 'id' | 'code' | 'name' | 'purchase_price' | 'vat_rate'>

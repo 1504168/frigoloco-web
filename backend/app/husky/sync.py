@@ -1,10 +1,10 @@
-"""Husky master-data & event sync — the importable domain layer (D5).
+"""Husky master-data & event sync - the importable domain layer (D5).
 
 This module is the single home of the Husky sync/transform logic. It used to
 live under ``cron/cron/jobs/*``; per work-order D5 it was relocated here so that
 BOTH the APScheduler cron jobs AND the FastAPI ``/api/v1/sync`` router call the
 exact same domain functions. ``cron.jobs.*`` are now thin wrappers importing
-from here (no ``backend -> cron`` import — the dependency only flows one way).
+from here (no ``backend -> cron`` import - the dependency only flows one way).
 
 It also owns the **field-ownership contract** (D5 requirement 1): for every
 Husky-fed table there is an explicit list of the columns sync is allowed to
@@ -99,13 +99,13 @@ def _window_label(window_from: datetime.datetime, window_to: datetime.datetime) 
 # Field-ownership contract (D5 requirement 1)
 # ===========================================================================
 #
-# HUSKY_OWNED  — overwritten on every sync (the vendor is the source of truth).
-# SYNC_MANAGED — bookkeeping sync writes but which is not "vendor data"
+# HUSKY_OWNED  - overwritten on every sync (the vendor is the source of truth).
+# SYNC_MANAGED - bookkeeping sync writes but which is not "vendor data"
 #                (is_active derived from presence, timestamps).
-# LOCAL_OWNED  — NEVER touched by sync (documented for completeness; the guard
+# LOCAL_OWNED  - NEVER touched by sync (documented for completeness; the guard
 #                simply refuses any column outside HUSKY_OWNED ∪ SYNC_MANAGED).
 #
-# ``local_status`` (the manual override) is in LOCAL_OWNED — sync must never
+# ``local_status`` (the manual override) is in LOCAL_OWNED - sync must never
 # write it, so it is absent from every allowed set and the guard blocks it.
 
 PRODUCT_HUSKY_OWNED: tuple[str, ...] = (
@@ -220,7 +220,7 @@ class JobOutcome:
     upserted: int = 0
     blob_path: str | None = None
     skipped: int = 0
-    # Tag events not representable by design (e.g. restock UNCHANGED — the
+    # Tag events not representable by design (e.g. restock UNCHANGED - the
     # restock_action enum has no such value). Not data loss, tracked apart.
     unrepresentable: int = 0
     notes: list[str] = field(default_factory=list)
@@ -389,7 +389,7 @@ def effective_product_code(product_code: str | None, *tag_identity: str | None) 
 
     * payload has a code -> that code (stubbed if unknown);
     * no code but some tag identity (tagId/epc) -> :data:`UNKNOWN_PRODUCT_CODE`;
-    * no code AND no tag identity -> ``None`` (row is skipped — nothing to key on).
+    * no code AND no tag identity -> ``None`` (row is skipped - nothing to key on).
     """
     if product_code:
         return product_code
@@ -419,7 +419,7 @@ class ProductResolver:
             found = self._session.execute(
                 select(Category.id).where(Category.name == UNCATEGORISED_NAME)
             ).scalar()
-            if found is None:  # defensive — the row is expected to be seeded
+            if found is None:  # defensive - the row is expected to be seeded
                 next_display = (
                     self._session.execute(
                         select(func.coalesce(func.max(Category.display_order), 0))
@@ -483,7 +483,7 @@ class ProductResolver:
 
 
 # ===========================================================================
-# Catalogue sync — /facility, /fridge, /producttype, /fridgeproductprice
+# Catalogue sync - /facility, /fridge, /producttype, /fridgeproductprice
 # ===========================================================================
 
 _BOX_PREFIX = "box n"  # 'Box n°...' test/placeholder product types are skipped.
@@ -1011,7 +1011,7 @@ def _build_restock_rows(
             continue
         for index, tag in enumerate(restock.tags):
             action = _ACTION_MAP.get((tag.action or "").upper())
-            if action is None:  # UNCHANGED or unknown — not representable.
+            if action is None:  # UNCHANGED or unknown - not representable.
                 outcome.unrepresentable += 1
                 continue
             code = effective_product_code(tag.productCode, tag.tagId, tag.epc)

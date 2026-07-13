@@ -1,4 +1,4 @@
-"""sync_purchases — hourly :05.
+"""sync_purchases - hourly :05.
 
 Thin scheduler/CLI wrapper. The Husky ``/purchases`` -> ``sales_events`` sync
 logic lives in :func:`app.husky.sync.sync_purchases_window` (shared with the

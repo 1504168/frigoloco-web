@@ -1,4 +1,4 @@
-"""Forecast engine — legacy parity implementation of R1.
+"""Forecast engine - legacy parity implementation of R1.
 
 Formula (IMPLEMENTATION-BRIEF §formulas):
 
@@ -10,8 +10,8 @@ Formula (IMPLEMENTATION-BRIEF §formulas):
   total units sold that day is ``<= min_daily_qty``.
 * Days in the window with no sales rows at all are *no-info* days; they stay in
   the denominator so sparse history degrades the average gracefully (no
-  divide-by-zero — a zero denominator yields a zero forecast).
-* Reads local ``sales_events`` only — never the Husky live API.
+  divide-by-zero - a zero denominator yields a zero forecast).
+* Reads local ``sales_events`` only - never the Husky live API.
 """
 
 from __future__ import annotations
@@ -187,7 +187,7 @@ def _compute_run(
     extra_params: dict | None,
     session: Session,
 ) -> _RunComputation:
-    """Compute forecast cells for ``delivery_date`` — never touches the DB writes.
+    """Compute forecast cells for ``delivery_date`` - never touches the DB writes.
 
     Shared by :func:`run_forecast` (ephemeral preview) and :func:`save_forecast`
     (persisted keyed run) so the maths lives in exactly one place.
@@ -465,7 +465,7 @@ def _actual_qty_by_fridge_category(
     """Aggregate event counts per (fridge_id, category_id) over the local-day window.
 
     Shared by the added (restock) and sold (sales) sides so the window/timezone
-    logic — identical to the forecast's :func:`_daily_category_units` — lives once.
+    logic - identical to the forecast's :func:`_daily_category_units` - lives once.
     """
     if not fridge_ids:
         return {}

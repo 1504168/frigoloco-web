@@ -1,7 +1,7 @@
 """Tests for the supply + finance half of the API.
 
 Strategy: one pure parity unit test (no DB), then integration tests against the
-live Railway database. Integration tests are non-destructive — every test runs
+live Railway database. Integration tests are non-destructive - every test runs
 inside a single outer transaction that is rolled back on teardown (the
 ``join_transaction_mode="create_savepoint"`` recipe), so committed service work
 is visible within the test but never persisted. All seeded identifiers are

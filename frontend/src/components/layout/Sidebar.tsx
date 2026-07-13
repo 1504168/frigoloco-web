@@ -19,7 +19,7 @@ function NavBadge({ item }: { item: NavItem }) {
 
 /**
  * FrigoLoco brand block (D6). Renders the committed wordmark SVG
- * (public/frigoloco-logo.svg — swap the file, keep the path). If the asset
+ * (public/frigoloco-logo.svg - swap the file, keep the path). If the asset
  * fails to load, falls back to the app-name wordmark text so the header is
  * never blank.
  */

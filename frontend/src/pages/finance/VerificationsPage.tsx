@@ -24,9 +24,15 @@ import {
 } from '@/components/ui/table'
 import { toast } from '@/components/ui/sonner'
 import { api, ApiError, type Page } from '@/lib/api'
-import { formatEuro, formatDateTime } from '@/lib/format'
+import { formatEuro, formatDateTime, formatFridgeName } from '@/lib/format'
+import {
+  REFERENCE_CATEGORIES_KEY,
+  REFERENCE_FRIDGES_KEY,
+  REFERENCE_FRIDGES_LIMIT,
+} from '@/lib/query-keys'
 import { cn } from '@/lib/utils'
 import type {
+  Category,
   CategoryReconTotal,
   Dispatch,
   Fridge,
@@ -38,11 +44,6 @@ import { SectionCard } from '@/pages/finance/components'
 import { toNumber } from '@/pages/finance/utils'
 
 const PAGE_SIZE = 25
-
-interface Category {
-  id: number
-  name: string
-}
 
 function diffClass(value: number): string {
   if (value > 0) return 'text-good-text'
@@ -74,19 +75,21 @@ export function VerificationsPage() {
   })
 
   const categoriesQuery = useQuery({
-    queryKey: ['categories'],
+    queryKey: REFERENCE_CATEGORIES_KEY,
     queryFn: ({ signal }) => api.get<Category[]>('/api/v1/categories', { signal }),
     staleTime: 5 * 60_000,
     select: (items) => new Map(items.map((category) => [category.id, category.name])),
   })
 
   const fridgesQuery = useQuery({
-    queryKey: ['fridges', 'all'],
+    queryKey: REFERENCE_FRIDGES_KEY,
     queryFn: ({ signal }) =>
-      api.get<Page<Fridge>>('/api/v1/fridges', { params: { limit: 500 }, signal }),
+      api.get<Page<Fridge>>('/api/v1/fridges', {
+        params: { limit: REFERENCE_FRIDGES_LIMIT },
+        signal,
+      }),
     staleTime: 5 * 60_000,
-    select: (page) =>
-      new Map(page.items.map((fridge) => [fridge.id, fridge.friendly_name || fridge.husky_name])),
+    select: (page) => new Map(page.items.map((fridge) => [fridge.id, formatFridgeName(fridge)])),
   })
 
   const detailQuery = useQuery({

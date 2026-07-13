@@ -21,7 +21,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { api, type Page } from '@/lib/api'
-import { formatDateTime } from '@/lib/format'
+import { EMPTY_PLACEHOLDER, formatDateTime } from '@/lib/format'
 import { SYNC_OVERRIDE_CAPTION } from '@/pages/masters/sync/components'
 import type { SyncRun } from '@/pages/masters/sync/types'
 
@@ -98,7 +98,7 @@ export function SyncPage() {
 
       {anyRunning ? (
         <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-          A sync is running — this list refreshes automatically.
+          A sync is running - this list refreshes automatically.
         </div>
       ) : null}
 
@@ -139,7 +139,7 @@ export function SyncPage() {
                   <TableCell className="text-right tabular-nums">{run.records_upserted}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{formatDateTime(run.started_at)}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {run.finished_at ? formatDateTime(run.finished_at) : '—'}
+                    {run.finished_at ? formatDateTime(run.finished_at) : EMPTY_PLACEHOLDER}
                   </TableCell>
                 </TableRow>
               ))}

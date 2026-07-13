@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 0005 — Week/day workflow natural keys + menu grid storage (D2)
+-- Migration 0005 - Week/day workflow natural keys + menu grid storage (D2)
 -- ============================================================================
 --
 -- WHY: The Forecast -> Menu -> Dispatch pipeline keys every stage on
@@ -7,15 +7,15 @@
 -- semantics (WORKORDER-workflow-rework.md, D2). The pre-D2 schema could not
 -- express this:
 --
---   * forecast_runs had no "saved" concept and no model selector — every run
+--   * forecast_runs had no "saved" concept and no model selector - every run
 --     was an ephemeral compute. D2 wants POST /forecasts/run to compute only
 --     and POST /forecasts/save to persist ONE saved forecast per key.
---   * weekly_menus was keyed per (year, iso_week) with no day — D2 makes the
+--   * weekly_menus was keyed per (year, iso_week) with no day - D2 makes the
 --     menu a per-delivery-day artifact, and menu_products stored only which
 --     products are on a menu, with NO fridge x product quantity grid.
 --   * dispatches already carry a UNIQUE delivery_date, and delivery_date
 --     bijects to (iso_year, week_no, day_name) via ISO calendar, so dispatches
---     need NO new column — the service derives delivery_date from the key.
+--     need NO new column - the service derives delivery_date from the key.
 --
 -- NATURAL-KEY NOTE: a calendar date maps to exactly one (iso_year, iso_week,
 -- iso_weekday) and vice versa, so `delivery_date` IS the (year, week, day)

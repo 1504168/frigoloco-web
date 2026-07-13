@@ -10,7 +10,7 @@ is impossible), they leak the type name into every constraint/rule/view
 dependency, and they buy nothing over a ``TEXT + CHECK`` pair for our small,
 rarely-changing domains. ``native_enum=False`` maps the Python enum to a VARCHAR
 column; ``create_constraint=False`` stops SQLAlchemy emitting its own unnamed
-CHECK — the authoritative, NAMED CHECK lives in ``schema.sql`` (and, mirrored,
+CHECK - the authoritative, NAMED CHECK lives in ``schema.sql`` (and, mirrored,
 in each model's ``__table_args__`` via :func:`enum_check`).
 """
 
@@ -28,7 +28,7 @@ def text_enum(python_enum: Type[enum.Enum], type_name: str) -> SAEnum:
 
     ``native_enum=False`` stores the enum *values* as strings in a VARCHAR
     column. ``create_constraint=False`` prevents SQLAlchemy from emitting its
-    own (unnamed) CHECK — the NAMED CHECK is declared explicitly in the model's
+    own (unnamed) CHECK - the NAMED CHECK is declared explicitly in the model's
     ``__table_args__`` via :func:`enum_check` and in ``schema.sql``.
     """
     return SAEnum(
@@ -108,7 +108,7 @@ class AlertType(str, enum.Enum):
     rfid_offline = "rfid_offline"
 
 
-# Reusable SQLAlchemy type instances — VARCHAR-backed (native_enum=False).
+# Reusable SQLAlchemy type instances - VARCHAR-backed (native_enum=False).
 USER_ROLE_ENUM = text_enum(UserRole, "user_role")
 PO_STATUS_ENUM = text_enum(PoStatus, "po_status")
 DISPATCH_STATUS_ENUM = text_enum(DispatchStatus, "dispatch_status")

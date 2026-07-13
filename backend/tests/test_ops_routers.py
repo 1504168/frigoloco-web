@@ -3,8 +3,8 @@
 Non-destructive by construction: every test runs inside a single outer
 transaction bound to one connection, with the request ``Session`` joined in
 ``create_savepoint`` mode. Service-level ``commit()`` calls only release
-savepoints; the outer transaction is rolled back on teardown, so nothing —
-including append-only ``stock_movements`` rows — is ever persisted. Names use a
+savepoints; the outer transaction is rolled back on teardown, so nothing -
+including append-only ``stock_movements`` rows - is ever persisted. Names use a
 ``ZZTEST-`` prefix as a second line of defence.
 """
 

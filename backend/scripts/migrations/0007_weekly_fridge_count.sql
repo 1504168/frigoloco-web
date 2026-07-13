@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 0007 — weekly_financials.fridge_count (manual weekly input)
+-- Migration 0007 - weekly_financials.fridge_count (manual weekly input)
 -- ============================================================================
 -- Requirement (2026-07-03): the Weekly & Monthly Return workbook's "Weekly View"
 -- carries a manual per-week fridge count alongside the other manual inputs

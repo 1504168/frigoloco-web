@@ -1,4 +1,4 @@
-"""snapshot_stock — every 15 min.
+"""snapshot_stock - every 15 min.
 
 Thin scheduler/CLI wrapper. The Husky ``/stock/current`` -> ``stock_snapshots``
 capture logic lives in :func:`app.husky.sync.snapshot_stock` (shared with the

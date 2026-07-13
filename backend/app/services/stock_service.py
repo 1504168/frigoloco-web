@@ -23,7 +23,7 @@ from app.schemas.masters import PaginationParams, api_error
 _CHECK_VIOLATION = "23514"
 
 # ---------------------------------------------------------------------------
-# (iso_year, week_no, day_name) natural-key helpers — shared by the workflow
+# (iso_year, week_no, day_name) natural-key helpers - shared by the workflow
 # pipeline (forecast / menu / dispatch all key on this triple). They live here
 # because ``stock_service`` sits at the bottom of the ops dependency graph, so
 # every workflow service can import them without a cycle. A calendar date maps
@@ -55,7 +55,7 @@ def resolve_delivery_date(year: int, week: int, day_name: str) -> datetime.date:
     """Map an ``(iso_year, week_no, day_name)`` key to its unique calendar date.
 
     Raises a 422 ``ApiException`` for an unknown day name or an ISO-invalid
-    (year, week) — e.g. week 53 in a 52-week year.
+    (year, week) - e.g. week 53 in a 52-week year.
     """
     weekday = _DAY_NAME_TO_ISO_WEEKDAY.get(day_name.strip().lower())
     if weekday is None:

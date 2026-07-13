@@ -1,4 +1,4 @@
-"""Operational models — purchase orders (SECTION 3), dispatch (SECTION 5), stock
+"""Operational models - purchase orders (SECTION 3), dispatch (SECTION 5), stock
 ledger (SECTION 6), reconciliation (SECTION 8), and finance/alerts/audit
 (SECTION 9). Mirrors: order_no_counters, purchase_orders, purchase_order_lines,
 dispatches, dispatch_lines, stock_movements, restock_verifications,
@@ -10,7 +10,7 @@ split brief; it is a finance table and is mirrored here alongside alerts/audit.
 NOTE: schema.sql attaches PL/pgSQL triggers to ``stock_movements``
 (non-negativity enforcement + append-only guard) and a ``next_order_no()``
 function / ``v_stock_balances`` view. Those are behavioural DB objects created by
-schema.sql — the ORM models below intentionally do not reproduce them.
+schema.sql - the ORM models below intentionally do not reproduce them.
 """
 
 from __future__ import annotations
@@ -221,7 +221,7 @@ class DispatchLine(Base):
     product_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("products.id"), nullable=False
     )
-    # Denormalised partition key — callers MUST set it to the parent dispatch's
+    # Denormalised partition key - callers MUST set it to the parent dispatch's
     # delivery_date (a partitioned table rejects a NULL partition key before any
     # trigger could fill it, so it cannot be server-defaulted).
     delivery_date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
@@ -380,7 +380,7 @@ class WeeklyFinancial(Base):
     id: Mapped[int] = mapped_column(Integer, Identity(always=True), primary_key=True)
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     iso_week: Mapped[int] = mapped_column(Integer, nullable=False)
-    # Manual weekly money inputs (R10) — cents, BIGINT.
+    # Manual weekly money inputs (R10) - cents, BIGINT.
     catering_turnover: Mapped[int] = mapped_column(
         BigInteger, nullable=False, server_default=text("0")
     )
@@ -403,11 +403,11 @@ class WeeklyFinancial(Base):
     fridge_count: Mapped[int | None] = mapped_column(Integer)
     remarks: Mapped[str | None] = mapped_column(Text)
     # Fee snapshots: rates in force when the week was closed.
-    # pos_fee_pct_snapshot is a fraction (NOT money) — stays NUMERIC.
+    # pos_fee_pct_snapshot is a fraction (NOT money) - stays NUMERIC.
     pos_fee_pct_snapshot: Mapped[Decimal] = mapped_column(
         Numeric(6, 4), nullable=False, server_default=text("0.09")
     )
-    # rfid_fee_snapshot is money in cents (EUR 0.10 -> 10) — BIGINT.
+    # rfid_fee_snapshot is money in cents (EUR 0.10 -> 10) - BIGINT.
     rfid_fee_snapshot: Mapped[int] = mapped_column(
         BigInteger, nullable=False, server_default=text("10")
     )

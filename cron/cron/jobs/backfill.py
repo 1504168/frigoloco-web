@@ -1,12 +1,12 @@
-"""backfill — CLI-only resumable historical pull.
+"""backfill - CLI-only resumable historical pull.
 
 Walks an ``--endpoint`` over ``--from``/``--to`` in 7-day chunks, delegating each
 chunk to the matching incremental sync job (so raw-first archive + ``sync_run``
 bookkeeping + idempotent upserts are reused). Behaviour:
 
-* **Resumable** — a chunk whose ``sync_run`` already recorded ``success``/``empty``
+* **Resumable** - a chunk whose ``sync_run`` already recorded ``success``/``empty``
   for the same job+endpoint+window is skipped.
-* **Self-healing** — a chunk that raises is halved and each half retried, down to
+* **Self-healing** - a chunk that raises is halved and each half retried, down to
   a 1-day floor, isolating a poison window without failing the whole run.
 * ``--dry-run`` prints the window plan (and which windows would be skipped)
   without calling the vendor or writing anything.

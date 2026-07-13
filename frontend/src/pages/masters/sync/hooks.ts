@@ -6,7 +6,7 @@ import { isRunFinished, type SyncFeed, type SyncRun, type SyncTriggerResponse } 
 
 const POLL_INTERVAL_MS = 3000
 
-/** Latest checkpoint for an endpoint — powers the "last synced" stamp. */
+/** Latest checkpoint for an endpoint: powers the "last synced" stamp. */
 export function useLatestSyncRun(endpoint: string) {
   return useQuery({
     queryKey: ['sync', 'runs', 'latest', endpoint],
@@ -48,7 +48,7 @@ export function useHuskySync({
   const triggerMutation = useMutation({
     mutationFn: () => api.post<SyncTriggerResponse>(`/api/v1/sync/husky/${feed}`),
     onSuccess: (response) => {
-      toast.info(`Husky ${feed} sync started — this can take a few minutes…`)
+      toast.info(`Husky ${feed} sync started - this can take a few minutes…`)
       setRunId(response.sync_run_id)
     },
     onError: (error) =>
@@ -81,7 +81,7 @@ export function useHuskySync({
       toast.error(`Husky ${feed} sync failed${run.error ? `: ${run.error}` : ''}`)
     } else {
       toast.success(
-        `Husky ${feed} sync complete — ${run.records_upserted} ${itemLabel} record${run.records_upserted === 1 ? '' : 's'} updated`,
+        `Husky ${feed} sync complete: ${run.records_upserted} ${itemLabel} record${run.records_upserted === 1 ? '' : 's'} updated`,
       )
     }
     setRunId(null)

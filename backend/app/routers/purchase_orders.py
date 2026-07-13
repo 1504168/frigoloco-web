@@ -1,5 +1,5 @@
 """Purchase-order endpoints (R4/R5): create, read, edit, draft-from-dispatch,
-receive, cancel. Routers stay thin — validation + delegation only."""
+receive, cancel. Routers stay thin - validation + delegation only."""
 
 from __future__ import annotations
 

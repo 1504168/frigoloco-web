@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "frigoloco_backend"
 version = "0.1.0"
-description = "FrigoLoco Cloud ERP — FastAPI + SQLAlchemy 2.0 backend."
+description = "FrigoLoco Cloud ERP - FastAPI + SQLAlchemy 2.0 backend."
 requires-python = ">=3.12"
 dependencies = [
     "fastapi",

@@ -2,9 +2,9 @@
 
 Two tiers:
 
-* Pure tests — the field-ownership contract guard, the effective-status rule and
+* Pure tests - the field-ownership contract guard, the effective-status rule and
   its SQL clause. No DB, no network.
-* Live-DB transactional tests — bound to one connection inside an outer
+* Live-DB transactional tests - bound to one connection inside an outer
   transaction rolled back on teardown (mirrors ``test_ops_routers``), proving a
   manual ``local_status`` override survives a catalogue upsert while the
   Husky-owned columns refresh, plus the ``?status=`` filter and ``/sync/runs``.
@@ -68,7 +68,7 @@ def test_guarded_update_set_rejects_local_status() -> None:
 
 
 def test_guarded_update_set_rejects_local_only_columns() -> None:
-    # delivery_* are local-owned on fridges — sync must never write them.
+    # delivery_* are local-owned on fridges - sync must never write them.
     with pytest.raises(SyncContractError):
         _guarded_update_set("fridges", {"delivery_address": "somewhere"})
 

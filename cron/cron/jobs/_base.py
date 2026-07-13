@@ -1,4 +1,4 @@
-"""Shared job scaffolding — RE-EXPORT SHIM.
+"""Shared job scaffolding - RE-EXPORT SHIM.
 
 The sync/transform logic and its scaffolding (``sync_run`` bookkeeping, DB
 resolvers, the stub-product resolver) were relocated to the backend package

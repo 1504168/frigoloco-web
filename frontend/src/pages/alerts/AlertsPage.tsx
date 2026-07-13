@@ -16,7 +16,7 @@ import {
 import { toast } from '@/components/ui/sonner'
 import { api, ApiError, type Page } from '@/lib/api'
 import type { Alert } from '@/lib/types'
-import { formatDateTime } from '@/lib/format'
+import { EMPTY_PLACEHOLDER, formatDateTime } from '@/lib/format'
 import { ALERTS_COUNT_KEY } from '@/hooks/useAlertsCount'
 
 const PAGE_SIZE = 25
@@ -37,7 +37,7 @@ function summarizePayload(payload: Record<string, unknown>): string {
     (payload.detail as string | undefined)
   if (candidate) return candidate
   const keys = Object.keys(payload)
-  if (keys.length === 0) return '—'
+  if (keys.length === 0) return EMPTY_PLACEHOLDER
   return keys.map((key) => `${key}: ${String(payload[key])}`).join(', ')
 }
 

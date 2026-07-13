@@ -4,8 +4,8 @@ pagination envelope, and the standard error body).
 
 These primitives live here because ``schemas/orders.py`` is the first schema
 module of this half; the sibling finance/verification/alerts schema modules
-import them from here to stay DRY. They are pure Pydantic — no FastAPI, no
-SQLAlchemy — so nothing downstream forms an import cycle.
+import them from here to stay DRY. They are pure Pydantic - no FastAPI, no
+SQLAlchemy - so nothing downstream forms an import cycle.
 """
 
 from __future__ import annotations

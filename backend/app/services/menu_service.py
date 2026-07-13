@@ -1,4 +1,4 @@
-"""Weekly-menu workflow service (D2) — the (iso_year, week_no, day_name) stage
+"""Weekly-menu workflow service (D2) - the (iso_year, week_no, day_name) stage
 between forecast and dispatch.
 
 The pipeline is import -> edit -> save -> load-saved with explicit

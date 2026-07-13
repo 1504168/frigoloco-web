@@ -38,7 +38,7 @@ export function MenuPage() {
   const [addOpen, setAddOpen] = React.useState(false)
   const [draftPoSupplierId, setDraftPoSupplierId] = React.useState<number | null>(null)
 
-  // Any stage change clears the current grid — it belongs to another key.
+  // Any stage change clears the current grid - it belongs to another key.
   React.useEffect(() => {
     setLoaded(false)
   }, [key.year, key.week, key.dayName])
@@ -63,12 +63,12 @@ export function MenuPage() {
       toast.success(
         result.products.length
           ? `Imported ${result.products.length} products from the saved forecast`
-          : 'Imported from forecast — no allocations yet. Add products to build the menu.',
+          : 'Imported from forecast - no allocations yet. Add products to build the menu.',
       )
     },
     onError: (error) => {
       if (error instanceof ApiError && error.status === 404) {
-        toast.error('No saved forecast for this key — save a forecast first.')
+        toast.error('No saved forecast for this key - save a forecast first.')
       } else {
         toast.error(error instanceof ApiError ? error.message : 'Failed to import from forecast')
       }

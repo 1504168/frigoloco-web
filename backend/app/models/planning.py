@@ -1,4 +1,4 @@
-"""Menus, forecasts, scores — SECTION 4 of schema.sql. Mirrors: weekly_menus,
+"""Menus, forecasts, scores - SECTION 4 of schema.sql. Mirrors: weekly_menus,
 menu_products, forecast_runs, forecast_results, product_scores,
 fridge_product_scores.
 """
@@ -154,7 +154,7 @@ class ForecastRun(Base):
     )
     # ISO weekday name of delivery_date for saved runs; NULL for legacy compute rows.
     day_name: Mapped[str | None] = mapped_column(Text)
-    # Snapshot of the parameters the run used (R1) — reproducible runs.
+    # Snapshot of the parameters the run used (R1) - reproducible runs.
     params: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )

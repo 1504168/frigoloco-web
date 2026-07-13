@@ -1,4 +1,4 @@
-# FrigoLoco ERP — Backend Architecture
+# FrigoLoco ERP - Backend Architecture
 
 > **⚠ DRIFT NOTICE (verifier, 2026-07-03):** parts of this document predate the canonical decisions in
 > [`architecture/IMPLEMENTATION-BRIEF.md`](../IMPLEMENTATION-BRIEF.md) and the scaffolded code. Where they disagree,
@@ -8,7 +8,7 @@
 
 > Layer: **BACKEND** · Stack: FastAPI (Python 3.12) · SQLAlchemy 2 + Alembic · PostgreSQL · APScheduler (in-process) · httpx · openpyxl / WeasyPrint · Azure Blob · Railway (modular monolith)
 >
-> Source of truth: spec [`0001-frigoloco-excel-to-cloud-erp`](../../specs/0001-frigoloco-excel-to-cloud-erp_2026-07-02_0810PM_UTC/0001-frigoloco-excel-to-cloud-erp_2026-07-02_0810PM_UTC_v1.html) — business rules **R1–R12**, API surface table, Husky sync strategy, 5-phase implementation plan. Scheduled jobs are documented separately in [`../cron/README.md`](../cron/README.md).
+> Source of truth: spec [`0001-frigoloco-excel-to-cloud-erp`](../../specs/0001-frigoloco-excel-to-cloud-erp_2026-07-02_0810PM_UTC/0001-frigoloco-excel-to-cloud-erp_2026-07-02_0810PM_UTC_v1.html) - business rules **R1–R12**, API surface table, Husky sync strategy, 5-phase implementation plan. Scheduled jobs are documented separately in [`../cron/README.md`](../cron/README.md).
 
 ---
 
@@ -20,26 +20,26 @@ One FastAPI app, one Railway deploy, one PostgreSQL database. Strict downward de
 flowchart TD
     SPA["React SPA (TypeScript)"] -->|"HTTPS JSON, prefix /api/v1"| ROUTERS
 
-    subgraph APP["backend/app — FastAPI modular monolith (one Railway deploy)"]
-        ROUTERS["api/ — routers per module (auth, products, dispatches, ...)"]
-        SCHEMAS["schemas/ — Pydantic v2 request/response models"]
-        SERVICES["services/ — domain logic (forecast, scoring, dispatch, orders, ...)"]
-        MODELS["models/ — SQLAlchemy 2 ORM, one file per aggregate"]
+    subgraph APP["backend/app - FastAPI modular monolith (one Railway deploy)"]
+        ROUTERS["api/ - routers per module (auth, products, dispatches, ...)"]
+        SCHEMAS["schemas/ - Pydantic v2 request/response models"]
+        SERVICES["services/ - domain logic (forecast, scoring, dispatch, orders, ...)"]
+        MODELS["models/ - SQLAlchemy 2 ORM, one file per aggregate"]
 
         ROUTERS -->|"validate in/out"| SCHEMAS
         ROUTERS -->|"delegate"| SERVICES
         SERVICES -->|"query / persist"| MODELS
 
         subgraph XCUT["Cross-cutting"]
-            SEC["core/security — JWT auth + role dependencies"]
-            CFG["core/config — pydantic-settings (env vars)"]
-            DB2["core/db — engine, Session factory, UoW helpers"]
-            HUSKYC["husky/ — typed httpx client + normalization + sync"]
-            DOCSVC["services/documents — WeasyPrint PDF, openpyxl XLSX"]
-            MAILSVC["services/email — provider client + staging override"]
+            SEC["core/security - JWT auth + role dependencies"]
+            CFG["core/config - pydantic-settings (env vars)"]
+            DB2["core/db - engine, Session factory, UoW helpers"]
+            HUSKYC["husky/ - typed httpx client + normalization + sync"]
+            DOCSVC["services/documents - WeasyPrint PDF, openpyxl XLSX"]
+            MAILSVC["services/email - provider client + staging override"]
         end
 
-        JOBS["jobs/ — APScheduler in-process (see cron README)"]
+        JOBS["jobs/ - APScheduler in-process (see cron README)"]
         JOBS -->|"invoke"| SERVICES
         JOBS -->|"pull feeds"| HUSKYC
         ROUTERS -.->|"Depends(...)"| SEC
@@ -50,21 +50,21 @@ flowchart TD
 
     MODELS --> PG[("PostgreSQL (Railway)")]
     HUSKYC -->|"HTTP Basic"| HUSKY["Husky RFID API"]
-    DOCSVC --> BLOB[("Azure Blob — generated documents")]
+    DOCSVC --> BLOB[("Azure Blob - generated documents")]
     MAILSVC --> SMTP["Email provider (SPF/DKIM on frigoloco.be)"]
 ```
 
 Rules of the road:
 
 - **Routers** parse/authorize only. No business logic, no SQL.
-- **Schemas** are the only shapes crossing the HTTP boundary. Internal service inputs/outputs are `@dataclass` or Pydantic models — never bare dicts or tuples.
+- **Schemas** are the only shapes crossing the HTTP boundary. Internal service inputs/outputs are `@dataclass` or Pydantic models - never bare dicts or tuples.
 - **Services** own transactions (one `Session` per request via dependency; services decide commit/rollback boundaries for multi-step flows).
-- **Models** are persistence only — no domain rules in ORM classes beyond constraints/defaults.
-- The **stock non-negativity trigger** lives in the database (Alembic migration 0001), not in Python — the API merely translates the trigger error into a `409`.
+- **Models** are persistence only - no domain rules in ORM classes beyond constraints/defaults.
+- The **stock non-negativity trigger** lives in the database (Alembic migration 0001), not in Python - the API merely translates the trigger error into a `409`.
 
 ---
 
-## 2. Folder tree — `backend/app/`
+## 2. Folder tree - `backend/app/`
 
 ```
 backend/
@@ -73,10 +73,10 @@ backend/
 └── app/
     ├── main.py                  # FastAPI app factory, router registration, scheduler startup/shutdown hooks
     ├── core/
-    │   ├── config.py            # pydantic-settings Settings class — single source for every env var (§6)
+    │   ├── config.py            # pydantic-settings Settings class - single source for every env var (§6)
     │   ├── security.py          # password hashing, JWT encode/decode, get_current_user, require_roles(...) dependency
     │   └── db.py                # SQLAlchemy engine, sessionmaker, get_session dependency, advisory-lock helpers
-    ├── models/                  # SQLAlchemy 2 declarative models — one file per aggregate
+    ├── models/                  # SQLAlchemy 2 declarative models - one file per aggregate
     │   ├── catalogue.py         # suppliers, categories, products, fridge_product_prices, product_targets, menu_product_caps
     │   ├── clients.py           # clients, fridges, fridge_delivery_config, client_fees, client_service_charges, client_interventions
     │   ├── orders.py            # purchase_orders, purchase_order_lines, stock_movements
@@ -85,7 +85,7 @@ backend/
     │   ├── finance.py           # weekly_financials, product_scores, fridge_product_scores
     │   └── system.py            # users, settings, alerts, audit_log, job_runs, generated_documents
     ├── schemas/                 # Pydantic v2 models mirroring the API surface, one file per router
-    ├── api/                     # routers — thin: auth check, schema validation, service call
+    ├── api/                     # routers - thin: auth check, schema validation, service call
     │   ├── auth.py              # POST /auth/login, /auth/refresh, GET /auth/me
     │   ├── products.py          # CRUD /products, POST /products/sync-husky, GET/PUT /products/{id}/fridge-prices
     │   ├── suppliers.py         # CRUD /suppliers
@@ -100,9 +100,9 @@ backend/
     │   ├── finance.py           # weekly P&L, monthly analysis, fridge GSV report
     │   ├── alerts.py            # GET /alerts, PUT /alerts/{id}/ack
     │   ├── settings.py          # GET/PUT /settings (scoring weights, margins, fees, thresholds, flags)
-    │   ├── sync.py              # POST /sync/husky/{feed} — internal, admin-only; also invoked by scheduler
+    │   ├── sync.py              # POST /sync/husky/{feed} - internal, admin-only; also invoked by scheduler
     │   └── health.py            # GET /health, GET /health/jobs (last-success per job, see cron README)
-    ├── services/                # domain logic — see §3 Service catalogue
+    ├── services/                # domain logic - see §3 Service catalogue
     │   ├── forecast.py          # R1 forecast engine (+ flagged enhancements)
     │   ├── scoring.py           # R2 product scoring, current + dual model behind flag
     │   ├── menu_allocation.py   # R3 score-proportional split + snacks/drinks target replenishment
@@ -119,7 +119,7 @@ backend/
     │   └── sync.py              # incremental feed sync (cursor + overlap + idempotent upsert), one-time backfill
     └── jobs/
         ├── scheduler.py         # APScheduler setup, Postgres advisory-lock wrapper, job_runs logging, retries
-        └── definitions.py       # the 14 job registrations (id, cron, callable) — catalogue in ../cron/README.md
+        └── definitions.py       # the 14 job registrations (id, cron, callable) - catalogue in ../cron/README.md
 ```
 
 ---
@@ -128,9 +128,9 @@ backend/
 
 Conventions used below: every structured parameter/return is a `@dataclass` (internal) or Pydantic model (crosses the HTTP boundary). `Session` is the SQLAlchemy session injected per request; `CurrentUser` is the dataclass produced by `core/security`. Money is `Decimal` everywhere internally.
 
-### 3.1 `services/forecast.py` — implements **R1** (+ Phase-5 flags)
+### 3.1 `services/forecast.py` - implements **R1** (+ Phase-5 flags)
 
-Per fridge × category: 3-week sales window anchored on the fridge's delivery weekday, holiday filter via `min_daily_qty`, no-data days count in the denominator, per-category tunable margin %. Reads **local** `sales_events` — never Husky live.
+Per fridge × category: 3-week sales window anchored on the fridge's delivery weekday, holiday filter via `min_daily_qty`, no-data days count in the denominator, per-category tunable margin %. Reads **local** `sales_events` - never Husky live.
 
 ```python
 @dataclass(frozen=True)
@@ -162,9 +162,9 @@ def get_forecast_performance(year: int, iso_week: int, session: Session) -> list
     # FridgeForecastPerformance: fridge_id, added_qty, sold_qty, sell_through_pct (>=90% / <70% UI coding)
 ```
 
-Persists `forecast_runs` (params as JSONB snapshot — window, weights, margins at run time) + `forecast_results`.
+Persists `forecast_runs` (params as JSONB snapshot - window, weights, margins at run time) + `forecast_results`.
 
-### 3.2 `services/scoring.py` — implements **R2**
+### 3.2 `services/scoring.py` - implements **R2**
 
 Trailing-365-day score: `%sold×w1 + reviewScore×w2 + margin×w3`, weights from `settings` (currently 0.62/0.05/0.33). `%sold = sold ÷ added` excluding `UNRECOGNISED` tags; `reviewScore = (pos − neg) ÷ (pos + neg)` with `rating == 1` positive; `margin = (salePriceExVat − buyPrice) ÷ salePriceExVat`. Behind `DUAL_SCORING`: 50/50 global × per-fridge model, ≤ 250 lifetime sales → average global score baseline.
 
@@ -198,7 +198,7 @@ def compute_global_score(inputs: ProductScoreInputs, weights: ScoringWeights) ->
 def compute_fridge_score(inputs: FridgeScoreInputs, weights: FridgeScoringWeights) -> Decimal  # DUAL_SCORING path
 ```
 
-### 3.3 `services/menu_allocation.py` — implements **R3**
+### 3.3 `services/menu_allocation.py` - implements **R3**
 
 Score-proportional split of a fridge's category forecast across menu products, descending by score, with rounding guards (allocation < 0.5 bumped to 0.51 when remainder > 0.5; leftovers to top-scored product). Snacks & Drinks bypass allocation: `to_restock = target − live RFID stock` per fridge × product. Respects `menu_product_caps`.
 
@@ -221,9 +221,9 @@ def allocate_category_forecast(request: MenuAllocationRequest, session: Session)
 def compute_target_replenishment(fridge_id: int, snapshot: LiveStockSnapshot, session: Session) -> list[AllocationLine]
 ```
 
-### 3.4 `services/dispatch.py` — implements **R7** (and orchestrates R8 via documents)
+### 3.4 `services/dispatch.py` - implements **R7** (and orchestrates R8 via documents)
 
-Batch identity = (ISO week, weekday, week start date); `UNIQUE(delivery_date)` in `dispatches`. Saving replaces prior lines for the key (optionally one category). Confirm is a single transaction — see §4a.
+Batch identity = (ISO week, weekday, week start date); `UNIQUE(delivery_date)` in `dispatches`. Saving replaces prior lines for the key (optionally one category). Confirm is a single transaction - see §4a.
 
 ```python
 @dataclass(frozen=True)
@@ -238,7 +238,7 @@ class DispatchSaveResult:
     dispatch_id: int
     lines_written: int
     lines_replaced: int
-    validation_errors: list[CellValidationError]   # per-cell: menu membership, caps, stock — 409 payload
+    validation_errors: list[CellValidationError]   # per-cell: menu membership, caps, stock - 409 payload
 
 @dataclass(frozen=True)
 class ConfirmDispatchCommand:
@@ -259,7 +259,7 @@ def confirm_dispatch(command: ConfirmDispatchCommand, user: CurrentUser, session
 def get_dispatch_matrix(dispatch_id: int, session: Session) -> DispatchMatrix   # fridges × products grouped by category
 ```
 
-### 3.5 `services/orders.py` — implements **R4, R5**
+### 3.5 `services/orders.py` - implements **R4, R5**
 
 Order numbering `YYYY-NNNNN` from a per-year DB sequence (concurrency-safe). Dates cannot be past. `lineTotal = price × qty × (1+vat)`; totals accumulate ex-VAT / VAT / incl-VAT separately (VAT as fraction, e.g. `0.06`).
 
@@ -292,7 +292,7 @@ def receive_purchase_order(command: ReceivePoCommand, user: CurrentUser, session
 def cancel_purchase_order(po_id: int, user: CurrentUser, session: Session) -> PoCancelResult
 ```
 
-### 3.6 `services/stock.py` — implements **R6**
+### 3.6 `services/stock.py` - implements **R6**
 
 Append-only `stock_movements` ledger; physical balance = SUM over movements, **non-negativity enforced by DB trigger**. On-order column is the R6 projection from pending PO lines (not movements). Adjustments require a reason (422 without).
 
@@ -319,7 +319,7 @@ def get_movements(product_id: int, page: PageParams, session: Session) -> Page[S
 
 `StockNonNegativeError` (raised when the trigger rejects) carries the offending `product_id`s and is mapped to **409** with an `alerts` row (`negative_blocked`).
 
-### 3.7 `services/reconciliation.py` — implements **R9**
+### 3.7 `services/reconciliation.py` - implements **R9**
 
 Per dispatch (week, day): diff RFID `ADDED` events vs dispatched lines, per product × fridge and per category, in qty and € at buy price. `UNRELIABLE` tags counted separately and excluded from totals; `UNRECOGNISED` excluded entirely.
 
@@ -345,7 +345,7 @@ def reconcile_dispatch(dispatch_id: int, user: CurrentUser, session: Session) ->
     # persists restock_verifications(+lines), flips dispatch status to 'reconciled', queues email digest
 ```
 
-### 3.8 `services/finance.py` — implements **R10, R11, R12**
+### 3.8 `services/finance.py` - implements **R10, R11, R12**
 
 `net revenue = gross sales + customer credit − refunds`; FrigoLoco-provider discounts separate from customer credit; fees = POS 9% of sales + €0.10 RFID per item sold (both snapshotted per week from `settings`). Monday-anchored weeks (week 1 = Monday nearest Jan 1, Fri–Sun starts shift forward); straddling weeks prorated by `days-in-month ÷ 7`. Fixed costs spread via client fees, computed fridge-month fractions, and service additionals.
 
@@ -376,14 +376,14 @@ class WeeklyPnl:
 def get_weekly_pnl(year: int, iso_week: int, session: Session) -> WeeklyPnl
 def upsert_weekly_inputs(inputs: WeeklyFinancialInputs, user: CurrentUser, session: Session) -> WeeklyPnl
 def get_monthly_analysis(month: date, dimension: AnalysisDimension, session: Session) -> MonthlyAnalysis
-    # AnalysisDimension: CLIENT | SUPPLIER | CATEGORY — computed live from events, no stored aggregate tables
+    # AnalysisDimension: CLIENT | SUPPLIER | CATEGORY - computed live from events, no stored aggregate tables
 def get_fridge_gsv_report(request: GsvReportRequest, session: Session) -> GsvReport
     # GsvReportRequest: fridge_id, date_from, date_to → added qty, food cost, revenue, margin
 def resolve_week_bucket(day: date) -> WeekBucket                      # R11, shared with jobs
 def prorate_week_to_months(week: WeekBucket, amount: Decimal) -> list[MonthShare]   # R11
 ```
 
-### 3.9 `services/documents.py` — implements **R8** (rendering half)
+### 3.9 `services/documents.py` - implements **R8** (rendering half)
 
 Reproduces the three Excel templates: PO document (PDF via WeasyPrint + XLSX via openpyxl), per-fridge delivery sheets (fixed category print order Hot → Frozen → Salads → Wraps → Granolas → Soups → Desserts → Drinks → Snacks; In-box/Missing columns; withdrawal list for short-DLC products from the latest live-stock snapshot), GSV XLSX export. Uploads to Azure Blob, records `generated_documents` rows so files are re-downloadable.
 
@@ -400,11 +400,11 @@ def generate_dispatch_sheets(dispatch_id: int, session: Session) -> list[Generat
 def generate_gsv_export(request: GsvReportRequest, session: Session) -> GeneratedDocumentRef
 ```
 
-Raises `DocumentGenerationError` — inside the confirm-dispatch transaction this triggers full rollback (§4a).
+Raises `DocumentGenerationError` - inside the confirm-dispatch transaction this triggers full rollback (§4a).
 
 ### 3.10 `services/email.py`
 
-Single outbound gateway. In staging, `STAGING_EMAIL_OVERRIDE` redirects every message to the override address (port of today's `OrderSheetIsTestRun`). Never called inside an open transaction — always post-commit.
+Single outbound gateway. In staging, `STAGING_EMAIL_OVERRIDE` redirects every message to the override address (port of today's `OrderSheetIsTestRun`). Never called inside an open transaction - always post-commit.
 
 ```python
 @dataclass(frozen=True)
@@ -424,17 +424,17 @@ def send_email(message: OutboundEmail) -> EmailSendResult
 def send_alert_digest(day: date, session: Session) -> EmailSendResult   # used by alert_email_digest job
 ```
 
-### 3.11 `husky/` — client, normalize, sync
+### 3.11 `husky/` - client, normalize, sync
 
 ```python
-# husky/client.py — typed httpx client, HTTP Basic, retry with exponential backoff, rate-limit aware
+# husky/client.py - typed httpx client, HTTP Basic, retry with exponential backoff, rate-limit aware
 def get_product_types() -> list[RawProductType]
 def get_purchases(window: DateWindow) -> list[RawPurchase]
 def get_restock_events(window: DateWindow, action: RestockAction | None) -> list[RawRestockEvent]
 def get_product_reviews(window: DateWindow) -> list[RawProductReview]
 def get_current_stock() -> list[RawStockLine]        # pass-through snapshot, never persisted long-term
 
-# husky/normalize.py — one normalization point for every API quirk
+# husky/normalize.py - one normalization point for every API quirk
 def normalize_price_cents(value: int) -> Decimal                     # 595 -> Decimal('5.95')
 def normalize_comma_decimal(value: str) -> Decimal                   # '4,20' -> Decimal('4.20')
 def normalize_tag_status(raw: str) -> TagStatus                      # VALID | UNRELIABLE | UNRECOGNISED
@@ -443,7 +443,7 @@ def resolve_fridge_id(friendly_name: str | None, husky_name: str | None, session
 def normalize_purchase(raw: RawPurchase, session: Session) -> NormalizedSaleEvent
 def normalize_restock(raw: RawRestockEvent, session: Session) -> NormalizedRestockEvent
 
-# husky/sync.py — incremental feeds + backfill (see §4c and ../cron/README.md)
+# husky/sync.py - incremental feeds + backfill (see §4c and ../cron/README.md)
 def sync_feed(feed: HuskyFeed, session: Session) -> SyncRunResult    # HuskyFeed: PURCHASES | RESTOCK | CATALOGUE | REVIEWS | STOCK_SNAPSHOT
 def run_backfill(plan: BackfillPlan, session: Session) -> BackfillResult   # monthly chunks + checkpointing
     # SyncRunResult: feed, window, rows_fetched, rows_upserted, cursor_advanced_to
@@ -464,9 +464,9 @@ def run_backfill(plan: BackfillPlan, session: Session) -> BackfillResult   # mon
 
 ## 4. Critical transactional flows
 
-### 4a. Confirm dispatch — one transaction, all-or-nothing
+### 4a. Confirm dispatch - one transaction, all-or-nothing
 
-Everything up to and including the `generated_documents` rows is one DB transaction. A failure at any step (including document rendering or Blob upload) rolls back the status flip, the stock movements, and the price snapshots — the dispatch stays `saved` and can be re-confirmed. Email is deliberately **outside** the transaction: a bounced email must never un-dispatch stock; it produces an alert instead.
+Everything up to and including the `generated_documents` rows is one DB transaction. A failure at any step (including document rendering or Blob upload) rolls back the status flip, the stock movements, and the price snapshots - the dispatch stays `saved` and can be re-confirmed. Email is deliberately **outside** the transaction: a bounced email must never un-dispatch stock; it produces an alert instead.
 
 ```mermaid
 sequenceDiagram
@@ -524,14 +524,14 @@ Rollback semantics summary:
 | Past date without `force` | 409, nothing written |
 | Stock trigger rejects a line | Full rollback, `negative_blocked` alert in a separate transaction, 409 with per-line detail |
 | Document render / Blob upload fails | Full rollback (dispatch remains `saved`, stock untouched), 502 |
-| Email fails | **No rollback** — dispatch is confirmed; `alerts` row + retry via digest |
+| Email fails | **No rollback** - dispatch is confirmed; `alerts` row + retry via digest |
 | Re-confirm after success | Idempotent: status already `dispatched` → 200 with existing documents, no new movements |
 
 Orphaned blobs from a rolled-back upload are tolerated (private container, overwritten on retry since blob names are deterministic: `dispatches/{delivery_date}/{fridge_husky_id}.pdf`).
 
-### 4b. PO receive / cancel — explicit stock reversal
+### 4b. PO receive / cancel - explicit stock reversal
 
-Cancellation after receipt inserts explicit `cancellation_reversal` movements instead of silently recomputing — this is the fix for the named Excel bug (R6). The reversal itself goes through the same non-negativity trigger: if the received stock has already been dispatched, the cancel is refused.
+Cancellation after receipt inserts explicit `cancellation_reversal` movements instead of silently recomputing - this is the fix for the named Excel bug (R6). The reversal itself goes through the same non-negativity trigger: if the received stock has already been dispatched, the cancel is refused.
 
 ```mermaid
 sequenceDiagram
@@ -583,10 +583,10 @@ sequenceDiagram
 Notes:
 
 - Over-receipt (`qty_received > qty_ordered`) is a **warning**, not a block (manual-verification edge case in the spec); the API requires `acknowledge_over_receipt=true` to proceed.
-- Cancelling a **pending** PO writes no movements at all — pending quantities only ever existed in the on-order projection (R6), never in the ledger.
+- Cancelling a **pending** PO writes no movements at all - pending quantities only ever existed in the on-order projection (R6), never in the ledger.
 - Partial receipt keeps the PO `pending` until all lines have a `qty_received` recorded (design decision, see §8 in the completion notes).
 
-### 4c. Husky incremental sync — idempotent upsert
+### 4c. Husky incremental sync - idempotent upsert
 
 Feed cursors live in `sync_cursors` (one row per feed). Each run re-reads a 2-hour overlap before the cursor so late-arriving events and mutated records (refund status changes on purchases) are re-upserted. Idempotency key = `husky_ref` unique constraint; the upsert is `INSERT ... ON CONFLICT (husky_ref) DO UPDATE`, so re-running any window is always safe.
 
@@ -612,18 +612,18 @@ sequenceDiagram
     HC->>NZ: normalize_purchase(raw) per record
     NZ-->>SY: list of NormalizedSaleEvent (euros as Decimal, flags resolved)
     SY->>DB: INSERT INTO sales_events ... ON CONFLICT (husky_ref) DO UPDATE
-    note over SY,DB: idempotent upsert — the 2h overlap re-reads late-arriving\nand mutated events (refunds) without duplicating rows
+    note over SY,DB: idempotent upsert - the 2h overlap re-reads late-arriving\nand mutated events (refunds) without duplicating rows
     SY->>DB: UPDATE sync_cursors SET last_synced_at = window end
     SY->>DB: INSERT job_runs (job_id, started, finished, rows_upserted, status='success')
     SY->>DB: pg_advisory_unlock(job key)
     alt any step fails
         SY->>DB: job_runs status='failed' + error, cursor NOT advanced
         SY->>DB: INSERT alerts (type='sync_failed') after 3rd consecutive failure
-        note over SY: next hourly run retries the same window — safe because upsert is idempotent
+        note over SY: next hourly run retries the same window - safe because upsert is idempotent
     end
 ```
 
-The cursor only advances after a fully successful upsert, so a mid-run crash re-processes the whole window on the next tick — duplicates are impossible by construction. Divergence that slips past this is caught by the `daily_husky_reconciliation` job (see `../cron/README.md`).
+The cursor only advances after a fully successful upsert, so a mid-run crash re-processes the whole window on the next tick - duplicates are impossible by construction. Divergence that slips past this is caught by the `daily_husky_reconciliation` job (see `../cron/README.md`).
 
 ---
 
@@ -631,7 +631,7 @@ The cursor only advances after a fully successful upsert, so a mid-run crash re-
 
 ### Versioning and shape
 
-- All routes under **`/api/v1`**. Breaking changes mean `/api/v2` — additive changes (new optional fields) do not.
+- All routes under **`/api/v1`**. Breaking changes mean `/api/v2` - additive changes (new optional fields) do not.
 - Request/response bodies are Pydantic v2 models only. No anonymous dict payloads.
 - **Money serializes as decimal strings** (`"5.95"`, never floats) in every response; parsed back to `Decimal` on input. Internal computation is `Decimal` end-to-end; `NUMERIC(10,2)` in the DB.
 - Timestamps are UTC ISO-8601 with offset; dates are `YYYY-MM-DD`. Operational schedules (delivery days, job crons) are interpreted in `Europe/Brussels`.
@@ -643,18 +643,18 @@ The cursor only advances after a fully successful upsert, so a mid-run crash re-
 | Router | admin | ops_manager | warehouse | driver | finance |
 |---|---|---|---|---|---|
 | auth (`/auth/*`) | ✔ | ✔ | ✔ | ✔ | ✔ |
-| products / suppliers / categories | ✔ | ✔ | read | — | read |
-| clients / fridges | ✔ | ✔ | read | — | read |
-| menus (+ targets, caps) | ✔ | ✔ | read | — | — |
-| forecasts | ✔ | ✔ | read | — | — |
-| dispatches (save, confirm, reconcile) | ✔ | ✔ | read | read (own day's sheets) | — |
-| purchase_orders (create, send, receive, cancel) | ✔ | ✔ | ✔ | — | read |
-| stock (balances, adjustments, movements) | ✔ | ✔ | ✔ | — | read |
-| finance | ✔ | read | — | — | ✔ |
-| alerts | ✔ | ✔ | ✔ | — | read |
-| settings | ✔ | ✔ (no user mgmt) | — | — | — |
-| users CRUD | ✔ | — | — | — | — |
-| sync (`/sync/husky/*`), `/health/jobs` | ✔ | — | — | — | — |
+| products / suppliers / categories | ✔ | ✔ | read | - | read |
+| clients / fridges | ✔ | ✔ | read | - | read |
+| menus (+ targets, caps) | ✔ | ✔ | read | - | - |
+| forecasts | ✔ | ✔ | read | - | - |
+| dispatches (save, confirm, reconcile) | ✔ | ✔ | read | read (own day's sheets) | - |
+| purchase_orders (create, send, receive, cancel) | ✔ | ✔ | ✔ | - | read |
+| stock (balances, adjustments, movements) | ✔ | ✔ | ✔ | - | read |
+| finance | ✔ | read | - | - | ✔ |
+| alerts | ✔ | ✔ | ✔ | - | read |
+| settings | ✔ | ✔ (no user mgmt) | - | - | - |
+| users CRUD | ✔ | - | - | - | - |
+| sync (`/sync/husky/*`), `/health/jobs` | ✔ | - | - | - | - |
 
 A wrong role always yields **403** with the standard error body. The integration test suite asserts this matrix row by row (spec acceptance criterion).
 
@@ -682,7 +682,7 @@ Single envelope for all non-2xx responses:
 | **422** | Pydantic validation: missing adjustment reason, negative qty, past order date (R4), unknown enum | FastAPI validation detail wrapped in the envelope |
 | 502 | Downstream failure surfaced to caller (document generation, Husky pass-through on `/stock/current`) | `document_generation_failed`, `husky_unavailable` |
 
-Every 409 of type `stock_blocked` also writes an `alerts` row (`negative_blocked`) — visible in the Alerts inbox.
+Every 409 of type `stock_blocked` also writes an `alerts` row (`negative_blocked`) - visible in the Alerts inbox.
 
 ### Pagination
 
@@ -696,7 +696,7 @@ High-volume event/movement endpoints (`/stock/movements`, reconciliation raw lin
 
 ---
 
-## 6. Configuration — environment variables
+## 6. Configuration - environment variables
 
 All settings load once through `core/config.Settings` (pydantic-settings); nothing reads `os.environ` directly. Missing required vars fail startup loudly.
 
@@ -704,20 +704,20 @@ All settings load once through `core/config.Settings` (pydantic-settings); nothi
 |---|---|---|---|
 | `DATABASE_URL` | ✔ | PostgreSQL DSN (Railway-injected) | `postgresql+psycopg://...` |
 | `HUSKY_BASE_URL` | ✔ | Husky API root | `https://api.intelligentfridges.com/api/v1/frigoloco` |
-| `HUSKY_USER` | ✔ | HTTP Basic user | Dedicated backend account — never the personal creds from the old scripts (rotated at cutover) |
+| `HUSKY_USER` | ✔ | HTTP Basic user | Dedicated backend account - never the personal creds from the old scripts (rotated at cutover) |
 | `HUSKY_PASSWORD` | ✔ | HTTP Basic password | |
 | `JWT_SECRET` | ✔ | HS256 signing key for access/refresh tokens | Rotate = force re-login |
-| `JWT_ACCESS_TTL_MINUTES` | — | Access-token lifetime (default 30) | |
+| `JWT_ACCESS_TTL_MINUTES` | - | Access-token lifetime (default 30) | |
 | `AZURE_BLOB_CONN` | ✔ | Azure Blob connection string | Container `documents`, private access |
 | `EMAIL_PROVIDER` | ✔ | `smtp` or provider name (open question Q1 in spec) | |
 | `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USER` / `EMAIL_PASSWORD` | ✔* | SMTP credentials (*when provider = smtp) | |
 | `EMAIL_FROM` | ✔ | Sender identity | `@frigoloco.be`, SPF/DKIM configured pre-Phase-2 |
-| `STAGING_EMAIL_OVERRIDE` | — | When set, **every** outbound email goes to this address instead of real recipients | Port of `OrderSheetIsTestRun`; set in staging, empty in production |
-| `DUAL_SCORING` | — | Feature flag: dual 50/50 global × per-fridge scoring model (R2 target model) | Default `false` — parity-first cutover |
-| `RESIDUAL_STOCK_FORECAST` | — | Feature flag: residual-stock deduction using live DLC in the forecast (Phase 5.4) | Default `false` |
-| `SCHEDULER_ENABLED` | — | Default `true`; set `false` on any extra replica or in tests | Escape hatch for the web-vs-worker split (spec Decision 4) |
-| `APP_ENV` | — | `local` / `staging` / `production` — log level, docs exposure | |
-| `SENTRY_DSN` | — | Error reporting (optional) | |
+| `STAGING_EMAIL_OVERRIDE` | - | When set, **every** outbound email goes to this address instead of real recipients | Port of `OrderSheetIsTestRun`; set in staging, empty in production |
+| `DUAL_SCORING` | - | Feature flag: dual 50/50 global × per-fridge scoring model (R2 target model) | Default `false` - parity-first cutover |
+| `RESIDUAL_STOCK_FORECAST` | - | Feature flag: residual-stock deduction using live DLC in the forecast (Phase 5.4) | Default `false` |
+| `SCHEDULER_ENABLED` | - | Default `true`; set `false` on any extra replica or in tests | Escape hatch for the web-vs-worker split (spec Decision 4) |
+| `APP_ENV` | - | `local` / `staging` / `production` - log level, docs exposure | |
+| `SENTRY_DSN` | - | Error reporting (optional) | |
 
 Feature-flag precedence: env var is the master switch; per-tenant tunables (scoring weights, margins, thresholds, POS %, RFID fee) live in the `settings` table and are editable at runtime via `/api/v1/settings`. Env flags gate *code paths*; `settings` rows tune *parameters*.
 
@@ -729,10 +729,10 @@ Mirrors the spec's Testing & Verification section; parity fixtures are the cutov
 
 | Suite | Location | What it proves |
 |---|---|---|
-| **Parity (golden-file)** | `backend/tests/parity/` | Each ported engine reproduces the frozen Excel fixtures within tolerance: forecast block for one delivery date (R1), product scores (R2 — e.g. Salade Cesar C&G `0.6883 ± 0.001`), PO totals for order `2026-00360` (`239.36 / 14.36 / 253.72`, R4/R5), reconciliation category totals row-for-row (R9), one weekly P&L row within €0.01 (R10), one month of supplier analysis (R11/R12), GSV for `if-0000271` June 2026. A module's Excel-retirement gate requires its parity suite green. |
+| **Parity (golden-file)** | `backend/tests/parity/` | Each ported engine reproduces the frozen Excel fixtures within tolerance: forecast block for one delivery date (R1), product scores (R2 - e.g. Salade Cesar C&G `0.6883 ± 0.001`), PO totals for order `2026-00360` (`239.36 / 14.36 / 253.72`, R4/R5), reconciliation category totals row-for-row (R9), one weekly P&L row within €0.01 (R10), one month of supplier analysis (R11/R12), GSV for `if-0000271` June 2026. A module's Excel-retirement gate requires its parity suite green. |
 | **Unit** | `backend/tests/unit/` | Pure-function coverage: order-no sequencing incl. year rollover + concurrent creation, VAT math, allocation rounding guards (0.51 bump, leftover-to-top-score), week/month bucketing + proration, Husky normalization (cents, comma decimals, tag statuses), stock trigger behavior. |
 | **Integration** | `backend/tests/integration/` | Real Postgres (dockerized): confirm-dispatch atomicity (injected document failure → full rollback), PO receive/cancel movement pairs, sync idempotency (double backfill → identical row counts), trigger-level negative-stock rejection. |
 | **Role suite** | `backend/tests/integration/test_roles.py` | The §5 access matrix, asserted per router × role (finance write to stock → 403, etc.). |
 | **Document golden files** | `backend/tests/parity/documents/` | Rendered PO PDF/XLSX and one dispatch sheet vs the template layouts (structural comparison, not pixel). |
 
-Fixtures come from the frozen workbook snapshots in `migration/fixtures/` (Manual Step 4). Husky client tests run against recorded httpx fixture responses — no live API in CI. E2E (Playwright) lives with the frontend and is out of scope here.
+Fixtures come from the frozen workbook snapshots in `migration/fixtures/` (Manual Step 4). Husky client tests run against recorded httpx fixture responses - no live API in CI. E2E (Playwright) lives with the frontend and is out of scope here.

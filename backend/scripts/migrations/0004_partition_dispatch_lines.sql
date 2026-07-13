@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 0004 — dispatch_lines -> monthly RANGE-partitioned table
+-- Migration 0004 - dispatch_lines -> monthly RANGE-partitioned table
 -- ============================================================================
 -- Decision (2026-07-03, user): dispatch_lines is the largest projected operational
 -- table (the Excel GlobalDispatchHistoryTable was 20,692 rows and growing). Make
@@ -44,7 +44,7 @@ BEGIN
        AND c.relname = 'dispatch_lines';
 
     IF is_partitioned THEN
-        RAISE NOTICE 'migration 0004: dispatch_lines already partitioned — skipped';
+        RAISE NOTICE 'migration 0004: dispatch_lines already partitioned - skipped';
         RETURN;
     END IF;
 
@@ -118,7 +118,7 @@ END;
 $mig$;
 
 -- Note: delivery_date is the partition key and MUST be supplied by the caller.
--- A trigger cannot backfill it — PostgreSQL rejects a NULL partition key during
+-- A trigger cannot backfill it - PostgreSQL rejects a NULL partition key during
 -- tuple routing, before any BEFORE-INSERT trigger on the parent could run. The
 -- dispatch service sets delivery_date = dispatch.delivery_date on every insert.
 
@@ -148,7 +148,7 @@ RETURNS VOID
 LANGUAGE plpgsql
 AS $$
 -- Scheduler hook: call monthly so the current AND next month's partitions always
--- exist ahead of inserts — for sales_events, restock_events AND dispatch_lines.
+-- exist ahead of inserts - for sales_events, restock_events AND dispatch_lines.
 DECLARE
     next_month DATE := (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')::DATE;
 BEGIN

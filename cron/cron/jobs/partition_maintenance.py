@@ -1,4 +1,4 @@
-"""partition_maintenance — monthly, 1st of month 01:00 Europe/Brussels.
+"""partition_maintenance - monthly, 1st of month 01:00 Europe/Brussels.
 
 Thin scheduler/CLI wrapper. The partition-maintenance logic lives in
 :func:`app.maintenance.run_partition_maintenance`, which calls the schema

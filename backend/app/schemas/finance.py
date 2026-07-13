@@ -96,6 +96,6 @@ class FridgeReportRead(BaseModel):
     food_cost: MoneyStr
     revenue: MoneyStr
     margin: MoneyStr  # food margin in euros
-    margin_pct: RateStr | None = None  # food margin as % of ex-VAT revenue
+    margin_pct: RateStr | None = None  # food margin as a 0..1 fraction of ex-VAT revenue
     # Per-product breakdown.
     rows: list[FridgeReportRow] = []

@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/select'
 import { toast } from '@/components/ui/sonner'
 import { api, ApiError, type Page } from '@/lib/api'
+import { EMPTY_PLACEHOLDER } from '@/lib/format'
 import { Dialog } from './components/Dialog'
 import { Field, Textarea, fieldErrorsFromApiError, generalErrorMessage } from './components/form'
 import type {
@@ -100,7 +101,9 @@ export function FridgesPage() {
   const clientsQuery = useClientsLookup()
   const clientName = React.useCallback(
     (id: number | null) =>
-      id === null ? '—' : clientsQuery.data?.find((c) => c.id === id)?.name ?? `#${id}`,
+      id === null
+        ? EMPTY_PLACEHOLDER
+        : clientsQuery.data?.find((c) => c.id === id)?.name ?? `#${id}`,
     [clientsQuery.data],
   )
 
@@ -554,7 +557,7 @@ function DeliveryConfigDialog({ fridge, onClose }: { fridge: Fridge; onClose: ()
     <Dialog
       open
       onClose={onClose}
-      title={`Delivery schedule — ${fridge.friendly_name}`}
+      title={`Delivery schedule: ${fridge.friendly_name}`}
       description="Tick each weekday this fridge is restocked. Min daily qty and days-to-fill drive the forecast."
       widthClassName="max-w-2xl"
       footer={

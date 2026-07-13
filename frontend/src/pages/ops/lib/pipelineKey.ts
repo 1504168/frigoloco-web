@@ -61,7 +61,7 @@ export function currentWeekDayKey(reference: Date = new Date()): WeekDayKey {
   // Copy at UTC midnight so weekday math is stable.
   const date = new Date(Date.UTC(reference.getFullYear(), reference.getMonth(), reference.getDate()))
   const weekday = date.getUTCDay() || 7
-  // Shift to the Thursday of this week — the ISO year owner of the week.
+  // Shift to the Thursday of this week - the ISO year owner of the week.
   const thursday = new Date(date)
   thursday.setUTCDate(date.getUTCDate() + (4 - weekday))
   const isoYear = thursday.getUTCFullYear()
@@ -102,8 +102,8 @@ function readStoredKey(): WeekDayKey | null {
 /**
  * Binds the pipeline key to `?year&week&day` URL search params, falling back to
  * the last selection (sessionStorage) and finally the current ISO week. Writing
- * a new key updates both the URL and storage so a sibling page — reached via the
- * sidebar without params — restores the same selection.
+ * a new key updates both the URL and storage so a sibling page - reached via the
+ * sidebar without params - restores the same selection.
  */
 export function useWeekDayKey(): { key: WeekDayKey; setKey: (next: WeekDayKey) => void } {
   const [searchParams, setSearchParams] = useSearchParams()

@@ -39,7 +39,7 @@ export function DispatchPage() {
 
   const isPast = keyIsPast(key)
 
-  // Any stage change clears the current grid — it belongs to another key.
+  // Any stage change clears the current grid - it belongs to another key.
   React.useEffect(() => {
     setLoaded(false)
     setStatus(null)
@@ -59,7 +59,7 @@ export function DispatchPage() {
     },
     onError: (error) => {
       if (error instanceof ApiError && error.status === 404) {
-        toast.error('No saved menu for this key — save a menu first.')
+        toast.error('No saved menu for this key - save a menu first.')
       } else {
         toast.error(error instanceof ApiError ? error.message : 'Failed to import from menu')
       }
@@ -102,7 +102,7 @@ export function DispatchPage() {
       setStatus(saved.status)
       setOverwriteOpen(false)
       toast.success('Dispatch saved as planned', {
-        description: 'Stock is NOT reduced by saving — only "Create Individual Dispatch" moves stock.',
+        description: 'Stock is NOT reduced by saving - only "Create Individual Dispatch" moves stock.',
       })
     },
     onError: (error) => {
@@ -131,7 +131,7 @@ export function DispatchPage() {
     onSuccess: (result) => {
       setStatus(result.status)
       setCreateOpen(false)
-      toast.success(`Dispatch created — ${result.movements_created} stock movements`, {
+      toast.success(`Dispatch created: ${result.movements_created} stock movements`, {
         description: 'Stock has been reduced for every dispatched product.',
       })
     },
@@ -145,13 +145,13 @@ export function DispatchPage() {
             return `${name}: need ${entry.requested}, have ${entry.available}`
           })
           .join(' · ')
-        toast.error('Stock blocked — dispatch not created', {
+        toast.error('Stock blocked - dispatch not created', {
           description: detail || 'Some products would go below zero stock.',
         })
         return
       }
       if (error instanceof ApiError && error.code === 'past_date_requires_force') {
-        toast.error('This delivery date is in the past — tick "force" to dispatch it anyway.')
+        toast.error('This delivery date is in the past - tick "force" to dispatch it anyway.')
         return
       }
       toast.error(error instanceof ApiError ? error.message : 'Failed to create dispatch')

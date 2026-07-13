@@ -49,6 +49,10 @@ DEFAULT_POS_FEE_PCT = Decimal("0.09")  # fraction (NOT money)
 # RFID fee is money in cents now: EUR 0.10 -> 10 cents per item sold.
 DEFAULT_RFID_FEE_RATE = Decimal("10")
 
+# Every ratio the service emits (margin, %sold, review, scores) is a plain 0..1
+# fraction quantized to four decimal places.
+_FOUR_PLACES = Decimal("0.0001")
+
 
 @dataclass(frozen=True)
 class DateWindow:
@@ -245,7 +249,7 @@ def upsert_weekly_inputs(
 
 
 # ===========================================================================
-# Monthly analysis (R11/R12) — live aggregation, no stored table
+# Monthly analysis (R11/R12) - live aggregation, no stored table
 # ===========================================================================
 
 
@@ -487,7 +491,7 @@ def _build_margin_minus_rfid_rows(
 
 
 # ===========================================================================
-# Fridge report (formerly GSV) — per-product rows + summary
+# Fridge report (formerly GSV) - per-product rows + summary
 # ===========================================================================
 
 
@@ -521,7 +525,7 @@ class FridgeReportData:
     food_cost: int
     revenue: int
     margin: int
-    margin_pct: Decimal | None
+    margin_pct: Decimal | None  # 0..1 fraction of ex-VAT revenue, 4 decimals
 
 
 def build_fridge_report(
@@ -535,7 +539,7 @@ def build_fridge_report(
     Rows: each product ADDED (valid tags only) to the fridge in the window, with
     its added quantity and unit buying/selling prices (per-fridge selling-price
     override applied when present). Summary: total added qty, food cost (added
-    basis), sales revenue, and food margin in euros and as a percentage of the
+    basis), sales revenue, and food margin in euros and as a 0..1 fraction of the
     ex-VAT revenue.
     """
     # Select only the columns needed (not the whole ORM entity) so the report is
@@ -629,7 +633,7 @@ def build_fridge_report(
     revenue_ex_vat = revenue / VAT_DIVISOR
     margin = revenue_ex_vat - food_cost
     margin_pct = (
-        (margin / revenue_ex_vat * Decimal("100")).quantize(Decimal("0.01"))
+        (margin / revenue_ex_vat).quantize(_FOUR_PLACES)
         if revenue_ex_vat > 0
         else None
     )
@@ -681,11 +685,10 @@ def get_fridge_gsv_report(
 
 
 # ===========================================================================
-# Product rating scorecard — full Excel-equivalent columns from raw facts
+# Product rating scorecard - full Excel-equivalent columns from raw facts
 # ===========================================================================
 
 _SCORECARD_WINDOW_DAYS = 365
-_FOUR_PLACES = Decimal("0.0001")
 
 
 @dataclass(frozen=True)
@@ -865,7 +868,7 @@ def build_scorecard(
     """Build the product rating scorecard live from the raw facts.
 
     Aggregates the trailing ``window_days`` of ``sales_events`` (sold),
-    ``restock_events`` (added, excluding unrecognised tags — same denominator as
+    ``restock_events`` (added, excluding unrecognised tags - same denominator as
     the nightly scoring job), and ``product_reviews`` (positive vs negative), then
     computes every Excel-equivalent column per product. The final score reuses the
     live ``scoring_weights`` and the legacy scoring formula so a UI recompute and

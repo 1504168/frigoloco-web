@@ -3,7 +3,7 @@ ops router reuses.
 
 The project file layout gives the operations slice no dedicated ``common`` module,
 so the cross-cutting boundary primitives (error envelope, pagination, the
-Decimal→string money type and the per-router ``EnvelopeRoute``) live here — this
+Decimal→string money type and the per-router ``EnvelopeRoute``) live here - this
 is the foundational schema module every other router imports. Keeping them in one
 place is the DRY-correct home given the fixed file list.
 """
@@ -77,7 +77,7 @@ class ApiException(Exception):
 def api_error(
     status_code: int, code: str, message: str, details: Any | None = None
 ) -> ApiException:
-    """Construct (caller raises) an ``ApiException`` — keeps call sites terse."""
+    """Construct (caller raises) an ``ApiException`` - keeps call sites terse."""
     return ApiException(status_code, code, message, details)
 
 
