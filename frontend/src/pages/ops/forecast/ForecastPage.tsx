@@ -1,7 +1,6 @@
 import * as React from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Download, Play, Save, TrendingUp } from 'lucide-react'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { Button } from '@/components/ui/button'
@@ -369,50 +368,44 @@ export function ForecastPage() {
   })
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumb="Planning / Forecast"
-        title="Forecast"
-        description="Compute demand for the selected week/day, review it per fridge × category, then save it as the pipeline's forecast."
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Select value={model} onValueChange={setModel}>
-              <SelectTrigger className="w-56">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {FORECAST_MODELS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              variant="outline"
-              onClick={() => loadSavedMutation.mutate()}
-              disabled={loadSavedMutation.isPending}
-            >
-              <Download className="h-4 w-4" />
-              {loadSavedMutation.isPending ? 'Loading…' : 'Load saved'}
-            </Button>
-            <Button onClick={() => runMutation.mutate()} disabled={runMutation.isPending}>
-              <Play className="h-4 w-4" />
-              {runMutation.isPending ? 'Running…' : 'Run'}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => saveMutation.mutate(false)}
-              disabled={saveMutation.isPending}
-            >
-              <Save className="h-4 w-4" />
-              {saveMutation.isPending ? 'Saving…' : 'Save'}
-            </Button>
-          </div>
-        }
-      />
-
-      <WeekDayPicker value={key} onChange={setKey} />
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <WeekDayPicker value={key} onChange={setKey} />
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Select value={model} onValueChange={setModel}>
+            <SelectTrigger className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {FORECAST_MODELS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            onClick={() => loadSavedMutation.mutate()}
+            disabled={loadSavedMutation.isPending}
+          >
+            <Download className="h-4 w-4" />
+            {loadSavedMutation.isPending ? 'Loading…' : 'Load saved'}
+          </Button>
+          <Button onClick={() => runMutation.mutate()} disabled={runMutation.isPending}>
+            <Play className="h-4 w-4" />
+            {runMutation.isPending ? 'Running…' : 'Run'}
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => saveMutation.mutate(false)}
+            disabled={saveMutation.isPending}
+          >
+            <Save className="h-4 w-4" />
+            {saveMutation.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+      </div>
 
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">

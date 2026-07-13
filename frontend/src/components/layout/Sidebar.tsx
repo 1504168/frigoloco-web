@@ -50,7 +50,7 @@ function BrandBlock() {
  */
 export function Sidebar() {
   return (
-    <aside className="flex h-full w-60 shrink-0 flex-col bg-sidebar text-sidebar-ink">
+    <aside className="flex h-full w-48 shrink-0 flex-col bg-sidebar text-sidebar-ink">
       <BrandBlock />
 
       <nav className="flex-1 overflow-y-auto pb-4">

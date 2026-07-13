@@ -1,7 +1,6 @@
 import * as React from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
@@ -142,17 +141,14 @@ export function ClientsPage() {
   )
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumb="Masters / Clients"
-        title="Clients"
-        description="Companies served by FrigoLoco. Open a client to manage fees and interventions."
-        actions={
+    <div className="space-y-3">
+      <div className="flex items-center">
+        <div className="ml-auto">
           <Button onClick={() => setCreating(true)}>
             <Plus className="h-4 w-4" /> New client
           </Button>
-        }
-      />
+        </div>
+      </div>
 
       <DataTable
         columns={columns}

@@ -1,7 +1,6 @@
 import * as React from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Search } from 'lucide-react'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { MoneyCell } from '@/components/shared/MoneyCell'
@@ -14,7 +13,6 @@ import {
   HuskySyncControl,
   StatusFilterSelect,
   StatusOverrideSelect,
-  SYNC_OVERRIDE_CAPTION,
 } from '@/pages/masters/sync/components'
 import type { StatusFilter } from '@/pages/masters/sync/types'
 
@@ -143,32 +141,27 @@ export function ProductsPage() {
   )
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumb="Masters / Products"
-        title="Products"
-        description={`Catalogue synced from Husky. ${SYNC_OVERRIDE_CAPTION}`}
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={searchInput}
-                onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="Search code or name…"
-                className="w-64 pl-8"
-              />
-            </div>
-            <StatusFilterSelect value={statusFilter} onChange={setStatusFilter} />
-            <HuskySyncControl
-              feed="catalogue"
-              endpoint="catalogue"
-              invalidateKeys={[PRODUCTS_QUERY_KEY]}
-              itemLabel="product"
-            />
-          </div>
-        }
-      />
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="Search code or name…"
+            className="w-64 pl-8"
+          />
+        </div>
+        <StatusFilterSelect value={statusFilter} onChange={setStatusFilter} />
+        <div className="ml-auto">
+          <HuskySyncControl
+            feed="catalogue"
+            endpoint="catalogue"
+            invalidateKeys={[PRODUCTS_QUERY_KEY]}
+            itemLabel="product"
+          />
+        </div>
+      </div>
 
       <DataTable
         columns={columns}

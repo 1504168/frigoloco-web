@@ -36,14 +36,14 @@ export function HuskySyncControl({ feed, endpoint, invalidateKeys, itemLabel }: 
   const run = latestRun.data
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="flex items-center gap-2">
       <Button variant="outline" onClick={trigger} disabled={isSyncing}>
         <RefreshCw className={cn('h-4 w-4', isSyncing && 'animate-spin')} />
         {isSyncing ? 'Syncing…' : 'Sync from Husky'}
       </Button>
-      <span className="text-[11px] text-muted-foreground">
+      <span className="text-[11px] text-muted-foreground whitespace-nowrap">
         {latestRun.isLoading
-          ? 'Loading sync status…'
+          ? 'Loading…'
           : run
             ? `Last synced ${formatDateTime(run.finished_at ?? run.started_at)} · ${run.status}`
             : 'Never synced'}

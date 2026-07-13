@@ -1,7 +1,6 @@
 import * as React from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowDown, ArrowUp, ChevronsUpDown, RefreshCw } from 'lucide-react'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
@@ -136,53 +135,37 @@ export function RatingPage() {
   const rangeEnd = Math.min(offset + PAGE_SIZE, total)
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumb="Planning / Product Rating"
-        title="Product Rating"
-        description={
-          weights ? (
-            <span>
-              Scored over {data?.window_days ?? windowDays} days (through {data?.period_end}). Weights:{' '}
-              <b className="text-foreground">%sold {weights.pct_sold}</b> ·{' '}
-              <b className="text-foreground">margin {weights.margin}</b> ·{' '}
-              <b className="text-foreground">review {weights.review}</b>
-            </span>
-          ) : (
-            'Product scorecard blended from sell-through, margin and review signals.'
-          )
-        }
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              value={String(windowDays)}
-              onValueChange={(value) => {
-                setWindowDays(Number(value))
-                setOffset(0)
-              }}
-            >
-              <SelectTrigger className="w-36">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {WINDOW_OPTIONS.map((days) => (
-                  <SelectItem key={days} value={String(days)}>
-                    Last {days} days
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              variant="outline"
-              onClick={() => recomputeMutation.mutate()}
-              disabled={recomputeMutation.isPending}
-            >
-              <RefreshCw className={cn('h-4 w-4', recomputeMutation.isPending && 'animate-spin')} />
-              {recomputeMutation.isPending ? 'Recomputing…' : 'Recompute'}
-            </Button>
-          </div>
-        }
-      />
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex items-center gap-2">
+          <Select
+            value={String(windowDays)}
+            onValueChange={(value) => {
+              setWindowDays(Number(value))
+              setOffset(0)
+            }}
+          >
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {WINDOW_OPTIONS.map((days) => (
+                <SelectItem key={days} value={String(days)}>
+                  Last {days} days
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            onClick={() => recomputeMutation.mutate()}
+            disabled={recomputeMutation.isPending}
+          >
+            <RefreshCw className={cn('h-4 w-4', recomputeMutation.isPending && 'animate-spin')} />
+            {recomputeMutation.isPending ? 'Recomputing…' : 'Recompute'}
+          </Button>
+        </div>
+      </div>
 
       {scorecardQuery.isError ? (
         <ErrorState error={scorecardQuery.error} onRetry={() => scorecardQuery.refetch()} />
