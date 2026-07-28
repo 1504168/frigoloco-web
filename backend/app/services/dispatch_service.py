@@ -529,13 +529,19 @@ def confirm_dispatch(
 
 
 def import_from_menu(
-    *, year: int, week: int, day_name: str, session: Session
+    *,
+    year: int,
+    week: int,
+    day_name: str,
+    category_id: int | None = None,
+    session: Session,
 ) -> MatrixData:
     """Preview dispatch lines seeded from the saved menu (NOT persisted, D2).
 
     The saved menu grid and the dispatch matrix share the same fridge x product
     shape, so the menu quantities map straight onto a dispatch preview
-    (``dispatch_id = 0`` marks it unsaved).
+    (``dispatch_id = 0`` marks it unsaved). When ``category_id`` is set, only
+    that category is previewed (the caller merges it into the existing matrix).
     """
     grid = menu_service.get_saved_menu(
         year=year, week=week, day_name=day_name, session=session
@@ -547,6 +553,13 @@ def import_from_menu(
             "No saved menu to import from for this key",
             {"year": year, "week": week, "day_name": day_name},
         )
+
+    category_of = {product.product_id: product.category_id for product in grid.products}
+    in_scope = (
+        (lambda cat_id: cat_id == category_id)
+        if category_id is not None
+        else (lambda cat_id: True)
+    )
     return MatrixData(
         dispatch_id=0,
         fridges=[
@@ -560,6 +573,7 @@ def import_from_menu(
                 category_id=product.category_id,
             )
             for product in grid.products
+            if in_scope(product.category_id)
         ],
         categories=[
             _MatrixCategory(
@@ -568,10 +582,12 @@ def import_from_menu(
                 product_ids=category.product_ids,
             )
             for category in grid.categories
+            if in_scope(category.category_id)
         ],
         cells=[
             _MatrixCell(fridge_id=cell.fridge_id, product_id=cell.product_id, qty=cell.qty)
             for cell in grid.cells
+            if in_scope(category_of.get(cell.product_id))
         ],
     )
 
@@ -584,6 +600,50 @@ def _dispatch_for_delivery_date(
     ).scalars().first()
 
 
+def _dispatch_category_has_lines(
+    dispatch_id: int, category_id: int, session: Session
+) -> bool:
+    """True when the saved dispatch already holds lines for this category."""
+    return bool(
+        session.execute(
+            select(DispatchLine.id)
+            .join(Product, Product.id == DispatchLine.product_id)
+            .where(
+                DispatchLine.dispatch_id == dispatch_id,
+                Product.category_id == category_id,
+            )
+            .limit(1)
+        ).scalar()
+    )
+
+
+def _validate_lines_in_category(
+    lines: list[LineInput], category_id: int, session: Session
+) -> None:
+    """Reject a category-scoped save whose lines reach outside that category."""
+    product_ids = {line.product_id for line in lines}
+    if not product_ids:
+        return
+    category_of = {
+        product.id: product.category_id
+        for product in session.execute(
+            select(Product).where(Product.id.in_(product_ids))
+        )
+        .scalars()
+        .all()
+    }
+    outside = sorted(
+        pid for pid in product_ids if category_of.get(pid) != category_id
+    )
+    if outside:
+        raise api_error(
+            422,
+            "validation_error",
+            "Dispatch lines contain products outside the target category",
+            {"category_id": category_id, "product_ids": outside},
+        )
+
+
 def save_planned(
     *,
     year: int,
@@ -591,6 +651,7 @@ def save_planned(
     day_name: str,
     lines: list[LineInput],
     overwrite: bool,
+    category_id: int | None = None,
     user_id: int | None,
     session: Session,
 ) -> Dispatch:
@@ -601,7 +662,15 @@ def save_planned(
     existing for the key yields ``409 {code:"exists"}`` unless ``overwrite`` is
     set (delete prior lines + reinsert in one transaction + audit). A dispatch
     already confirmed cannot be overwritten.
+
+    When ``category_id`` is set, only that category's lines are replaced (the
+    Excel "save one category" flow): other categories' planned lines stay intact,
+    and the ``exists`` conflict fires only if THAT category already has lines.
     """
+    scoped = category_id is not None
+    if scoped:
+        _validate_lines_in_category(lines, category_id, session)
+
     delivery_date = resolve_delivery_date(year, week, day_name)
     iso_year, iso_week, weekday = delivery_date.isocalendar()
     existing = _dispatch_for_delivery_date(delivery_date, session)
@@ -614,12 +683,21 @@ def save_planned(
                 "Dispatch already created (dispatched); cannot overwrite",
                 {"delivery_date": delivery_date.isoformat(), "status": existing.status.value},
             )
-        if not overwrite:
+        conflict = (
+            _dispatch_category_has_lines(existing.id, category_id, session)
+            if scoped
+            else True
+        )
+        if conflict and not overwrite:
             raise api_error(
                 409,
                 "exists",
                 "A saved dispatch already exists for this key; resend with overwrite=true",
-                {"delivery_date": delivery_date.isoformat(), "dispatch_id": existing.id},
+                {
+                    "delivery_date": delivery_date.isoformat(),
+                    "dispatch_id": existing.id,
+                    "category_id": category_id,
+                },
             )
         dispatch = existing
     else:
@@ -634,16 +712,23 @@ def save_planned(
         session.flush()  # assign dispatch.id
 
     written = _replace_lines(
-        dispatch=dispatch, lines=lines, category_id=None, session=session
+        dispatch=dispatch, lines=lines, category_id=category_id, session=session
     )
+    if scoped:
+        action = "dispatch.save.category"
+    elif existing is not None:
+        action = "dispatch.save.overwrite"
+    else:
+        action = "dispatch.save"
     record_audit(
         session,
-        action="dispatch.save.overwrite" if existing is not None else "dispatch.save",
+        action=action,
         entity="dispatches",
         entity_id=dispatch.id,
         after={
             "delivery_date": delivery_date.isoformat(),
             "status": "saved",
+            "category_id": category_id,
             "lines_written": written,
         },
         user_id=user_id,

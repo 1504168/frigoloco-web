@@ -12,6 +12,7 @@ import { ConfirmDialog } from '@/pages/ops/components/ConfirmDialog'
 import { Modal } from '@/pages/ops/components/Modal'
 import { PlanningGrid } from '@/pages/ops/components/PlanningGrid'
 import { AddProductPicker } from '@/pages/ops/components/AddProductPicker'
+import { CategoryScopeSelect } from '@/pages/ops/components/CategoryScopeSelect'
 import {
   useCategories,
   useMenuCategoryColumns,
@@ -35,6 +36,8 @@ export function MenuPage() {
   const [loaded, setLoaded] = React.useState(false)
   const [overwriteOpen, setOverwriteOpen] = React.useState(false)
   const [addOpen, setAddOpen] = React.useState(false)
+  // null = whole menu; a category id scopes pull/save to that one category.
+  const [scopeCategoryId, setScopeCategoryId] = React.useState<number | null>(null)
 
   // Any stage change clears the current grid - it belongs to another key.
   React.useEffect(() => {
@@ -53,10 +56,19 @@ export function MenuPage() {
   const importMutation = useMutation({
     mutationFn: () =>
       api.post<MenuGrid>('/api/v1/menus/import-from-forecast', undefined, {
-        params: { year: key.year, week: key.week, day_name: key.dayName },
+        params: {
+          year: key.year,
+          week: key.week,
+          day_name: key.dayName,
+          ...(scopeCategoryId !== null ? { category_id: scopeCategoryId } : {}),
+        },
       }),
     onSuccess: (result) => {
-      grid.loadFromGrid(result)
+      if (scopeCategoryId !== null) {
+        grid.mergeCategoryFromGrid(result, scopeCategoryId)
+      } else {
+        grid.loadFromGrid(result)
+      }
       setLoaded(true)
       toast.success(
         result.products.length
@@ -120,14 +132,22 @@ export function MenuPage() {
   }, [savedMenuQuery.data, loaded, key.year, key.week, key.dayName])
 
   const saveMutation = useMutation({
-    mutationFn: (overwrite: boolean) =>
-      api.post<MenuGrid>('/api/v1/menus/save', {
+    mutationFn: (overwrite: boolean) => {
+      const scopedProductIds =
+        scopeCategoryId !== null ? grid.categoryProductIds(scopeCategoryId) : null
+      const lines = grid
+        .toLines()
+        .filter(({ product_id }) => scopedProductIds === null || scopedProductIds.has(product_id))
+        .map(({ fridge_id, product_id, qty }) => ({ fridge_id, product_id, qty }))
+      return api.post<MenuGrid>('/api/v1/menus/save', {
         year: key.year,
         week: key.week,
         day_name: key.dayName,
-        lines: grid.toLines().map(({ fridge_id, product_id, qty }) => ({ fridge_id, product_id, qty })),
+        lines,
         overwrite,
-      }),
+        ...(scopeCategoryId !== null ? { category_id: scopeCategoryId } : {}),
+      })
+    },
     onSuccess: (result) => {
       grid.loadFromGrid(result)
       setLoaded(true)
@@ -151,6 +171,7 @@ export function MenuPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <WeekDayPicker value={key} onChange={setKey} />
         <div className="flex flex-wrap items-center gap-2">
+          <CategoryScopeSelect value={scopeCategoryId} onChange={setScopeCategoryId} />
           <Button variant="outline" onClick={() => setAddOpen(true)} disabled={!catalogueQuery.data}>
             <Plus className="h-4 w-4" />
             Product

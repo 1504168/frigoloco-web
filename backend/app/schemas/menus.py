@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import datetime
+from decimal import Decimal
 
 from pydantic import Field
 
 from app.models.enums import MenuStatus
+from app.money import MoneyStr
 from app.schemas.masters import ApiModel
 
 
@@ -113,6 +115,15 @@ class MenuGridOut(ApiModel):
     cells: list[MenuGridCellOut]
 
 
+class MenuDraftLineOut(ApiModel):
+    product_id: int
+    code: str
+    name: str
+    qty: int
+    unit_price: MoneyStr  # cents in, euro string out
+    vat_rate: Decimal
+
+
 class MenuLineItem(ApiModel):
     fridge_id: int
     product_id: int
@@ -124,5 +135,8 @@ class MenuSaveRequest(ApiModel):
     week: int = Field(ge=1, le=53)
     day_name: str
     lines: list[MenuLineItem]
-    # Confirm-overwrite: false -> 409 {code:"exists"} when a saved menu exists.
+    # Confirm-overwrite: false -> 409 {code:"exists"} when a saved menu (or, when
+    # category_id is set, that category) already has saved lines.
     overwrite: bool = False
+    # When set, only this category's lines are replaced; others stay intact.
+    category_id: int | None = None

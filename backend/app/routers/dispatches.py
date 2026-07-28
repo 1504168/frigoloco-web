@@ -58,12 +58,21 @@ def import_dispatch_from_menu(
     year: int = Query(..., ge=2020, le=2100),
     week: int = Query(..., ge=1, le=53),
     day_name: str = Query(...),
+    category_id: int | None = Query(default=None),
     session: Session = Depends(get_db),
 ) -> DispatchMatrix:
-    """Preview dispatch lines seeded from the saved menu (not persisted)."""
+    """Preview dispatch lines seeded from the saved menu (not persisted).
+
+    ``category_id`` restricts the preview to a single category (the caller merges
+    it into the existing matrix); omit it to pull all categories.
+    """
     return DispatchMatrix.model_validate(
         dispatch_service.import_from_menu(
-            year=year, week=week, day_name=day_name, session=session
+            year=year,
+            week=week,
+            day_name=day_name,
+            category_id=category_id,
+            session=session,
         )
     )
 
@@ -87,6 +96,7 @@ def save_dispatch(
             for line in body.lines
         ],
         overwrite=body.overwrite,
+        category_id=body.category_id,
         user_id=None,
         session=session,
     )

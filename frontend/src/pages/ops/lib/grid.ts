@@ -95,9 +95,14 @@ export interface PlanningGridState {
   editedKeys: Set<string>
   hasData: boolean
   loadFromGrid: (grid: GridLike) => void
+  /** Merge only one category from an import into the existing grid (Excel
+   * "pull one category" flow): other categories' rows/cells are preserved. */
+  mergeCategoryFromGrid: (grid: GridLike, categoryId: number) => void
   addProduct: (product: Product) => void
   setCell: (fridgeId: number, productId: number, rawValue: string) => void
   toLines: () => GridLineItem[]
+  /** Product ids currently grouped under a category (empty set if none). */
+  categoryProductIds: (categoryId: number) => Set<number>
 }
 
 /**
@@ -138,6 +143,60 @@ export function usePlanningGridState(): PlanningGridState {
     setDraft(nextDraft)
     setEditedKeys(new Set())
   }, [])
+
+  const mergeCategoryFromGrid = React.useCallback((grid: GridLike, categoryId: number) => {
+    // Union new fridge rows onto the current set (preserve existing order).
+    setFridges((prev) => {
+      const seen = new Set(prev.map((fridge) => fridge.fridge_id))
+      const merged = [...prev]
+      for (const fridge of grid.fridges) {
+        if (!seen.has(fridge.fridge_id)) {
+          merged.push(fridge)
+          seen.add(fridge.fridge_id)
+        }
+      }
+      return merged
+    })
+
+    const imported = grid.categories.find((category) => category.category_id === categoryId)
+    const importedProductIds = new Set(imported?.product_ids ?? [])
+
+    setCategoryEntries((prev) => {
+      const next = new Map(prev)
+      if (imported) {
+        next.set(categoryId, {
+          category_name: imported.category_name,
+          product_ids: [...imported.product_ids],
+        })
+      } else {
+        next.delete(categoryId) // category has no imported rows -> clear it
+      }
+      return next
+    })
+
+    // Products that were (or now are) in this category, so their old cells go.
+    const staleProductIds = new Set<number>(importedProductIds)
+    for (const id of categoryEntries.get(categoryId)?.product_ids ?? []) staleProductIds.add(id)
+
+    setDraft((prev) => {
+      const next = new Map(prev)
+      for (const key of next.keys()) {
+        const productId = Number(key.split(':')[1])
+        if (staleProductIds.has(productId)) next.delete(key)
+      }
+      for (const cell of grid.cells) next.set(cellKey(cell.fridge_id, cell.product_id), cell.qty)
+      return next
+    })
+
+    setEditedKeys((prev) => {
+      const next = new Set(prev)
+      for (const key of next) {
+        const productId = Number(key.split(':')[1])
+        if (staleProductIds.has(productId)) next.delete(key)
+      }
+      return next
+    })
+  }, [categoryEntries])
 
   const addProduct = React.useCallback(
     (product: Product) => {
@@ -206,6 +265,11 @@ export function usePlanningGridState(): PlanningGridState {
     return lines
   }, [draft, editedKeys])
 
+  const categoryProductIds = React.useCallback(
+    (categoryId: number) => new Set(categoryEntries.get(categoryId)?.product_ids ?? []),
+    [categoryEntries],
+  )
+
   return {
     fridges,
     orderedCategories,
@@ -214,8 +278,10 @@ export function usePlanningGridState(): PlanningGridState {
     editedKeys,
     hasData: fridges.length > 0 || categoryEntries.size > 0,
     loadFromGrid,
+    mergeCategoryFromGrid,
     addProduct,
     setCell,
     toLines,
+    categoryProductIds,
   }
 }

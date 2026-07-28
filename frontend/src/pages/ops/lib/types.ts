@@ -142,6 +142,8 @@ export interface MenuSaveRequest {
   day_name: string
   lines: GridLineItem[]
   overwrite?: boolean
+  /** When set, only this category's lines are replaced; others stay intact. */
+  category_id?: number | null
 }
 
 // ── Dispatch ────────────────────────────────────────────────────────────---
@@ -178,6 +180,8 @@ export interface DispatchSaveRequest {
   day_name: string
   lines: GridLineItem[]
   overwrite?: boolean
+  /** When set, only this category's lines are replaced; others stay intact. */
+  category_id?: number | null
 }
 
 /** POST /api/v1/dispatches/create-individual response (schema: ConfirmResult). */

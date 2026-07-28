@@ -12,6 +12,7 @@ import { formatEuro } from '@/lib/format'
 import { WeekDayPicker } from '@/pages/ops/components/WeekDayPicker'
 import { ConfirmDialog } from '@/pages/ops/components/ConfirmDialog'
 import { PlanningGrid } from '@/pages/ops/components/PlanningGrid'
+import { CategoryScopeSelect } from '@/pages/ops/components/CategoryScopeSelect'
 import { useMenuCategoryColumns, useProductCatalogue } from '@/pages/ops/lib/reference'
 import { usePlanningGridState, useProductMeta } from '@/pages/ops/lib/grid'
 import { keyIsPast, useWeekDayKey, weekKeyLabel } from '@/pages/ops/lib/pipelineKey'
@@ -36,6 +37,8 @@ export function DispatchPage() {
   const [overwriteOpen, setOverwriteOpen] = React.useState(false)
   const [createOpen, setCreateOpen] = React.useState(false)
   const [force, setForce] = React.useState(false)
+  // null = whole dispatch; a category id scopes pull/save to that one category.
+  const [scopeCategoryId, setScopeCategoryId] = React.useState<number | null>(null)
 
   const isPast = keyIsPast(key)
 
@@ -49,11 +52,20 @@ export function DispatchPage() {
   const importMutation = useMutation({
     mutationFn: () =>
       api.post<DispatchMatrix>('/api/v1/dispatches/import-from-menu', undefined, {
-        params: { year: key.year, week: key.week, day_name: key.dayName },
+        params: {
+          year: key.year,
+          week: key.week,
+          day_name: key.dayName,
+          ...(scopeCategoryId !== null ? { category_id: scopeCategoryId } : {}),
+        },
       }),
     onSuccess: (matrix) => {
-      grid.loadFromGrid(matrix)
-      setStatus(null)
+      if (scopeCategoryId !== null) {
+        grid.mergeCategoryFromGrid(matrix, scopeCategoryId)
+      } else {
+        grid.loadFromGrid(matrix)
+        setStatus(null)
+      }
       setLoaded(true)
       toast.success(`Imported ${matrix.products.length} products from the saved menu`)
     },
@@ -117,14 +129,21 @@ export function DispatchPage() {
   }, [savedDispatchQuery.data, savedDispatchQuery.isFetching, loaded])
 
   const saveMutation = useMutation({
-    mutationFn: (overwrite: boolean) =>
-      api.post<DispatchRead>('/api/v1/dispatches/save', {
+    mutationFn: (overwrite: boolean) => {
+      const scopedProductIds =
+        scopeCategoryId !== null ? grid.categoryProductIds(scopeCategoryId) : null
+      const lines = grid
+        .toLines()
+        .filter((line) => scopedProductIds === null || scopedProductIds.has(line.product_id))
+      return api.post<DispatchRead>('/api/v1/dispatches/save', {
         year: key.year,
         week: key.week,
         day_name: key.dayName,
-        lines: grid.toLines(),
+        lines,
         overwrite,
-      }),
+        ...(scopeCategoryId !== null ? { category_id: scopeCategoryId } : {}),
+      })
+    },
     onSuccess: (saved) => {
       setStatus(saved.status)
       setOverwriteOpen(false)
@@ -208,6 +227,7 @@ export function DispatchPage() {
           {isPast ? <StatusChip variant="warning" label="Past date" /> : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <CategoryScopeSelect value={scopeCategoryId} onChange={setScopeCategoryId} />
           <Button
             variant="outline"
             onClick={() => importMutation.mutate()}

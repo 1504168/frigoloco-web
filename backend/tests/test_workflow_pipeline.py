@@ -369,3 +369,160 @@ def test_bad_day_name_422(ctx):
         f"{PREFIX}/forecasts/saved", params={"year": YEAR, "week": WEEK, "day_name": "Funday"}
     )
     assert resp.status_code == 422 and resp.json()["error"]["code"] == "validation_error"
+
+
+# --- category-scoped save & pull (Excel "one category" flow) ----------------
+
+
+def _two_normal_categories(session: Session) -> tuple[int, int]:
+    rows = session.execute(
+        text(
+            "SELECT id FROM categories "
+            "WHERE lower(name) NOT LIKE '%drink%' AND lower(name) NOT LIKE '%snack%' "
+            "ORDER BY id LIMIT 2"
+        )
+    ).all()
+    assert len(rows) >= 2, "need two non-drink/snack categories for the scope test"
+    return rows[0].id, rows[1].id
+
+
+def test_category_scoped_menu_save(ctx):
+    """Saving a menu for one category leaves other categories' lines intact."""
+    client, session = ctx.client, ctx.session
+    cat_a, cat_b = _two_normal_categories(session)
+    supplier_id = _create_supplier(client, f"{TAG}CatSup")
+    product_a = _create_product(client, code=f"{TAG}CA", category_id=cat_a, supplier_id=supplier_id)
+    product_b = _create_product(client, code=f"{TAG}CB", category_id=cat_b, supplier_id=supplier_id)
+    fridge_id = _create_fridge(client, f"{TAG}catFr")
+
+    base = {"year": YEAR, "week": WEEK, "day_name": DAY_NAME}
+
+    # A) first category-scoped save creates the menu (no conflict, no overwrite).
+    r_a = client.post(
+        f"{PREFIX}/menus/save",
+        json={**base, "category_id": cat_a, "lines": [{"fridge_id": fridge_id, "product_id": product_a, "qty": 5}]},
+    )
+    assert r_a.status_code == 200, r_a.text
+
+    # B) a different category also saves without overwrite (its lines are empty).
+    r_b = client.post(
+        f"{PREFIX}/menus/save",
+        json={**base, "category_id": cat_b, "lines": [{"fridge_id": fridge_id, "product_id": product_b, "qty": 7}]},
+    )
+    assert r_b.status_code == 200, r_b.text
+
+    saved = client.get(f"{PREFIX}/menus/saved", params=base).json()["cells"]
+    assert {c["product_id"]: c["qty"] for c in saved} == {product_a: 5, product_b: 7}
+
+    # C) re-saving the SAME category without overwrite conflicts.
+    dup = client.post(
+        f"{PREFIX}/menus/save",
+        json={**base, "category_id": cat_a, "lines": [{"fridge_id": fridge_id, "product_id": product_a, "qty": 9}]},
+    )
+    assert dup.status_code == 409 and dup.json()["error"]["code"] == "exists"
+
+    # D) overwrite that one category; the other category is untouched.
+    ow = client.post(
+        f"{PREFIX}/menus/save",
+        json={
+            **base,
+            "category_id": cat_a,
+            "overwrite": True,
+            "lines": [{"fridge_id": fridge_id, "product_id": product_a, "qty": 9}],
+        },
+    )
+    assert ow.status_code == 200, ow.text
+    saved2 = client.get(f"{PREFIX}/menus/saved", params=base).json()["cells"]
+    assert {c["product_id"]: c["qty"] for c in saved2} == {product_a: 9, product_b: 7}
+
+    # E) a scoped save whose lines fall outside the target category is rejected.
+    bad = client.post(
+        f"{PREFIX}/menus/save",
+        json={
+            **base,
+            "category_id": cat_a,
+            "overwrite": True,
+            "lines": [{"fridge_id": fridge_id, "product_id": product_b, "qty": 3}],
+        },
+    )
+    assert bad.status_code == 422 and bad.json()["error"]["code"] == "validation_error"
+
+
+def test_category_scoped_dispatch_save_and_import(ctx):
+    """Category-scoped dispatch save preserves other categories; import filters."""
+    client, session = ctx.client, ctx.session
+    cat_a, cat_b = _two_normal_categories(session)
+    supplier_id = _create_supplier(client, f"{TAG}DCatSup")
+    product_a = _create_product(client, code=f"{TAG}DCA", category_id=cat_a, supplier_id=supplier_id)
+    product_b = _create_product(client, code=f"{TAG}DCB", category_id=cat_b, supplier_id=supplier_id)
+    fridge_id = _create_fridge(client, f"{TAG}dcatFr")
+
+    base = {"year": YEAR, "week": WEEK, "day_name": DAY_NAME}
+
+    # Build a saved MENU with both categories (source for import-from-menu).
+    client.post(
+        f"{PREFIX}/menus/save",
+        json={
+            **base,
+            "lines": [
+                {"fridge_id": fridge_id, "product_id": product_a, "qty": 4},
+                {"fridge_id": fridge_id, "product_id": product_b, "qty": 8},
+            ],
+        },
+    )
+
+    # import-from-menu scoped to cat_a returns only cat_a cells/products.
+    imp = client.post(
+        f"{PREFIX}/dispatches/import-from-menu", params={**base, "category_id": cat_a}
+    )
+    assert imp.status_code == 200, imp.text
+    assert {c["product_id"] for c in imp.json()["cells"]} == {product_a}
+    assert {p["product_id"] for p in imp.json()["products"]} == {product_a}
+
+    # Category-scoped planned saves accumulate across categories.
+    d_a = client.post(
+        f"{PREFIX}/dispatches/save",
+        json={**base, "category_id": cat_a, "lines": [{"fridge_id": fridge_id, "product_id": product_a, "qty": 4}]},
+    )
+    assert d_a.status_code == 200, d_a.text
+    d_b = client.post(
+        f"{PREFIX}/dispatches/save",
+        json={**base, "category_id": cat_b, "lines": [{"fridge_id": fridge_id, "product_id": product_b, "qty": 8}]},
+    )
+    assert d_b.status_code == 200, d_b.text
+
+    dispatch_id = client.get(f"{PREFIX}/dispatches/saved", params=base).json()["id"]
+    matrix = client.get(f"{PREFIX}/dispatches/{dispatch_id}/matrix").json()["cells"]
+    assert {c["product_id"]: c["qty"] for c in matrix} == {product_a: 4, product_b: 8}
+
+    # Re-saving cat_a without overwrite conflicts; overwrite keeps cat_b intact.
+    dup = client.post(
+        f"{PREFIX}/dispatches/save",
+        json={**base, "category_id": cat_a, "lines": [{"fridge_id": fridge_id, "product_id": product_a, "qty": 6}]},
+    )
+    assert dup.status_code == 409 and dup.json()["error"]["code"] == "exists"
+
+    ow = client.post(
+        f"{PREFIX}/dispatches/save",
+        json={
+            **base,
+            "category_id": cat_a,
+            "overwrite": True,
+            "lines": [{"fridge_id": fridge_id, "product_id": product_a, "qty": 6}],
+        },
+    )
+    assert ow.status_code == 200, ow.text
+    matrix2 = client.get(f"{PREFIX}/dispatches/{dispatch_id}/matrix").json()["cells"]
+    assert {c["product_id"]: c["qty"] for c in matrix2} == {product_a: 6, product_b: 8}
+
+    # Lines outside the target category are rejected.
+    bad = client.post(
+        f"{PREFIX}/dispatches/save",
+        json={
+            **base,
+            "category_id": cat_a,
+            "overwrite": True,
+            "lines": [{"fridge_id": fridge_id, "product_id": product_b, "qty": 2}],
+        },
+    )
+    assert bad.status_code == 422 and bad.json()["error"]["code"] == "validation_error"

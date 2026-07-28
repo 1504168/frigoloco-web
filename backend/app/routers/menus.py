@@ -19,6 +19,7 @@ from app.schemas.menus import (
     CapItem,
     CapRead,
     CapsReplace,
+    MenuDraftLineOut,
     MenuGridOut,
     MenuProductsReplace,
     MenuRead,
@@ -113,19 +114,32 @@ def import_menu_from_forecast(
     year: int = Query(..., ge=2020, le=2100),
     week: int = Query(..., ge=1, le=53),
     day_name: str = Query(...),
+    category_id: int | None = Query(default=None),
     session: Session = Depends(get_db),
 ) -> MenuGridOut:
-    """Seed a draft menu grid (not persisted) from the saved forecast."""
+    """Seed a draft menu grid (not persisted) from the saved forecast.
+
+    ``category_id`` restricts the preview to a single category (the caller merges
+    it into the existing grid); omit it to pull all categories.
+    """
     delivery_date = resolve_delivery_date(year, week, day_name)
     grid = menu_service.import_from_forecast(
-        year=year, week=week, day_name=day_name, delivery_date=delivery_date, session=session
+        year=year,
+        week=week,
+        day_name=day_name,
+        delivery_date=delivery_date,
+        category_id=category_id,
+        session=session,
     )
     return MenuGridOut.model_validate(grid)
 
 
 @router.post("/save", response_model=MenuGridOut)
 def save_menu(body: MenuSaveRequest, session: Session = Depends(get_db)) -> MenuGridOut:
-    """Persist the menu grid keyed on (year, week, day_name); overwrite-confirm."""
+    """Persist the menu grid keyed on (year, week, day_name); overwrite-confirm.
+
+    When ``category_id`` is set, only that category's lines are replaced.
+    """
     grid = menu_service.save_menu(
         year=body.year,
         week=body.week,
@@ -135,6 +149,7 @@ def save_menu(body: MenuSaveRequest, session: Session = Depends(get_db)) -> Menu
             for item in body.lines
         ],
         overwrite=body.overwrite,
+        category_id=body.category_id,
         user_id=None,
         session=session,
     )
@@ -188,6 +203,34 @@ def draft_purchase_order_from_menu(
         )
     except orders_service.ApiError as exc:
         raise api_error(exc.status_code, exc.code, exc.message, exc.details) from exc
+
+
+@router.get("/draft-purchase-order-lines", response_model=list[MenuDraftLineOut])
+def preview_draft_po_lines_from_menu(
+    year: int = Query(..., ge=2020, le=2100),
+    week: int = Query(..., ge=1, le=53),
+    day_name: str = Query(...),
+    supplier_id: int = Query(...),
+    session: Session = Depends(get_db),
+) -> list[MenuDraftLineOut]:
+    """Preview a supplier's draft PO lines from the saved menu (read-only).
+
+    Prefills the New PO dialog for review/edit; does not persist anything.
+    """
+    lines = menu_service.preview_supplier_po_lines(
+        year=year, week=week, day_name=day_name, supplier_id=supplier_id, session=session
+    )
+    return [
+        MenuDraftLineOut(
+            product_id=line.product_id,
+            code=line.code,
+            name=line.name,
+            qty=line.qty,
+            unit_price=line.unit_price,
+            vat_rate=line.vat_rate,
+        )
+        for line in lines
+    ]
 
 
 # --- Product targets (fridge-scoped) --------------------------------------

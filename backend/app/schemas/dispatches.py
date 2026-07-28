@@ -19,6 +19,7 @@ class DispatchRead(ApiModel):
     delivery_date: datetime.date
     iso_week: int
     weekday: int
+    week_start: datetime.date  # Monday of the ISO week (generated from delivery_date)
     status: DispatchStatus
     confirmed_by: int | None
     confirmed_at: datetime.datetime | None
@@ -77,6 +78,8 @@ class DispatchSaveRequest(ApiModel):
     day_name: str
     lines: list[DispatchLineItem]
     overwrite: bool = False
+    # When set, only this category's lines are replaced; others stay intact.
+    category_id: int | None = None
 
 
 class ConfirmRequest(ApiModel):

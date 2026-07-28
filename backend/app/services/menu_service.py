@@ -85,6 +85,16 @@ class MenuLineInput:
     qty: int
 
 
+@dataclass(frozen=True)
+class MenuDraftLine:
+    product_id: int
+    code: str
+    name: str
+    qty: int
+    unit_price: int  # cents
+    vat_rate: Decimal
+
+
 def _largest_remainder(target: int, weights: list[Decimal]) -> list[int]:
     """Distribute ``target`` integer units across ``weights`` proportionally.
 
@@ -204,12 +214,20 @@ def _category_products_by_score(
 
 
 def import_from_forecast(
-    *, year: int, week: int, day_name: str, delivery_date, session: Session
+    *,
+    year: int,
+    week: int,
+    day_name: str,
+    delivery_date,
+    category_id: int | None = None,
+    session: Session,
 ) -> MenuGrid:
     """Seed a draft menu grid (NOT persisted) from the saved forecast (D2).
 
     Each fridge x category forecast quantity is split across that category's
-    active products in proportion to product score.
+    active products in proportion to product score. When ``category_id`` is set,
+    only that category is computed (the Excel "pull one category" flow); the
+    caller merges the result into the existing grid.
     """
     run = forecast_service.get_saved_run(delivery_date, session)
     if run is None:
@@ -224,6 +242,8 @@ def import_from_forecast(
 
     raw_cells: list[tuple[int, int, int]] = []
     for result in results:
+        if category_id is not None and result.category_id != category_id:
+            continue
         product_ids = products_by_category.get(result.category_id, [])
         if not product_ids:
             continue
@@ -258,6 +278,19 @@ def _find_menu_id(year: int, week: int, day_name: str, session: Session) -> int 
     ).scalar()
 
 
+def _category_has_lines(menu_id: int, category_id: int, session: Session) -> bool:
+    """True when the saved menu already holds lines for this category."""
+    return bool(
+        session.execute(
+            text(
+                "SELECT 1 FROM menu_lines "
+                "WHERE menu_id = :id AND category_id = :cat LIMIT 1"
+            ),
+            {"id": menu_id, "cat": category_id},
+        ).scalar()
+    )
+
+
 def save_menu(
     *,
     year: int,
@@ -265,18 +298,38 @@ def save_menu(
     day_name: str,
     lines: list[MenuLineInput],
     overwrite: bool,
+    category_id: int | None = None,
     user_id: int | None,
     session: Session,
 ) -> MenuGrid:
-    """Persist the menu grid for the key with overwrite-confirm semantics (D2)."""
+    """Persist the menu grid for the key with overwrite-confirm semantics (D2).
+
+    When ``category_id`` is set, only that category's lines are replaced (the
+    Excel "save one category" flow): other categories' saved lines are left
+    intact, and the ``exists`` conflict fires only if THAT category already has
+    saved lines. When ``category_id`` is None the whole menu is replaced.
+    """
+    scoped = category_id is not None
     existing_id = _find_menu_id(year, week, day_name, session)
     if existing_id is not None and not overwrite:
-        raise api_error(
-            409,
-            "exists",
-            "A saved menu already exists for this key; resend with overwrite=true",
-            {"year": year, "week": week, "day_name": day_name, "menu_id": int(existing_id)},
+        conflict = (
+            _category_has_lines(int(existing_id), category_id, session)
+            if scoped
+            else True
         )
+        if conflict:
+            raise api_error(
+                409,
+                "exists",
+                "A saved menu already exists for this key; resend with overwrite=true",
+                {
+                    "year": year,
+                    "week": week,
+                    "day_name": day_name,
+                    "menu_id": int(existing_id),
+                    "category_id": category_id,
+                },
+            )
 
     positive = [line for line in lines if line.qty > 0]
     product_ids = {line.product_id for line in positive}
@@ -296,6 +349,17 @@ def save_menu(
             "Unknown product in menu lines",
             {"product_ids": sorted(missing)},
         )
+    if scoped:
+        outside = sorted(
+            pid for pid in product_ids if category_of[pid] != category_id
+        )
+        if outside:
+            raise api_error(
+                422,
+                "validation_error",
+                "Menu lines contain products outside the target category",
+                {"category_id": category_id, "product_ids": outside},
+            )
 
     if existing_id is None:
         menu_id = int(
@@ -309,9 +373,17 @@ def save_menu(
         )
     else:
         menu_id = int(existing_id)
-        session.execute(
-            text("DELETE FROM menu_lines WHERE menu_id = :id"), {"id": menu_id}
-        )
+        if scoped:
+            session.execute(
+                text(
+                    "DELETE FROM menu_lines WHERE menu_id = :id AND category_id = :cat"
+                ),
+                {"id": menu_id, "cat": category_id},
+            )
+        else:
+            session.execute(
+                text("DELETE FROM menu_lines WHERE menu_id = :id"), {"id": menu_id}
+            )
         session.execute(
             text(
                 "UPDATE weekly_menus SET status = :status, updated_at = now() "
@@ -335,9 +407,15 @@ def save_menu(
             },
         )
 
+    if scoped:
+        action = "menu.save.category"
+    elif existing_id is not None:
+        action = "menu.save.overwrite"
+    else:
+        action = "menu.save"
     record_audit(
         session,
-        action="menu.save.overwrite" if existing_id is not None else "menu.save",
+        action=action,
         entity="weekly_menus",
         entity_id=menu_id,
         before={"menu_id": int(existing_id)} if existing_id is not None else None,
@@ -345,6 +423,7 @@ def save_menu(
             "year": year,
             "week": week,
             "day_name": day_name,
+            "category_id": category_id,
             "lines": len(positive),
         },
         user_id=user_id,
@@ -408,3 +487,46 @@ def aggregate_supplier_quantities(
         {"menu_id": int(menu_id), "supplier_id": supplier_id},
     ).all()
     return {row.product_id: int(row.qty) for row in rows if int(row.qty) > 0}
+
+
+def preview_supplier_po_lines(
+    *,
+    year: int,
+    week: int,
+    day_name: str,
+    supplier_id: int,
+    session: Session,
+) -> list[MenuDraftLine]:
+    """Draft PO lines for one supplier from a saved menu WITHOUT persisting.
+
+    Reuses aggregate_supplier_quantities (per-product qty for the supplier),
+    then prices each line from the product catalogue. Read-only preview: the
+    caller reviews/edits before creating the PO. Returns [] when the supplier
+    has no menu quantities. A missing saved menu still raises 404 via the
+    aggregation call.
+    """
+    quantities = aggregate_supplier_quantities(
+        year=year, week=week, day_name=day_name, supplier_id=supplier_id, session=session
+    )
+    if not quantities:
+        return []
+    products = (
+        session.execute(select(Product).where(Product.id.in_(quantities.keys())))
+        .scalars()
+        .all()
+    )
+    by_id = {product.id: product for product in products}
+    lines = [
+        MenuDraftLine(
+            product_id=product_id,
+            code=by_id[product_id].code,
+            name=by_id[product_id].name,
+            qty=qty,
+            unit_price=by_id[product_id].purchase_price,
+            vat_rate=by_id[product_id].vat_rate,
+        )
+        for product_id, qty in quantities.items()
+        if product_id in by_id
+    ]
+    lines.sort(key=lambda line: line.name.lower())
+    return lines
