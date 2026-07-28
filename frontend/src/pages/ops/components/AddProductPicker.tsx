@@ -152,7 +152,7 @@ export function AddProductPicker({
       <div className="sm:col-span-2">
         <Button onClick={handleAdd} disabled={!productId} className="w-full">
           <Plus className="h-4 w-4" />
-          Add product to grid
+          Add
         </Button>
       </div>
     </div>

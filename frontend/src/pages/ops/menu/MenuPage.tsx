@@ -153,7 +153,7 @@ export function MenuPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" onClick={() => setAddOpen(true)} disabled={!catalogueQuery.data}>
             <Plus className="h-4 w-4" />
-            Add Product
+            Product
           </Button>
           <Button
             variant="outline"
@@ -208,7 +208,6 @@ export function MenuPage() {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         title="Add a product"
-        description="Filter the catalogue by category, then supplier, then pick a product to add a column to the grid."
         className="max-w-lg"
         footer={
           <Button variant="outline" onClick={() => setAddOpen(false)}>

@@ -346,7 +346,10 @@ export function PlanningGrid({
             <tr key={fridge.fridge_id} className="hover:bg-accent/30">
               <th
                 scope="row"
-                className={cn(stickyLeft, 'border-b px-3 py-1 font-medium text-foreground')}
+                className={cn(
+                  stickyLeft,
+                  'whitespace-nowrap border-b px-3 py-1 font-medium text-foreground',
+                )}
               >
                 {fridge.friendly_name}
               </th>
