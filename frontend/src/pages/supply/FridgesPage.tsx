@@ -1,7 +1,6 @@
 import * as React from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarClock, Pencil, Plus, Trash2 } from 'lucide-react'
-import { PageHeader } from '@/components/shared/PageHeader'
+import { CalendarClock, Pencil, Search } from 'lucide-react'
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
@@ -9,21 +8,13 @@ import {
   EffectiveStatusBadge,
   HuskySyncControl,
   StatusFilterSelect,
-  StatusOverrideSelect,
 } from '@/pages/masters/sync/components'
 import type { StatusFilter } from '@/pages/masters/sync/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { toast } from '@/components/ui/sonner'
 import { api, ApiError, type Page } from '@/lib/api'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { EMPTY_PLACEHOLDER } from '@/lib/format'
 import { Dialog } from './components/Dialog'
 import { Field, Textarea, fieldErrorsFromApiError, generalErrorMessage } from './components/form'
@@ -31,7 +22,6 @@ import type {
   Client,
   DeliveryConfigItem,
   Fridge,
-  FridgeCreate,
 } from './types'
 
 const PAGE_SIZE = 25
@@ -42,41 +32,7 @@ const PAGE_SIZE = 25
  */
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
-interface FridgeForm {
-  husky_id: string
-  husky_name: string
-  friendly_name: string
-  client_id: number | null
-  delivery_address: string
-  delivery_instructions: string
-  is_active: boolean
-}
-
-const EMPTY_FORM: FridgeForm = {
-  husky_id: '',
-  husky_name: '',
-  friendly_name: '',
-  client_id: null,
-  delivery_address: '',
-  delivery_instructions: '',
-  is_active: true,
-}
-
-const NO_CLIENT = '__none__'
-
-function toCreatePayload(form: FridgeForm): FridgeCreate {
-  return {
-    husky_id: form.husky_id.trim(),
-    husky_name: form.husky_name.trim() || null,
-    friendly_name: form.friendly_name.trim(),
-    client_id: form.client_id,
-    delivery_address: form.delivery_address.trim() || null,
-    delivery_instructions: form.delivery_instructions.trim() || null,
-    is_active: form.is_active,
-  }
-}
-
-/** Shared clients lookup (id -> name) used for the client column and the form select. */
+/** Shared clients lookup (id -> name) used for the client column and the edit dialog. */
 function useClientsLookup() {
   return useQuery({
     queryKey: ['supply', 'clients', 'all'],
@@ -93,10 +49,13 @@ export function FridgesPage() {
   const queryClient = useQueryClient()
   const [offset, setOffset] = React.useState(0)
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('active')
+  const [searchInput, setSearchInput] = React.useState('')
   const [editing, setEditing] = React.useState<Fridge | null>(null)
-  const [creating, setCreating] = React.useState(false)
-  const [deleting, setDeleting] = React.useState<Fridge | null>(null)
   const [configuring, setConfiguring] = React.useState<Fridge | null>(null)
+
+  // Client-side search over the fridge name + client name (both are the visible
+  // text columns). Debounced so typing stays smooth.
+  const search = useDebouncedValue(searchInput.trim().toLowerCase(), 500)
 
   const clientsQuery = useClientsLookup()
   const clientName = React.useCallback(
@@ -107,16 +66,19 @@ export function FridgesPage() {
     [clientsQuery.data],
   )
 
-  // Reset to first page whenever the status filter changes.
+  // Reset to first page whenever the status filter or search term changes.
   React.useEffect(() => {
     setOffset(0)
-  }, [statusFilter])
+  }, [statusFilter, search])
 
+  // Fetch the full (status-filtered) set once; search + pagination are applied
+  // client-side. The fleet is small (~50 fridges), so this stays cheap and lets
+  // us search the client name, which the list endpoint does not expose.
   const fridgesQuery = useQuery({
-    queryKey: ['supply', 'fridges', { offset, status: statusFilter }],
+    queryKey: ['supply', 'fridges', { status: statusFilter }],
     queryFn: ({ signal }) =>
       api.get<Page<Fridge>>('/api/v1/fridges', {
-        params: { limit: PAGE_SIZE, offset, status: statusFilter },
+        params: { limit: 500, offset: 0, status: statusFilter },
         signal,
       }),
     placeholderData: keepPreviousData,
@@ -151,18 +113,6 @@ export function FridgesPage() {
         sortValue: (row) => row.effective_status,
       },
       {
-        id: 'override',
-        header: 'Override',
-        cell: (row) => (
-          <StatusOverrideSelect
-            resourcePath={`/api/v1/fridges/${row.id}`}
-            localStatus={row.local_status}
-            invalidateKeys={[FRIDGES_QUERY_KEY]}
-            entityLabel={`Fridge ${row.friendly_name}`}
-          />
-        ),
-      },
-      {
         id: 'actions',
         header: '',
         align: 'right',
@@ -171,6 +121,7 @@ export function FridgesPage() {
             <Button
               variant="ghost"
               size="sm"
+              className="h-7 px-2"
               onClick={() => setConfiguring(row)}
             >
               <CalendarClock className="h-4 w-4" /> Delivery
@@ -178,18 +129,11 @@ export function FridgesPage() {
             <Button
               variant="ghost"
               size="icon"
+              className="h-7 w-7"
               aria-label={`Edit ${row.friendly_name}`}
               onClick={() => setEditing(row)}
             >
               <Pencil className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={`Delete ${row.friendly_name}`}
-              onClick={() => setDeleting(row)}
-            >
-              <Trash2 className="h-4 w-4 text-critical" />
             </Button>
           </div>
         ),
@@ -198,31 +142,51 @@ export function FridgesPage() {
     [clientName],
   )
 
+  // Search matches the Fridge column (friendly_name), the Client column
+  // (resolved client name) or the Husky ID; then paginate the result locally.
+  const allFridges = fridgesQuery.data?.items ?? []
+  const filteredFridges = search
+    ? allFridges.filter(
+        (fridge) =>
+          fridge.friendly_name.toLowerCase().includes(search) ||
+          fridge.husky_id.toLowerCase().includes(search) ||
+          clientName(fridge.client_id).toLowerCase().includes(search),
+      )
+    : allFridges
+  const pageData: Page<Fridge> | undefined = fridgesQuery.data
+    ? {
+        items: filteredFridges.slice(offset, offset + PAGE_SIZE),
+        total: filteredFridges.length,
+        limit: PAGE_SIZE,
+        offset,
+      }
+    : undefined
+
   return (
     <div className="space-y-6">
-      <PageHeader
-        breadcrumb="Masters / Fridges"
-        title="Fridges"
-        description="Husky fridge units and their delivery schedules. Delivery config gates the forecast feature."
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusFilterSelect value={statusFilter} onChange={setStatusFilter} />
-            <HuskySyncControl
-              feed="catalogue"
-              endpoint="catalogue"
-              invalidateKeys={[FRIDGES_QUERY_KEY]}
-              itemLabel="fridge"
-            />
-            <Button onClick={() => setCreating(true)}>
-              <Plus className="h-4 w-4" /> New fridge
-            </Button>
-          </div>
-        }
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusFilterSelect value={statusFilter} onChange={setStatusFilter} />
+        <HuskySyncControl
+          feed="catalogue"
+          endpoint="catalogue"
+          invalidateKeys={[FRIDGES_QUERY_KEY]}
+          itemLabel="fridge"
+        />
+        <div className="relative ml-auto w-full max-w-xs">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="Search by fridge or client…"
+            className="pl-8"
+          />
+        </div>
+      </div>
 
       <DataTable
         columns={columns}
-        page={fridgesQuery.data}
+        dense
+        page={pageData}
         isLoading={fridgesQuery.isLoading}
         isError={fridgesQuery.isError}
         error={fridgesQuery.error}
@@ -233,67 +197,25 @@ export function FridgesPage() {
         getRowId={(row) => row.id}
         emptyState={
           <EmptyState
-            title="No fridges yet"
-            description="Create a fridge to configure its delivery schedule."
-            action={
-              <Button onClick={() => setCreating(true)}>
-                <Plus className="h-4 w-4" /> New fridge
-              </Button>
+            title={search ? 'No matching fridges' : 'No fridges yet'}
+            description={
+              search
+                ? `No fridge or client matches “${searchInput.trim()}”. Try a different term.`
+                : 'Fridges are synced in from Husky. Run Sync from Husky to load them.'
             }
           />
         }
       />
 
-      {creating ? (
-        <FridgeFormDialog
-          title="New fridge"
-          initial={EMPTY_FORM}
-          submitLabel="Create fridge"
-          clients={clientsQuery.data ?? []}
-          onClose={() => setCreating(false)}
-          onSubmit={(form) => api.post<Fridge>('/api/v1/fridges', toCreatePayload(form))}
-          onSuccess={(created) => {
-            toast.success(`Fridge “${created.friendly_name}” created`)
-            invalidate()
-            setCreating(false)
-          }}
-        />
-      ) : null}
-
       {editing ? (
-        <FridgeFormDialog
-          title={`Edit ${editing.friendly_name}`}
-          initial={{
-            husky_id: editing.husky_id,
-            husky_name: editing.husky_name ?? '',
-            friendly_name: editing.friendly_name,
-            client_id: editing.client_id,
-            delivery_address: editing.delivery_address ?? '',
-            delivery_instructions: editing.delivery_instructions ?? '',
-            is_active: editing.is_active,
-          }}
-          submitLabel="Save changes"
-          clients={clientsQuery.data ?? []}
+        <EditFridgeDialog
+          fridge={editing}
+          clientName={clientName}
           onClose={() => setEditing(null)}
-          onSubmit={(form) =>
-            api.put<Fridge>(`/api/v1/fridges/${editing.id}`, toCreatePayload(form))
-          }
           onSuccess={(updated) => {
             toast.success(`Fridge “${updated.friendly_name}” updated`)
             invalidate()
             setEditing(null)
-          }}
-        />
-      ) : null}
-
-      {deleting ? (
-        <DeleteFridgeDialog
-          fridge={deleting}
-          onClose={() => setDeleting(null)}
-          onDeleted={() => {
-            toast.success(`Fridge “${deleting.friendly_name}” deleted`)
-            invalidate()
-            setDeleting(null)
           }}
         />
       ) : null}
@@ -305,29 +227,50 @@ export function FridgesPage() {
   )
 }
 
-interface FridgeFormDialogProps {
-  title: string
-  initial: FridgeForm
-  submitLabel: string
-  clients: Client[]
+interface EditFridgeDialogProps {
+  fridge: Fridge
+  clientName: (id: number | null) => string
   onClose: () => void
-  onSubmit: (form: FridgeForm) => Promise<Fridge>
   onSuccess: (fridge: Fridge) => void
 }
 
-function FridgeFormDialog({
-  title,
-  initial,
-  submitLabel,
-  clients,
-  onClose,
-  onSubmit,
-  onSuccess,
-}: FridgeFormDialogProps) {
-  const [form, setForm] = React.useState<FridgeForm>(initial)
+/** Read-only display of a Husky-owned field (overwritten on every sync). */
+function ReadOnlyField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <Field label={label}>
+      <div
+        className={`flex min-h-9 items-center rounded-md border border-border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground${
+          mono ? ' font-mono text-xs' : ''
+        }`}
+      >
+        {value}
+      </div>
+    </Field>
+  )
+}
+
+/**
+ * Edit a fridge's local-only delivery details. Identity, client and status are
+ * Husky-owned (overwritten on every sync) and shown read-only here.
+ */
+function EditFridgeDialog({ fridge, clientName, onClose, onSuccess }: EditFridgeDialogProps) {
+  const [deliveryAddress, setDeliveryAddress] = React.useState(fridge.delivery_address ?? '')
+  const [deliveryInstructions, setDeliveryInstructions] = React.useState(
+    fridge.delivery_instructions ?? '',
+  )
 
   const mutation = useMutation({
-    mutationFn: () => onSubmit(form),
+    mutationFn: () =>
+      api.put<Fridge>(`/api/v1/fridges/${fridge.id}`, {
+        // Husky-owned fields are echoed back unchanged; only delivery details change.
+        husky_id: fridge.husky_id,
+        husky_name: fridge.husky_name,
+        friendly_name: fridge.friendly_name,
+        client_id: fridge.client_id,
+        is_active: fridge.is_active,
+        delivery_address: deliveryAddress.trim() || null,
+        delivery_instructions: deliveryInstructions.trim() || null,
+      }),
     onSuccess,
     onError: (error) => {
       if (error instanceof ApiError && error.code === 'conflict') toast.error(error.message)
@@ -340,21 +283,19 @@ function FridgeFormDialog({
       ? generalErrorMessage(mutation.error)
       : null
 
-  const canSubmit = form.husky_id.trim() !== '' && form.friendly_name.trim() !== ''
-
   return (
     <Dialog
       open
       onClose={onClose}
-      title={title}
+      title={`Edit ${fridge.friendly_name}`}
       widthClassName="max-w-xl"
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
             Cancel
           </Button>
-          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !canSubmit}>
-            {mutation.isPending ? 'Saving…' : submitLabel}
+          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+            {mutation.isPending ? 'Saving…' : 'Save changes'}
           </Button>
         </>
       }
@@ -366,120 +307,29 @@ function FridgeFormDialog({
           </div>
         ) : null}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Husky ID" required error={fieldErrors.husky_id}>
-            <Input
-              value={form.husky_id}
-              autoFocus
-              onChange={(event) => setForm((prev) => ({ ...prev, husky_id: event.target.value }))}
-              placeholder="if-0001327"
-            />
-          </Field>
-          <Field label="Friendly name" required error={fieldErrors.friendly_name}>
-            <Input
-              value={form.friendly_name}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, friendly_name: event.target.value }))
-              }
-              placeholder="Abbott Wavre"
-            />
-          </Field>
-          <Field label="Husky name" error={fieldErrors.husky_name}>
-            <Input
-              value={form.husky_name}
-              onChange={(event) => setForm((prev) => ({ ...prev, husky_name: event.target.value }))}
-            />
-          </Field>
-          <Field label="Client" error={fieldErrors.client_id}>
-            <Select
-              value={form.client_id === null ? NO_CLIENT : String(form.client_id)}
-              onValueChange={(value) =>
-                setForm((prev) => ({
-                  ...prev,
-                  client_id: value === NO_CLIENT ? null : Number(value),
-                }))
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="No client" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_CLIENT}>No client</SelectItem>
-                {clients.map((client) => (
-                  <SelectItem key={client.id} value={String(client.id)}>
-                    {client.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
+          <ReadOnlyField label="Husky ID" value={fridge.husky_id} mono />
+          <ReadOnlyField label="Husky name" value={fridge.husky_name || EMPTY_PLACEHOLDER} />
+          <ReadOnlyField label="Friendly name" value={fridge.friendly_name} />
+          <ReadOnlyField label="Client" value={clientName(fridge.client_id)} />
+          <ReadOnlyField label="Status" value={fridge.is_active ? 'Active' : 'Inactive'} />
         </div>
+        <p className="text-xs text-muted-foreground">
+          Identity, client and status come from Husky and are not editable here.
+        </p>
         <Field label="Delivery address" error={fieldErrors.delivery_address}>
           <Textarea
-            value={form.delivery_address}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, delivery_address: event.target.value }))
-            }
+            value={deliveryAddress}
+            autoFocus
+            onChange={(event) => setDeliveryAddress(event.target.value)}
           />
         </Field>
         <Field label="Delivery instructions" error={fieldErrors.delivery_instructions}>
           <Textarea
-            value={form.delivery_instructions}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, delivery_instructions: event.target.value }))
-            }
+            value={deliveryInstructions}
+            onChange={(event) => setDeliveryInstructions(event.target.value)}
           />
         </Field>
-        <label className="flex items-center justify-between gap-3">
-          <span className="text-sm font-medium text-foreground">Active</span>
-          <Switch
-            checked={form.is_active}
-            onCheckedChange={(checked) => setForm((prev) => ({ ...prev, is_active: checked }))}
-          />
-        </label>
       </div>
-    </Dialog>
-  )
-}
-
-interface DeleteFridgeDialogProps {
-  fridge: Fridge
-  onClose: () => void
-  onDeleted: () => void
-}
-
-function DeleteFridgeDialog({ fridge, onClose, onDeleted }: DeleteFridgeDialogProps) {
-  const mutation = useMutation({
-    mutationFn: () => api.del<void>(`/api/v1/fridges/${fridge.id}`),
-    onSuccess: onDeleted,
-    onError: (error) => {
-      toast.error(error instanceof ApiError ? error.message : 'Failed to delete fridge')
-    },
-  })
-
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      title={`Delete ${fridge.friendly_name}?`}
-      description="Fridges referenced by dispatches or config cannot be deleted."
-      footer={
-        <>
-          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={() => mutation.mutate()}
-            disabled={mutation.isPending}
-          >
-            {mutation.isPending ? 'Deleting…' : 'Delete fridge'}
-          </Button>
-        </>
-      }
-    >
-      <p className="text-sm text-muted-foreground">
-        Permanently delete <span className="font-medium text-foreground">{fridge.friendly_name}</span>?
-      </p>
     </Dialog>
   )
 }

@@ -2,6 +2,7 @@ import * as React from 'react'
 import { NavLink } from 'react-router-dom'
 import { NAV_SECTIONS, type NavItem } from '@/config/nav'
 import { useUnacknowledgedAlertsCount } from '@/hooks/useAlertsCount'
+import { ThemeToggle } from '@/components/layout/ThemeToggle'
 import { cn } from '@/lib/utils'
 
 /** Renders the count badge on a nav item, if the item declares a badgeKey. */
@@ -81,9 +82,15 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="mt-auto border-t border-white/10 px-5 pb-3 pt-3.5 text-[11px] text-[#647181]">
-        <b className="block text-[#9db0c2]">ismail@alliedchb.com</b>
-        Planner · v0.1
+      <div className="mt-auto flex items-center justify-between gap-2 border-t border-white/10 px-5 pb-3 pt-3.5 text-[11px] text-[#647181]">
+        <div>
+          <b className="block text-[#9db0c2]">ismail@alliedchb.com</b>
+          Planner · v0.1
+        </div>
+        <ThemeToggle
+          variant="ghost"
+          className="h-8 w-8 shrink-0 text-sidebar-ink hover:bg-white/10 hover:text-white"
+        />
       </div>
     </aside>
   )

@@ -39,7 +39,7 @@ export function HuskySyncControl({ feed, endpoint, invalidateKeys, itemLabel }: 
     <div className="flex items-center gap-2">
       <Button variant="outline" onClick={trigger} disabled={isSyncing}>
         <RefreshCw className={cn('h-4 w-4', isSyncing && 'animate-spin')} />
-        {isSyncing ? 'Syncing…' : 'Sync from Husky'}
+        {isSyncing ? 'Syncing…' : 'from Husky'}
       </Button>
       <span className="text-[11px] text-muted-foreground whitespace-nowrap">
         {latestRun.isLoading
@@ -136,10 +136,10 @@ export function StatusFilterSelect({ value, onChange, className }: StatusFilterS
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="active">Active only</SelectItem>
-        <SelectItem value="inactive">Inactive only</SelectItem>
-        <SelectItem value="cancelled">Cancelled only</SelectItem>
-        <SelectItem value="all">All statuses</SelectItem>
+        <SelectItem value="active">Active</SelectItem>
+        <SelectItem value="inactive">Inactive</SelectItem>
+        <SelectItem value="cancelled">Cancelled</SelectItem>
+        <SelectItem value="all">All</SelectItem>
       </SelectContent>
     </Select>
   )

@@ -55,6 +55,8 @@ export interface DataTableProps<T> {
   onRowClick?: (row: T) => void
   emptyState?: React.ReactNode
   className?: string
+  /** Tighter row height for dense, action-heavy tables (e.g. Fridges). */
+  dense?: boolean
 }
 
 const alignClass: Record<'left' | 'right' | 'center', string> = {
@@ -88,6 +90,7 @@ export function DataTable<T>({
   onRowClick,
   emptyState,
   className,
+  dense = false,
 }: DataTableProps<T>) {
   const [sort, setSort] = React.useState<SortState | null>(null)
 
@@ -132,7 +135,12 @@ export function DataTable<T>({
 
   return (
     <div className={cn('space-y-3', className)}>
-      <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div
+        className={cn(
+          'overflow-hidden rounded-xl border border-border bg-card',
+          dense && '[&_td]:py-1',
+        )}
+      >
         <Table>
           <TableHeader>
             <TableRow>
