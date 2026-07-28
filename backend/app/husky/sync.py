@@ -1294,6 +1294,7 @@ def _upsert_fridge_stock(session: Session, rows: list[dict]) -> int:
             set_={
                 "product_id": stmt.excluded.product_id,
                 "units": stmt.excluded.units,
+                "expiry_dates": stmt.excluded.expiry_dates,
                 "taken_at": stmt.excluded.taken_at,
             },
         )
@@ -1355,6 +1356,16 @@ def snapshot_stock(
                         "product_id": product_index.get(product.productCode),
                         "product_code": product.productCode,
                         "units": len(product.current),
+                        # Per-tag expiry dates (Husky sets them from the product
+                        # shelf life at restock); tags without one are omitted, so
+                        # `units` stays the authoritative count. Feeds the forecast
+                        # residual-stock deduction + the withdrawal list. getattr
+                        # keeps it safe if a tag is a bare id rather than a StockTag.
+                        "expiry_dates": [
+                            expiry
+                            for tag in product.current
+                            if (expiry := getattr(tag, "expiryDate", None)) is not None
+                        ],
                     }
             row_list = list(rows.values())
             outcome.fetched = len(row_list) + outcome.skipped

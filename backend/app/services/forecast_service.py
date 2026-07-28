@@ -118,6 +118,7 @@ def _compute_cells(
     day_cat_units: dict[tuple[datetime.date, int], int],
     category_ids: list[int],
     margins_by_id: dict[int, Decimal],
+    residual_by_category: dict[int, int],
 ) -> list[ForecastCell]:
     day_totals: dict[datetime.date, int] = {}
     for (day, _category_id), units in day_cat_units.items():
@@ -147,6 +148,12 @@ def _compute_cells(
             forecast_qty = raw.quantize(_TWO_PLACES)
         else:
             forecast_qty = Decimal("0.00")
+        # Residual-stock deduction (slide 5): subtract in-fridge units that are
+        # still good through the coverage window, so we only deliver the net need.
+        # Clamp to zero - a fridge already over target needs no delivery.
+        deductible = residual_by_category.get(category_id, 0)
+        if deductible:
+            forecast_qty = max(Decimal("0.00"), forecast_qty - Decimal(deductible))
         cells.append(
             ForecastCell(
                 fridge_id=config.fridge_id,
@@ -158,6 +165,40 @@ def _compute_cells(
             )
         )
     return cells
+
+
+def _residual_by_key(
+    configs: list[_FridgeConfig],
+    delivery_date: datetime.date,
+    session: Session,
+) -> dict[tuple[int, int], int]:
+    """Deductible in-fridge units per (fridge, category): current fridge stock
+    whose per-unit expiry covers the coverage window (slide 5).
+
+    Coverage window ends at the NEXT delivery for that fridge
+    (``delivery_date + days_to_fill``). Only units whose captured expiry is on or
+    after that date count - units expiring sooner will be pulled (withdrawal
+    list) and must NOT be deducted. Units with no captured expiry are excluded
+    (conservative: never over-deduct, which would risk a stockout).
+    """
+    residual: dict[tuple[int, int], int] = {}
+    for config in configs:
+        window_end = delivery_date + datetime.timedelta(days=config.days_to_fill)
+        rows = session.execute(
+            text(
+                "SELECT p.category_id AS category_id, count(*) AS good_units "
+                "FROM fridge_stock fs "
+                "JOIN products p ON p.id = fs.product_id "
+                "CROSS JOIN LATERAL unnest(fs.expiry_dates) AS ed(expiry) "
+                "WHERE fs.fridge_id = :fid AND fs.product_id IS NOT NULL "
+                "AND ed.expiry >= :window_end "
+                "GROUP BY p.category_id"
+            ),
+            {"fid": config.fridge_id, "window_end": window_end},
+        ).all()
+        for row in rows:
+            residual[(config.fridge_id, int(row.category_id))] = int(row.good_units)
+    return residual
 
 
 @dataclass(frozen=True)
@@ -216,6 +257,7 @@ def _compute_run(
     per_fridge_units = _daily_category_units(
         target_fridge_ids, window_start, delivery_date, session
     )
+    residual = _residual_by_key(configs, delivery_date, session)
 
     params: dict = {
         "model": model,
@@ -223,6 +265,8 @@ def _compute_run(
         "window_weeks": 3,
         "delivery_weekday": delivery_weekday,
         "triggered_by": "manual",
+        # Net-of-residual forecast: deducts still-good in-fridge stock (slide 5).
+        "residual_deduction": True,
         "margins": {str(cid): str(margin) for cid, margin in margins_by_id.items()},
         "fridge_config": {
             str(config.fridge_id): {
@@ -237,12 +281,18 @@ def _compute_run(
 
     cells: list[ForecastCell] = []
     for config in configs:
+        residual_by_category = {
+            category_id: units
+            for (fridge_id, category_id), units in residual.items()
+            if fridge_id == config.fridge_id
+        }
         cells.extend(
             _compute_cells(
                 config,
                 per_fridge_units.get(config.fridge_id, {}),
                 category_ids,
                 margins_by_id,
+                residual_by_category,
             )
         )
     return _RunComputation(params=params, cells=cells)

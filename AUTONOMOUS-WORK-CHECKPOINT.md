@@ -183,7 +183,97 @@ Status: register COMPLETE. Implementing P1 items in untouched files, one at a ti
   dual-scoring model (slide 18, `fridge_product_scores` table) is still OPEN (P2 #7).
 
 ### Backups still OPEN (need your go-ahead or the other session's coordination)
-- P1 #3 low-stock/expiry alerts, P1 #4 withdrawal list, all P2, all P3 (see register).
+- P1 #3 low-stock/expiry alerts, all P3 (see register).
   I am pausing broad implementation because the other session is mid-flight across
   PO/Stock/finance and a parallel swarm would collide. Tell me which to pick up next, or
   enable cmux so I can coordinate.
+
+## Workstream 5 - Residual fridge-stock forecast deduction (slide 5) - REVISED
+
+CORRECTION to the earlier "blocked on DLC data" note: it is NOT fully blocked. The Husky
+`/stock/current` payload carries a REAL per-unit expiry date (`CurrentTag.expiryDate`, one
+per RFID tag) and our parser already reads it (`app/husky/schemas.py` `StockTag.expiryDate`).
+The snapshot job just discards it - `app/husky/sync.py snapshot_stock` collapses the tag
+list to `len(...)` and `fridge_stock` (models/sync.py) has no expiry column. So exact
+per-unit expiry is ONE capture change away. Three fidelity tiers:
+- Tier 1 (correct): persist `CurrentTag.expiryDate` per unit, then residual = units whose
+  expiry >= next-delivery date. Needs: fridge_stock expiry column (migration + model) +
+  snapshot job change + forecast read. Also unlocks the withdrawal list for free.
+- Tier 2: product-level `shelf_life_days` (max life, ~218 null) - a coarse proxy.
+- Tier 3: reconstruct unit age from `restock_events` added-dates - imperfect tag matching.
+
+DECISION: implement Tier 1 (it is the only operationally safe version - Tier 2/3 over-deduct
+and risk stockouts). Forecast insertion point: `forecast_service._compute_cells`, right
+after `forecast_qty` is computed, subtract the per-(fridge,category) residual and clamp >=0;
+feed it a residual map precomputed in `_compute_run` (mirrors `_daily_category_units`).
+Coverage-window end = delivery_date + that fridge/weekday `days_to_fill`.
+
+Status: DONE (backend, Tier 1). Shipped:
+- `fridge_stock.expiry_dates TIMESTAMPTZ[]` column (model `models/sync.py` + migration
+  `0012_fridge_stock_expiry.sql`).
+- `snapshot_stock` now captures each tag's `expiryDate` (was discarded). Robust via
+  `getattr` so a bare-id tag can't crash the job.
+- `forecast_service`: `_residual_by_key` counts in-fridge units whose expiry is on/after
+  the next-delivery date per (fridge, category); `_compute_cells` subtracts it and clamps
+  >=0. `params.residual_deduction=true` records that it ran.
+- Tests: `test_forecast_residual_stock_deduction` (2 good + 1 expiring -> deducts 2) and
+  `test_forecast_residual_never_goes_negative` (clamp). Full workflow suite 11/11, husky
+  snapshot 3/3 green.
+ASSUMPTIONS: (a) a unit is "good" if its captured expiry >= the next-delivery date; units
+expiring sooner are NOT deducted (they belong on the withdrawal list); (b) units with no
+captured expiry are NOT deducted (conservative - never over-deduct / risk a stockout);
+(c) NO staleness guard in the forecast reader yet (menu allocation already guards stock
+staleness on the operationally-critical path); (d) `days_to_fill` is the coverage window.
+FOLLOW-UPS now unblocked: the **withdrawal list** (units expiring BEFORE the window) is
+the same data, one query away.
+
+### !! ENVIRONMENT FINDING - please check
+The `fridge_stock` TABLE DID NOT EXIST in the connected Railway DB (migration 0009 was
+never applied here). Nothing had failed because no test/endpoint exercised it, but the
+menu-allocation snacks/drinks branch (its only reader) WOULD fail against this DB. I
+created the table from the ORM model (idempotent `create(checkfirst=True)`), now including
+the new `expiry_dates` column, and added migration 0012. `architecture/database/schema.sql`
+is held by the other session, so I did NOT edit it - it still needs the `expiry_dates`
+column added there for parity (and 0009's fridge_stock may need reconciling in this DB).
+
+## Workstream 6 - Recurring provisioning + per-fridge product choices (DESIGN, tracked)
+
+### A. Recurring product provisioning / add-on auto-dispatch (slide 7)
+GOAL: products that recur on a schedule (5 kg fruit every Mon+Wed, coffee, business lunch)
+auto-appear on the dispatch sheet, excluding holidays.
+PROPOSED MODEL - new table `scheduled_provisions` (goes in `master.py`, currently free):
+  id, fridge_id (FK; client-level services resolve to the client's fridge), product_id (FK),
+  qty (int), service_type TEXT+CHECK (fruits|coffee|business_lunch|adhoc),
+  recurrence: EITHER `weekdays INT[]` (ISO 1-7, recurring) OR `on_date DATE` (one-off, e.g.
+  business lunch) - exactly one set; `exclude_holidays BOOL default true`;
+  `po_reference TEXT null` (business lunch); `valid_from/valid_to DATE null`; `active BOOL`;
+  created_at/updated_at.
+INTEGRATION: a dispatch step "apply recurring" expands active provisions whose weekdays
+contain the delivery weekday (or whose on_date == delivery_date), skipping holidays, into
+dispatch lines with a new `LineSource.recurring` (enums.py + a CHECK-update migration; or
+reuse `manual` to avoid the enum migration - TRADE-OFF logged). Merges into the matrix like
+the category import.
+API: CRUD `/api/v1/provisions`; dispatch integration endpoint. FRONTEND: an "Add-on services"
+page.
+OPEN QUESTIONS for you: (1) `exclude_holidays` needs a FORWARD holiday CALENDAR - none exists
+(forecast infers holidays retrospectively from low sales). Add a small `holidays(date)` table
+/ setting? (2) Target by fridge or by client? I propose fridge (dispatch is fridge x product);
+client-level services resolve to the client's fridges. (3) qty for weight-based items
+("5 kg") - store as integer amount with product unit semantics, or add a unit field?
+
+### B. Per-fridge product choices / exclude-product-from-fridge (slide 8)
+GOAL: the weekly menu is the global permitted list; per fridge you exclude specific products
+(e.g. no sandwiches at location X), and per-fridge quantities/prices already exist
+(product_targets, menu_product_caps, fridge_product_prices).
+PROPOSED MODEL - new table `fridge_product_exclusions` (in `master.py`, alongside the other
+per-(fridge,product) tables): (fridge_id FK, product_id FK) composite PK + created_at.
+Presence = excluded. (Exclusion chosen over an allow-list: simpler, matches the deck's
+"tick/untick to exclude"; the menu is already the base allow-list.)
+INTEGRATION: menu import-from-forecast split skips excluded (fridge,product);
+`menu_allocation_service` filters them out per fridge; the grid marks excluded cells disabled.
+API: GET/PUT `/api/v1/menus/fridge-exclusions?fridge_id=...` mirroring the existing
+product-targets / menu-caps endpoints in `menus.py`. FRONTEND: a per-fridge exclusion editor
+(Fridges delivery-config-style dialog) or a tick in the grid.
+NOTE: both A and B need NEW TABLES = schema changes. `schema.sql` is held by the other
+session, so I will add via NEW migration files (numbered to avoid collision) + `master.py`
+model + note that `schema.sql` needs a sync. B is the smaller/cleaner one to build first.

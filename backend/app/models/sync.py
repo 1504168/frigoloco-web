@@ -23,6 +23,7 @@ from __future__ import annotations
 import datetime
 
 from sqlalchemy import (
+    ARRAY,
     BigInteger,
     CheckConstraint,
     DateTime,
@@ -91,6 +92,14 @@ class FridgeStock(Base):
     # NULLable: snapshots can arrive for products not yet in the catalogue.
     product_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("products.id"))
     units: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Per-unit (per-RFID-tag) expiry dates captured from the Husky /stock/current
+    # payload (CurrentTag.expiryDate). NULLable/short when tags carry no expiry;
+    # `units` stays the authoritative count. Read by the forecast residual-stock
+    # deduction (units still good through the coverage window) and the withdrawal
+    # list (units expiring before the next delivery).
+    expiry_dates: Mapped[list[datetime.datetime] | None] = mapped_column(
+        ARRAY(DateTime(timezone=True))
+    )
     # One shared generation timestamp per snapshot run (mark-and-sweep).
     taken_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False

@@ -346,6 +346,109 @@ def test_full_workflow_pipeline_2027_w2(ctx):
     assert po_line["qty_ordered"] == 6
 
 
+def test_forecast_residual_stock_deduction(ctx):
+    """Forecast deducts in-fridge units still good through the coverage window,
+    and ignores units expiring before the next delivery (slide 5)."""
+    client, session = ctx.client, ctx.session
+    cat = _normal_category_id(session)
+    supplier_id = _create_supplier(client, f"{TAG}ResSup")
+    code = f"{TAG}RSP"
+    product_id = _create_product(client, code=code, category_id=cat, supplier_id=supplier_id)
+    fridge_id = _create_fridge(client, f"{TAG}resFr")
+
+    # Two deliveries 3 days apart -> days_to_fill = 3 -> coverage window ends
+    # 3 days after the delivery date.
+    second_weekday = ((DELIVERY_WEEKDAY + 3 - 1) % 7) + 1
+    client.put(
+        f"{PREFIX}/fridges/{fridge_id}/delivery-config",
+        json={
+            "items": [
+                {"weekday": DELIVERY_WEEKDAY, "min_daily_qty": 0},
+                {"weekday": second_weekday, "min_daily_qty": 0},
+            ]
+        },
+    )
+    # 21 sales / 21 days -> avg 1/day * days_to_fill 3 = base forecast 3.00.
+    _seed_sales(session, fridge_id=fridge_id, product_id=product_id, days=21)
+
+    window_end = DELIVERY_DATE + datetime.timedelta(days=3)  # next delivery
+    good = datetime.datetime(2027, 2, 1, 12, tzinfo=datetime.timezone.utc)  # after window
+    expiring = datetime.datetime(
+        window_end.year, window_end.month, window_end.day, 12, tzinfo=datetime.timezone.utc
+    ) - datetime.timedelta(days=2)  # before window_end
+    session.execute(
+        text(
+            "INSERT INTO fridge_stock "
+            "(fridge_id, product_code, product_id, units, expiry_dates, taken_at) "
+            "VALUES (:fid, :code, :pid, :units, :expiry, now())"
+        ),
+        {
+            "fid": fridge_id,
+            "code": code,
+            "pid": product_id,
+            "units": 3,
+            "expiry": [good, good, expiring],  # 2 good, 1 expiring
+        },
+    )
+    session.flush()
+
+    run = client.post(
+        f"{PREFIX}/forecasts/run",
+        json={"delivery_date": DELIVERY_DATE.isoformat(), "fridge_ids": [fridge_id]},
+    )
+    assert run.status_code == 200, run.text
+    body = run.json()
+    assert body["params"]["residual_deduction"] is True
+    cell = next(
+        r for r in body["results"] if r["fridge_id"] == fridge_id and r["category_id"] == cat
+    )
+    # base 3.00 minus the 2 units still good through the window = 1.00.
+    assert cell["forecast_qty"] == "1.00"
+
+
+def test_forecast_residual_never_goes_negative(ctx):
+    """Residual larger than the raw forecast clamps net-to-deliver at zero."""
+    client, session = ctx.client, ctx.session
+    cat = _normal_category_id(session)
+    supplier_id = _create_supplier(client, f"{TAG}Res0Sup")
+    code = f"{TAG}RZP"
+    product_id = _create_product(client, code=code, category_id=cat, supplier_id=supplier_id)
+    fridge_id = _create_fridge(client, f"{TAG}res0Fr")
+
+    second_weekday = ((DELIVERY_WEEKDAY + 3 - 1) % 7) + 1
+    client.put(
+        f"{PREFIX}/fridges/{fridge_id}/delivery-config",
+        json={
+            "items": [
+                {"weekday": DELIVERY_WEEKDAY, "min_daily_qty": 0},
+                {"weekday": second_weekday, "min_daily_qty": 0},
+            ]
+        },
+    )
+    _seed_sales(session, fridge_id=fridge_id, product_id=product_id, days=21)  # base 3.00
+
+    good = datetime.datetime(2027, 3, 1, 12, tzinfo=datetime.timezone.utc)
+    session.execute(
+        text(
+            "INSERT INTO fridge_stock "
+            "(fridge_id, product_code, product_id, units, expiry_dates, taken_at) "
+            "VALUES (:fid, :code, :pid, :units, :expiry, now())"
+        ),
+        {"fid": fridge_id, "code": code, "pid": product_id, "units": 10, "expiry": [good] * 10},
+    )
+    session.flush()
+
+    run = client.post(
+        f"{PREFIX}/forecasts/run",
+        json={"delivery_date": DELIVERY_DATE.isoformat(), "fridge_ids": [fridge_id]},
+    )
+    assert run.status_code == 200, run.text
+    cell = next(
+        r for r in run.json()["results"] if r["fridge_id"] == fridge_id and r["category_id"] == cat
+    )
+    assert cell["forecast_qty"] == "0.00"  # 3.00 - 10 clamped to zero
+
+
 def test_forecast_save_requires_delivery_config(ctx):
     """save with no fridge delivery config for the weekday -> 409 no_delivery_config."""
     resp = ctx.client.post(
