@@ -200,25 +200,39 @@ def test_full_workflow_pipeline_2027_w2(ctx):
     product_id = _create_product(client, code=f"{TAG}P1", category_id=cat, supplier_id=supplier_id)
     fridge_id = _create_fridge(client, f"{TAG}fr1")
 
+    # days_to_fill is derived from the rotation; a second delivery 3 days after
+    # the run's weekday makes that weekday's days_to_fill resolve to 3.
+    second_weekday = ((DELIVERY_WEEKDAY + 3 - 1) % 7) + 1
     client.put(
         f"{PREFIX}/fridges/{fridge_id}/delivery-config",
-        json={"items": [{"weekday": DELIVERY_WEEKDAY, "min_daily_qty": 0, "days_to_fill": 3}]},
+        json={
+            "items": [
+                {"weekday": DELIVERY_WEEKDAY, "min_daily_qty": 0},
+                {"weekday": second_weekday, "min_daily_qty": 0},
+            ]
+        },
     )
     # 21 sales / 21 lookback days -> avg 1/day * days_to_fill 3 = 3.00 forecast.
     _seed_sales(session, fridge_id=fridge_id, product_id=product_id, days=21)
 
-    # 1) run forecast: computes, is_saved=false.
-    run = client.post(f"{PREFIX}/forecasts/run", json={"delivery_date": DELIVERY_DATE.isoformat()})
+    # 1) run forecast: computes, is_saved=false. Scope to this fridge so the
+    # assertion is hermetic - other fridges may share this weekday.
+    run = client.post(
+        f"{PREFIX}/forecasts/run",
+        json={"delivery_date": DELIVERY_DATE.isoformat(), "fridge_ids": [fridge_id]},
+    )
     assert run.status_code == 200, run.text
     body = run.json()
     assert body["is_saved"] is False
     assert body["model"] == "moving_average_3w"
     assert (body["iso_year"], body["week_no"], body["day_name"]) == (YEAR, WEEK, DAY_NAME)
-    normal_cell = next(r for r in body["results"] if r["category_id"] == cat)
+    normal_cell = next(
+        r for r in body["results"] if r["fridge_id"] == fridge_id and r["category_id"] == cat
+    )
     assert normal_cell["forecast_qty"] == "3.00"
 
-    # 2) save forecast (persist keyed); overwrite-confirm.
-    save_body = {"year": YEAR, "week": WEEK, "day_name": DAY_NAME}
+    # 2) save forecast (persist keyed); overwrite-confirm. Scoped to this fridge.
+    save_body = {"year": YEAR, "week": WEEK, "day_name": DAY_NAME, "fridge_ids": [fridge_id]}
     saved = client.post(f"{PREFIX}/forecasts/save", json=save_body)
     assert saved.status_code == 200, saved.text
     assert saved.json()["is_saved"] is True

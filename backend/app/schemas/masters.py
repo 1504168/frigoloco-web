@@ -337,5 +337,12 @@ class DeliveryConfigItem(ApiModel):
     days_to_fill: int = Field(gt=0)
 
 
+class DeliveryConfigReplaceItem(ApiModel):
+    """Input row: ``days_to_fill`` is derived server-side from the rotation."""
+
+    weekday: int = Field(ge=1, le=7)
+    min_daily_qty: int = Field(ge=0)
+
+
 class DeliveryConfigReplace(ApiModel):
-    items: list[DeliveryConfigItem]
+    items: list[DeliveryConfigReplaceItem]

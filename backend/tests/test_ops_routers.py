@@ -201,13 +201,23 @@ def test_client_fees_and_interventions(ctx):
 
 def test_fridge_delivery_config(ctx):
     fid = _create_fridge(ctx.client, f"{TAG}frDC")
+    # days_to_fill is derived server-side from the rotation, never sent by the
+    # client: Wed(3) + Sat(6) -> Wed covers 3 days, Sat covers 4.
     put = ctx.client.put(
         f"{PREFIX}/fridges/{fid}/delivery-config",
-        json={"items": [{"weekday": 3, "min_daily_qty": 0, "days_to_fill": 3}]},
+        json={
+            "items": [
+                {"weekday": 3, "min_daily_qty": 0},
+                {"weekday": 6, "min_daily_qty": 2},
+            ]
+        },
     )
     assert put.status_code == 200
     cfg = ctx.client.get(f"{PREFIX}/fridges/{fid}/delivery-config").json()
-    assert cfg == [{"weekday": 3, "min_daily_qty": 0, "days_to_fill": 3}]
+    assert cfg == [
+        {"weekday": 3, "min_daily_qty": 0, "days_to_fill": 3},
+        {"weekday": 6, "min_daily_qty": 2, "days_to_fill": 4},
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -262,20 +272,33 @@ def test_forecast_scoring_allocation_end_to_end(ctx):
     drink_pid = _create_product(ctx.client, code=f"{TAG}Pd", category_id=cats["drinks"])
     fid = _create_fridge(ctx.client, f"{TAG}frF")
 
+    # days_to_fill is derived from the rotation. A second delivery 3 days after
+    # the run's weekday makes that weekday's days_to_fill resolve to 3.
+    second_weekday = ((DELIVERY_WEEKDAY + 3 - 1) % 7) + 1
     ctx.client.put(
         f"{PREFIX}/fridges/{fid}/delivery-config",
-        json={"items": [{"weekday": DELIVERY_WEEKDAY, "min_daily_qty": 0, "days_to_fill": 3}]},
+        json={
+            "items": [
+                {"weekday": DELIVERY_WEEKDAY, "min_daily_qty": 0},
+                {"weekday": second_weekday, "min_daily_qty": 0},
+            ]
+        },
     )
     # 21 sales across 21 distinct lookback days -> avg 1/day * 3 days_to_fill = 3.00.
     _seed_sales(ctx.session, fridge_id=fid, product_id=normal_pid, days=21)
 
+    # Scope the run to this fridge so the assertion is hermetic - other fridges
+    # may also be configured for this weekday.
     run = ctx.client.post(
-        f"{PREFIX}/forecasts/run", json={"delivery_date": DELIVERY_DATE.isoformat()}
+        f"{PREFIX}/forecasts/run",
+        json={"delivery_date": DELIVERY_DATE.isoformat(), "fridge_ids": [fid]},
     )
     assert run.status_code == 200, run.text
     run_body = run.json()
     normal_cell = next(
-        r for r in run_body["results"] if r["category_id"] == cats["normal"]
+        r
+        for r in run_body["results"]
+        if r["fridge_id"] == fid and r["category_id"] == cats["normal"]
     )
     assert normal_cell["forecast_qty"] == "3.00"
     assert normal_cell["valid_days"] == 21

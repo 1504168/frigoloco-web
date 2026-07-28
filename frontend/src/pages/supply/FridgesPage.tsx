@@ -489,11 +489,33 @@ function DeleteFridgeDialog({ fridge, onClose, onDeleted }: DeleteFridgeDialogPr
 interface WeekdayRow {
   enabled: boolean
   min_daily_qty: string
-  days_to_fill: string
 }
 
 function emptyWeek(): WeekdayRow[] {
-  return WEEKDAYS.map(() => ({ enabled: false, min_daily_qty: '0', days_to_fill: '1' }))
+  return WEEKDAYS.map(() => ({ enabled: false, min_daily_qty: '0' }))
+}
+
+/**
+ * Derive days-to-fill for every row from the delivery rotation: for each ticked
+ * weekday, the gap (counting the delivery day, not the next) until the next
+ * ticked weekday. Thu+Sun -> Thu=3, Sun=4; a single day -> 7. Unticked rows
+ * return null. Mirrors the backend rule in delivery_config_service.py.
+ */
+function deriveDaysToFill(rows: WeekdayRow[]): (number | null)[] {
+  const enabledWeekdays = rows
+    .map((row, index) => (row.enabled ? index + 1 : null))
+    .filter((weekday): weekday is number => weekday !== null)
+    .sort((a, b) => a - b)
+
+  const result: (number | null)[] = rows.map(() => null)
+  if (enabledWeekdays.length === 0) return result
+
+  enabledWeekdays.forEach((weekday, position) => {
+    const nextWeekday = enabledWeekdays[(position + 1) % enabledWeekdays.length]
+    const gap = (((nextWeekday - weekday) % 7) + 7) % 7
+    result[weekday - 1] = gap === 0 ? 7 : gap
+  })
+  return result
 }
 
 function DeliveryConfigDialog({ fridge, onClose }: { fridge: Fridge; onClose: () => void }) {
@@ -516,7 +538,6 @@ function DeliveryConfigDialog({ fridge, onClose }: { fridge: Fridge; onClose: ()
         next[index] = {
           enabled: true,
           min_daily_qty: String(item.min_daily_qty),
-          days_to_fill: String(item.days_to_fill),
         }
       }
     }
@@ -525,13 +546,14 @@ function DeliveryConfigDialog({ fridge, onClose }: { fridge: Fridge; onClose: ()
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const items: DeliveryConfigItem[] = rows
+      // days_to_fill is derived server-side from the rotation; send only the
+      // ticked weekday and its min daily qty.
+      const items = rows
         .map((row, index) => ({ row, index }))
         .filter(({ row }) => row.enabled)
         .map(({ row, index }) => ({
           weekday: index + 1, // row index 0..6 -> ISO Mon=1 … Sun=7
           min_daily_qty: Number(row.min_daily_qty) || 0,
-          days_to_fill: Number(row.days_to_fill) || 1,
         }))
       return api.put<DeliveryConfigItem[]>(`/api/v1/fridges/${fridge.id}/delivery-config`, {
         items,
@@ -552,6 +574,7 @@ function DeliveryConfigDialog({ fridge, onClose }: { fridge: Fridge; onClose: ()
   }
 
   const enabledCount = rows.filter((row) => row.enabled).length
+  const derivedDaysToFill = deriveDaysToFill(rows)
 
   return (
     <Dialog
@@ -580,7 +603,7 @@ function DeliveryConfigDialog({ fridge, onClose }: { fridge: Fridge; onClose: ()
           <div className="grid grid-cols-[auto_1fr_1fr] items-center gap-3 px-1 text-xs font-medium text-muted-foreground">
             <span>Weekday</span>
             <span>Min daily qty</span>
-            <span>Days to fill</span>
+            <span>Days to fill (auto)</span>
           </div>
           {rows.map((row, index) => (
             <div
@@ -603,13 +626,18 @@ function DeliveryConfigDialog({ fridge, onClose }: { fridge: Fridge; onClose: ()
                 disabled={!row.enabled}
                 onChange={(event) => updateRow(index, { min_daily_qty: event.target.value })}
               />
-              <Input
-                type="number"
-                min={1}
-                value={row.days_to_fill}
-                disabled={!row.enabled}
-                onChange={(event) => updateRow(index, { days_to_fill: event.target.value })}
-              />
+              <div className="flex h-9 items-center rounded-md border border-transparent px-3 text-sm tabular-nums">
+                {row.enabled ? (
+                  <span>
+                    {derivedDaysToFill[index]}
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      day{derivedDaysToFill[index] === 1 ? '' : 's'}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">-</span>
+                )}
+              </div>
             </div>
           ))}
         </div>

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.husky.sync import effective_status_clause
 from app.models.master import Fridge, FridgeDeliveryConfig
+from app.services.delivery_config_service import compute_days_to_fill
 from app.schemas.masters import (
     DeliveryConfigItem,
     DeliveryConfigReplace,
@@ -145,6 +146,7 @@ def replace_delivery_config(
         raise api_error(
             422, "validation_error", "Duplicate weekday in delivery config", None
         )
+    days_to_fill_by_weekday = compute_days_to_fill(weekdays)
     for existing in session.execute(
         select(FridgeDeliveryConfig).where(FridgeDeliveryConfig.fridge_id == fridge_id)
     ).scalars().all():
@@ -156,7 +158,7 @@ def replace_delivery_config(
                 fridge_id=fridge_id,
                 weekday=item.weekday,
                 min_daily_qty=item.min_daily_qty,
-                days_to_fill=item.days_to_fill,
+                days_to_fill=days_to_fill_by_weekday[item.weekday],
             )
         )
     session.commit()
