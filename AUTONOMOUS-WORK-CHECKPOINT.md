@@ -227,6 +227,13 @@ staleness on the operationally-critical path); (d) `days_to_fill` is the coverag
 FOLLOW-UPS now unblocked: the **withdrawal list** (units expiring BEFORE the window) is
 the same data, one query away.
 
+### Withdrawal list (slides 5, 10) - DONE (backend)
+`GET /api/v1/dispatches/withdrawal-list?year&week&day_name` -> per (fridge, product) the
+count of in-fridge units expiring BEFORE the coverage window end (the exact complement of
+the residual deduction), for the driver to pull. `dispatch_service.withdrawal_list` +
+`WithdrawalListOut` schema. Test `test_dispatch_withdrawal_list`. The frontend surface (a
+withdrawal panel on the Dispatch sheet) is still TODO - the API is ready for it.
+
 ### !! ENVIRONMENT FINDING - please check
 The `fridge_stock` TABLE DID NOT EXIST in the connected Railway DB (migration 0009 was
 never applied here). Nothing had failed because no test/endpoint exercised it, but the

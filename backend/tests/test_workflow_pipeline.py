@@ -449,6 +449,58 @@ def test_forecast_residual_never_goes_negative(ctx):
     assert cell["forecast_qty"] == "0.00"  # 3.00 - 10 clamped to zero
 
 
+def test_dispatch_withdrawal_list(ctx):
+    """Withdrawal list surfaces in-fridge units expiring before the next delivery."""
+    client, session = ctx.client, ctx.session
+    cat = _normal_category_id(session)
+    supplier_id = _create_supplier(client, f"{TAG}WdSup")
+    code = f"{TAG}WDP"
+    product_id = _create_product(client, code=code, category_id=cat, supplier_id=supplier_id)
+    fridge_id = _create_fridge(client, f"{TAG}wdFr")
+
+    second_weekday = ((DELIVERY_WEEKDAY + 3 - 1) % 7) + 1
+    client.put(
+        f"{PREFIX}/fridges/{fridge_id}/delivery-config",
+        json={
+            "items": [
+                {"weekday": DELIVERY_WEEKDAY, "min_daily_qty": 0},
+                {"weekday": second_weekday, "min_daily_qty": 0},
+            ]
+        },
+    )
+
+    window_end = DELIVERY_DATE + datetime.timedelta(days=3)
+    good = datetime.datetime(2027, 2, 1, 12, tzinfo=datetime.timezone.utc)  # survives window
+    expiring = datetime.datetime(
+        window_end.year, window_end.month, window_end.day, 12, tzinfo=datetime.timezone.utc
+    ) - datetime.timedelta(days=2)  # before window_end -> must be pulled
+    session.execute(
+        text(
+            "INSERT INTO fridge_stock "
+            "(fridge_id, product_code, product_id, units, expiry_dates, taken_at) "
+            "VALUES (:fid, :code, :pid, :units, :expiry, now())"
+        ),
+        {
+            "fid": fridge_id,
+            "code": code,
+            "pid": product_id,
+            "units": 3,
+            "expiry": [good, good, expiring],
+        },
+    )
+    session.flush()
+
+    resp = client.get(
+        f"{PREFIX}/dispatches/withdrawal-list",
+        params={"year": YEAR, "week": WEEK, "day_name": DAY_NAME},
+    )
+    assert resp.status_code == 200, resp.text
+    items = resp.json()["items"]
+    mine = [it for it in items if it["fridge_id"] == fridge_id and it["product_id"] == product_id]
+    assert len(mine) == 1
+    assert mine[0]["units_expiring"] == 1  # only the one expiring unit is pulled
+
+
 def test_forecast_save_requires_delivery_config(ctx):
     """save with no fridge delivery config for the weekday -> 409 no_delivery_config."""
     resp = ctx.client.post(

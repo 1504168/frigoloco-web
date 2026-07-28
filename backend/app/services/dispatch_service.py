@@ -23,7 +23,13 @@ from app.models.enums import (
     LineSource,
     StockMovementType,
 )
-from app.models.master import Category, Fridge, FridgeProductPrice, Product
+from app.models.master import (
+    Category,
+    Fridge,
+    FridgeDeliveryConfig,
+    FridgeProductPrice,
+    Product,
+)
 from app.models.operations import (
     Alert,
     Dispatch,
@@ -744,6 +750,71 @@ def get_saved_by_key(
     """Load the dispatch for the (year, week, day_name) key (import-from-database)."""
     delivery_date = resolve_delivery_date(year, week, day_name)
     return _dispatch_for_delivery_date(delivery_date, session)
+
+
+@dataclass(frozen=True)
+class WithdrawalItem:
+    fridge_id: int
+    friendly_name: str
+    product_id: int
+    product_code: str
+    product_name: str
+    units_expiring: int
+    earliest_expiry: datetime.datetime
+
+
+def withdrawal_list(
+    *, year: int, week: int, day_name: str, session: Session
+) -> list[WithdrawalItem]:
+    """Products a driver must PULL from each fridge on this delivery day (slide 5).
+
+    For every fridge with a delivery config on this weekday, the coverage window
+    ends at the next delivery (``delivery_date + days_to_fill``). Any in-fridge
+    unit whose captured expiry falls BEFORE that date will not survive the window
+    and is listed for withdrawal. This is the exact complement of the forecast's
+    residual-stock deduction (which keeps units expiring on/after the window).
+    """
+    delivery_date = resolve_delivery_date(year, week, day_name)
+    weekday = delivery_date.isoweekday()
+    configs = session.execute(
+        select(FridgeDeliveryConfig.fridge_id, FridgeDeliveryConfig.days_to_fill).where(
+            FridgeDeliveryConfig.weekday == weekday
+        )
+    ).all()
+
+    items: list[WithdrawalItem] = []
+    for fridge_id, days_to_fill in configs:
+        window_end = delivery_date + datetime.timedelta(days=days_to_fill)
+        rows = session.execute(
+            text(
+                "SELECT fs.product_id AS product_id, fs.product_code AS product_code, "
+                "p.name AS product_name, f.friendly_name AS friendly_name, "
+                "count(*) FILTER (WHERE ed.expiry < :window_end) AS expiring, "
+                "min(ed.expiry) FILTER (WHERE ed.expiry < :window_end) AS earliest "
+                "FROM fridge_stock fs "
+                "JOIN products p ON p.id = fs.product_id "
+                "JOIN fridges f ON f.id = fs.fridge_id "
+                "CROSS JOIN LATERAL unnest(fs.expiry_dates) AS ed(expiry) "
+                "WHERE fs.fridge_id = :fid AND fs.product_id IS NOT NULL "
+                "GROUP BY fs.product_id, fs.product_code, p.name, f.friendly_name "
+                "HAVING count(*) FILTER (WHERE ed.expiry < :window_end) > 0"
+            ),
+            {"fid": fridge_id, "window_end": window_end},
+        ).all()
+        for row in rows:
+            items.append(
+                WithdrawalItem(
+                    fridge_id=fridge_id,
+                    friendly_name=row.friendly_name,
+                    product_id=int(row.product_id),
+                    product_code=row.product_code,
+                    product_name=row.product_name,
+                    units_expiring=int(row.expiring),
+                    earliest_expiry=row.earliest,
+                )
+            )
+    items.sort(key=lambda item: (item.friendly_name, item.product_name))
+    return items
 
 
 def clone_dispatch(

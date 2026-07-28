@@ -96,6 +96,25 @@ class DispatchCloneRequest(ApiModel):
     overwrite: bool = False
 
 
+class WithdrawalItem(ApiModel):
+    """One product a driver must pull from a fridge (DLC too short for the window)."""
+
+    fridge_id: int
+    friendly_name: str
+    product_id: int
+    product_code: str
+    product_name: str
+    units_expiring: int
+    earliest_expiry: datetime.datetime
+
+
+class WithdrawalListOut(ApiModel):
+    year: int
+    week: int
+    day_name: str
+    items: list[WithdrawalItem]
+
+
 class ConfirmRequest(ApiModel):
     force: bool = False
 

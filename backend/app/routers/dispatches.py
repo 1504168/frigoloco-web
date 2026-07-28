@@ -16,6 +16,8 @@ from app.schemas.dispatches import (
     DispatchMatrix,
     DispatchRead,
     DispatchSaveRequest,
+    WithdrawalItem,
+    WithdrawalListOut,
 )
 from app.schemas.masters import Page, PaginationParams, api_error, make_router, pagination
 from app.services import dispatch_service
@@ -123,6 +125,25 @@ def load_saved_dispatch(
             {"year": year, "week": week, "day_name": day_name},
         )
     return DispatchRead.model_validate(dispatch)
+
+
+@router.get("/withdrawal-list", response_model=WithdrawalListOut)
+def get_withdrawal_list(
+    year: int = Query(..., ge=2020, le=2100),
+    week: int = Query(..., ge=1, le=53),
+    day_name: str = Query(...),
+    session: Session = Depends(get_db),
+) -> WithdrawalListOut:
+    """Products to pull from each fridge (DLC too short for the coverage window)."""
+    items = dispatch_service.withdrawal_list(
+        year=year, week=week, day_name=day_name, session=session
+    )
+    return WithdrawalListOut(
+        year=year,
+        week=week,
+        day_name=day_name,
+        items=[WithdrawalItem.model_validate(item) for item in items],
+    )
 
 
 @router.post("/clone", response_model=DispatchRead)
