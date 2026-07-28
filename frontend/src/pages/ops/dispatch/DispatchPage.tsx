@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Download, Save, Truck } from 'lucide-react'
+import { Copy, Download, Save, Truck } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
@@ -11,11 +11,13 @@ import { api, ApiError } from '@/lib/api'
 import { formatEuro } from '@/lib/format'
 import { WeekDayPicker } from '@/pages/ops/components/WeekDayPicker'
 import { ConfirmDialog } from '@/pages/ops/components/ConfirmDialog'
+import { Modal } from '@/pages/ops/components/Modal'
 import { PlanningGrid } from '@/pages/ops/components/PlanningGrid'
 import { CategoryScopeSelect } from '@/pages/ops/components/CategoryScopeSelect'
 import { useMenuCategoryColumns, useProductCatalogue } from '@/pages/ops/lib/reference'
 import { usePlanningGridState, useProductMeta } from '@/pages/ops/lib/grid'
 import { keyIsPast, useWeekDayKey, weekKeyLabel } from '@/pages/ops/lib/pipelineKey'
+import type { WeekDayKey } from '@/pages/ops/lib/pipelineKey'
 import type {
   ConfirmResult,
   DispatchMatrix,
@@ -39,6 +41,9 @@ export function DispatchPage() {
   const [force, setForce] = React.useState(false)
   // null = whole dispatch; a category id scopes pull/save to that one category.
   const [scopeCategoryId, setScopeCategoryId] = React.useState<number | null>(null)
+  const [cloneOpen, setCloneOpen] = React.useState(false)
+  const [cloneOverwriteOpen, setCloneOverwriteOpen] = React.useState(false)
+  const [cloneTarget, setCloneTarget] = React.useState<WeekDayKey>(key)
 
   const isPast = keyIsPast(key)
 
@@ -204,6 +209,37 @@ export function DispatchPage() {
     },
   })
 
+  const cloneMutation = useMutation({
+    mutationFn: (overwrite: boolean) =>
+      api.post<DispatchRead>('/api/v1/dispatches/clone', {
+        source_year: key.year,
+        source_week: key.week,
+        source_day_name: key.dayName,
+        target_year: cloneTarget.year,
+        target_week: cloneTarget.week,
+        target_day_name: cloneTarget.dayName,
+        overwrite,
+      }),
+    onSuccess: () => {
+      setCloneOpen(false)
+      setCloneOverwriteOpen(false)
+      toast.success(`Cloned this dispatch day to ${weekKeyLabel(cloneTarget)}`, {
+        description: 'The target day now holds these planned lines. Stock is not affected.',
+      })
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.code === 'exists') {
+        setCloneOverwriteOpen(true)
+        return
+      }
+      if (error instanceof ApiError && error.status === 404) {
+        toast.error('Save this dispatch day first, then clone it.')
+        return
+      }
+      toast.error(error instanceof ApiError ? error.message : 'Failed to clone dispatch day')
+    },
+  })
+
   const isBusy = importMutation.isPending || loadSavedMutation.isPending
   const isDispatched = status === 'dispatched' || status === 'reconciled'
   const canSave = grid.fridges.length > 0 && grid.productIds.size > 0 && !isDispatched
@@ -251,6 +287,17 @@ export function DispatchPage() {
           >
             <Save className="h-4 w-4" />
             {saveMutation.isPending ? 'Saving…' : 'Save'}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setCloneTarget(key)
+              setCloneOpen(true)
+            }}
+            disabled={!loaded || !grid.hasData}
+          >
+            <Copy className="h-4 w-4" />
+            Clone day
           </Button>
           <Button
             onClick={() => {
@@ -345,6 +392,50 @@ export function DispatchPage() {
           affected products.
         </p>
       </ConfirmDialog>
+
+      <Modal
+        open={cloneOpen}
+        onClose={() => setCloneOpen(false)}
+        title="Clone this dispatch day"
+        className="max-w-lg"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setCloneOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => cloneMutation.mutate(false)}
+              disabled={cloneMutation.isPending}
+            >
+              <Copy className="h-4 w-4" />
+              {cloneMutation.isPending ? 'Cloning…' : 'Clone'}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Copies the <strong>saved</strong> planned lines from {weekKeyLabel(key)} onto the target
+            day below. Stock is not affected - only "Create Individual Dispatch" moves stock. Save
+            this day first if you have unsaved edits.
+          </p>
+          <div>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">Target day</span>
+            <WeekDayPicker value={cloneTarget} onChange={setCloneTarget} />
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={cloneOverwriteOpen}
+        onClose={() => setCloneOverwriteOpen(false)}
+        onConfirm={() => cloneMutation.mutate(true)}
+        title="Overwrite the target dispatch?"
+        description={`A saved dispatch already exists for ${weekKeyLabel(cloneTarget)}. Overwriting replaces its planned lines with this day's. Stock is not affected.`}
+        confirmLabel="Overwrite"
+        destructive
+        pending={cloneMutation.isPending}
+      />
     </div>
   )
 }

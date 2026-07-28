@@ -3,6 +3,8 @@ receive, cancel. Routers stay thin - validation + delegation only."""
 
 from __future__ import annotations
 
+import datetime
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -33,11 +35,18 @@ router = APIRouter(prefix="/api/v1/purchase-orders", tags=["purchase-orders"])
 def list_purchase_orders(
     status: PoStatus | None = None,
     supplier_id: int | None = None,
+    delivery_from: datetime.date | None = None,
+    delivery_to: datetime.date | None = None,
     page: PageParams = Depends(get_page_params),
     db: Session = Depends(get_db),
 ) -> Page[PurchaseOrderRead]:
     items, total = orders_service.list_purchase_orders(
-        db, page, status=status, supplier_id=supplier_id
+        db,
+        page,
+        status=status,
+        supplier_id=supplier_id,
+        delivery_from=delivery_from,
+        delivery_to=delivery_to,
     )
     return Page(items=items, total=total, limit=page.limit, offset=page.offset)
 

@@ -526,3 +526,94 @@ def test_category_scoped_dispatch_save_and_import(ctx):
         },
     )
     assert bad.status_code == 422 and bad.json()["error"]["code"] == "validation_error"
+
+
+def test_clone_dispatch_day(ctx):
+    """Cloning copies a saved day's planned lines onto another day (no stock effect)."""
+    client, session = ctx.client, ctx.session
+    cat = _normal_category_id(session)
+    supplier_id = _create_supplier(client, f"{TAG}CloneSup")
+    product_id = _create_product(client, code=f"{TAG}CLP", category_id=cat, supplier_id=supplier_id)
+    fridge_id = _create_fridge(client, f"{TAG}cloneFr")
+
+    src = {"year": YEAR, "week": WEEK, "day_name": "Wednesday"}
+    tgt = {"year": YEAR, "week": WEEK, "day_name": "Thursday"}
+
+    # Save a planned dispatch on the source day.
+    saved = client.post(
+        f"{PREFIX}/dispatches/save",
+        json={**src, "lines": [{"fridge_id": fridge_id, "product_id": product_id, "qty": 7}]},
+    )
+    assert saved.status_code == 200, saved.text
+
+    clone_body = {
+        "source_year": YEAR,
+        "source_week": WEEK,
+        "source_day_name": "Wednesday",
+        "target_year": YEAR,
+        "target_week": WEEK,
+        "target_day_name": "Thursday",
+    }
+    cloned = client.post(f"{PREFIX}/dispatches/clone", json=clone_body)
+    assert cloned.status_code == 200, cloned.text
+    assert cloned.json()["status"] == "saved"
+
+    # Target now carries the same line.
+    tgt_id = client.get(f"{PREFIX}/dispatches/saved", params=tgt).json()["id"]
+    matrix = client.get(f"{PREFIX}/dispatches/{tgt_id}/matrix").json()["cells"]
+    assert {c["product_id"]: c["qty"] for c in matrix} == {product_id: 7}
+
+    # Re-cloning onto an existing saved target needs overwrite.
+    dup = client.post(f"{PREFIX}/dispatches/clone", json=clone_body)
+    assert dup.status_code == 409 and dup.json()["error"]["code"] == "exists"
+
+    ow = client.post(f"{PREFIX}/dispatches/clone", json={**clone_body, "overwrite": True})
+    assert ow.status_code == 200, ow.text
+
+    # Cloning from a day with no saved dispatch is a 404.
+    empty = client.post(
+        f"{PREFIX}/dispatches/clone",
+        json={**clone_body, "source_day_name": "Friday"},
+    )
+    assert empty.status_code == 404 and empty.json()["error"]["code"] == "not_found"
+
+
+def test_po_delivery_date_filter(ctx):
+    """GET /purchase-orders filters by expected delivery date (warehouse view)."""
+    client, session = ctx.client, ctx.session
+    cat = _normal_category_id(session)
+    supplier_id = _create_supplier(client, f"{TAG}PoDateSup")
+    product_id = _create_product(client, code=f"{TAG}PDP", category_id=cat, supplier_id=supplier_id)
+
+    today = datetime.date.today()
+
+    def _make_po(expected: datetime.date) -> int:
+        resp = client.post(
+            f"{PREFIX}/purchase-orders",
+            json={
+                "supplier_id": supplier_id,
+                "order_date": today.isoformat(),
+                "expected_delivery_date": expected.isoformat(),
+                "lines": [
+                    {"product_id": product_id, "qty": 3, "unit_price": "1.00", "vat_rate": "0.06"}
+                ],
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()["id"]
+
+    near = _make_po(today + datetime.timedelta(days=3))
+    far = _make_po(today + datetime.timedelta(days=10))
+
+    def _ids(**params) -> set[int]:
+        resp = client.get(f"{PREFIX}/purchase-orders", params={"supplier_id": supplier_id, **params})
+        assert resp.status_code == 200, resp.text
+        return {po["id"] for po in resp.json()["items"]}
+
+    assert _ids() == {near, far}
+    assert _ids(delivery_from=(today + datetime.timedelta(days=8)).isoformat()) == {far}
+    assert _ids(delivery_to=(today + datetime.timedelta(days=5)).isoformat()) == {near}
+    assert _ids(
+        delivery_from=today.isoformat(),
+        delivery_to=(today + datetime.timedelta(days=20)).isoformat(),
+    ) == {near, far}

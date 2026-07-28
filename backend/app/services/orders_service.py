@@ -288,12 +288,19 @@ def list_purchase_orders(
     page: PageParams,
     status: PoStatus | None = None,
     supplier_id: int | None = None,
+    delivery_from: datetime.date | None = None,
+    delivery_to: datetime.date | None = None,
 ) -> tuple[list[PurchaseOrderRead], int]:
     conditions = []
     if status is not None:
         conditions.append(PurchaseOrder.status == status)
     if supplier_id is not None:
         conditions.append(PurchaseOrder.supplier_id == supplier_id)
+    # Warehouse view: filter by expected delivery date (what is arriving when).
+    if delivery_from is not None:
+        conditions.append(PurchaseOrder.expected_delivery_date >= delivery_from)
+    if delivery_to is not None:
+        conditions.append(PurchaseOrder.expected_delivery_date <= delivery_to)
 
     total_count = session.execute(
         select(func.count()).select_from(PurchaseOrder).where(*conditions)

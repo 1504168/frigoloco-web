@@ -10,6 +10,7 @@ from app.models.enums import DispatchStatus
 from app.schemas.dispatches import (
     ConfirmRequest,
     ConfirmResult,
+    DispatchCloneRequest,
     DispatchCreate,
     DispatchLinesReplace,
     DispatchMatrix,
@@ -121,6 +122,25 @@ def load_saved_dispatch(
             "No saved dispatch for this key",
             {"year": year, "week": week, "day_name": day_name},
         )
+    return DispatchRead.model_validate(dispatch)
+
+
+@router.post("/clone", response_model=DispatchRead)
+def clone_dispatch(
+    body: DispatchCloneRequest, session: Session = Depends(get_db)
+) -> DispatchRead:
+    """Clone a saved dispatch day's planned lines onto another day (no stock effect)."""
+    dispatch = dispatch_service.clone_dispatch(
+        source_year=body.source_year,
+        source_week=body.source_week,
+        source_day_name=body.source_day_name,
+        target_year=body.target_year,
+        target_week=body.target_week,
+        target_day_name=body.target_day_name,
+        overwrite=body.overwrite,
+        user_id=None,
+        session=session,
+    )
     return DispatchRead.model_validate(dispatch)
 
 

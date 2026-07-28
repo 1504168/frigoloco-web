@@ -746,6 +746,116 @@ def get_saved_by_key(
     return _dispatch_for_delivery_date(delivery_date, session)
 
 
+def clone_dispatch(
+    *,
+    source_year: int,
+    source_week: int,
+    source_day_name: str,
+    target_year: int,
+    target_week: int,
+    target_day_name: str,
+    overwrite: bool,
+    user_id: int | None,
+    session: Session,
+) -> Dispatch:
+    """Copy a saved dispatch day's planned lines onto another day (D2, slide 10).
+
+    Reads the source day's saved lines and writes them as a PLANNED dispatch on
+    the target day - status 'saved', NO stock effect (stock only ever moves on
+    create-individual). Overwrite-confirm applies to the target: an existing
+    saved/draft target yields ``409 {code:"exists"}`` unless ``overwrite`` is
+    set; a confirmed target cannot be overwritten.
+    """
+    source_date = resolve_delivery_date(source_year, source_week, source_day_name)
+    target_date = resolve_delivery_date(target_year, target_week, target_day_name)
+    if source_date == target_date:
+        raise api_error(
+            422,
+            "validation_error",
+            "Source and target dispatch day must differ",
+            {"delivery_date": source_date.isoformat()},
+        )
+
+    source = _dispatch_for_delivery_date(source_date, session)
+    if source is None:
+        raise api_error(
+            404,
+            "not_found",
+            "No saved dispatch to clone for the source day",
+            {"year": source_year, "week": source_week, "day_name": source_day_name},
+        )
+    source_lines = list(
+        session.execute(
+            select(DispatchLine).where(DispatchLine.dispatch_id == source.id)
+        )
+        .scalars()
+        .all()
+    )
+    if not source_lines:
+        raise api_error(
+            409,
+            "conflict",
+            "The source dispatch has no lines to clone",
+            {"dispatch_id": source.id},
+        )
+
+    target = _dispatch_for_delivery_date(target_date, session)
+    if target is not None:
+        if target.status in _CONFIRMED_STATUSES:
+            raise api_error(
+                409,
+                "conflict",
+                "Target dispatch already created (dispatched); cannot overwrite",
+                {"delivery_date": target_date.isoformat(), "status": target.status.value},
+            )
+        if not overwrite:
+            raise api_error(
+                409,
+                "exists",
+                "A saved dispatch already exists for the target day; resend with overwrite=true",
+                {"delivery_date": target_date.isoformat(), "dispatch_id": target.id},
+            )
+    else:
+        iso_year, iso_week, weekday = target_date.isocalendar()
+        target = Dispatch(
+            delivery_date=target_date,
+            iso_week=iso_week,
+            weekday=weekday,
+            status=DispatchStatus.saved,
+            created_by=user_id,
+        )
+        session.add(target)
+        session.flush()  # assign target.id
+
+    lines = [
+        LineInput(
+            fridge_id=line.fridge_id,
+            product_id=line.product_id,
+            qty=line.qty,
+            source=line.source,
+        )
+        for line in source_lines
+    ]
+    written = _replace_lines(
+        dispatch=target, lines=lines, category_id=None, session=session
+    )
+    record_audit(
+        session,
+        action="dispatch.clone",
+        entity="dispatches",
+        entity_id=target.id,
+        after={
+            "source_delivery_date": source_date.isoformat(),
+            "target_delivery_date": target_date.isoformat(),
+            "lines_written": written,
+        },
+        user_id=user_id,
+    )
+    session.commit()
+    session.refresh(target)
+    return target
+
+
 def create_individual_by_key(
     *, year: int, week: int, day_name: str, force: bool, user_id: int | None, session: Session
 ) -> tuple[Dispatch, int]:
