@@ -34,8 +34,6 @@ from app.models.operations import (
     OrderNoCounter,
     PurchaseOrder,
     PurchaseOrderLine,
-    RestockVerification,
-    RestockVerificationLine,
     StockMovement,
     WeeklyFinancial,
 )
@@ -86,8 +84,6 @@ __all__ = [
     "Dispatch",
     "DispatchLine",
     "StockMovement",
-    "RestockVerification",
-    "RestockVerificationLine",
     "WeeklyFinancial",
     "Alert",
     "AuditLog",

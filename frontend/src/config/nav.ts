@@ -1,7 +1,6 @@
 import {
   Bell,
   Boxes,
-  CheckSquare,
   ClipboardList,
   LayoutGrid,
   Package,
@@ -52,7 +51,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Dispatch', path: '/dispatch', icon: Truck },
       { label: 'Purchase Orders', path: '/purchase-orders', icon: ClipboardList },
       { label: 'Stock', path: '/stock', icon: Boxes },
-      { label: 'Verification', path: '/verification', icon: CheckSquare },
+      // NOTE (2026-07-28): Verification nav item (legacy R9) removed.
     ],
   },
   {

@@ -1,5 +1,5 @@
 /**
- * Finance / Verification / Settings types, mirrored from the FastAPI OpenAPI
+ * Finance / Settings types, mirrored from the FastAPI OpenAPI
  * schema (verified live against http://localhost:8000/openapi.json). The
  * cross-domain entities this page reads (Fridge, Category, Setting) are defined
  * once in src/lib/types.ts and re-exported here.
@@ -112,49 +112,7 @@ export interface FridgeReport {
   rows: FridgeReportRow[]
 }
 
-/** GET /api/v1/verifications item (schema: VerificationSummary). */
-export interface VerificationSummary {
-  id: number
-  dispatch_id: number
-  run_at: string
-}
-
-/** One reconciliation line (schema: VerificationLineRead). */
-export interface VerificationLine {
-  id: number
-  fridge_id: number
-  product_id: number
-  dispatched_qty: number
-  added_qty: number
-  unreliable_qty: number
-  diff_qty: number
-  diff_value: string
-}
-
-/** Per-category reconciliation totals (schema: CategoryReconTotal). */
-export interface CategoryReconTotal {
-  category_id: number
-  dispatched_qty: number
-  added_qty: number
-  unreliable_qty: number
-  diff_qty: number
-  diff_value: string
-}
-
-/** GET /api/v1/verifications/{id} (schema: VerificationRead). */
-export interface VerificationDetail {
-  id: number
-  dispatch_id: number
-  run_at: string
-  lines: VerificationLine[]
-  category_totals: CategoryReconTotal[]
-}
-
-/** Dispatch summary (schema: DispatchRead) - used by the verify picker. */
-export interface Dispatch {
-  id: number
-  delivery_date: string
-  iso_week: number
-  weekday: number
-  status: string
-}
+// NOTE (2026-07-28): Restock verification (legacy R9) removed. The
+// VerificationSummary / VerificationLine / CategoryReconTotal / VerificationDetail
+// interfaces and the Dispatch verify-picker summary went with it. Dispatched-vs-added
+// reconciliation returns later as a derived, period-level (weekly/monthly) report.

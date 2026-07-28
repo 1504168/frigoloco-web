@@ -288,57 +288,10 @@ def _stock_balance(session: Session, product_id: int) -> int:
     )
 
 
-# ===========================================================================
-# Verifications (R9)
-# ===========================================================================
-
-
-def test_verify_dispatch_computes_diff(client, seed, db_session) -> None:
-    # Pinned to a synthetic empty week (no real Husky data): the reconciliation
-    # scans ALL restock events in the delivery-day window, not just ZZTEST rows.
-    delivery = SYNTHETIC_DAY
-    dispatch = Dispatch(
-        delivery_date=delivery,
-        iso_week=delivery.isocalendar()[1],
-        weekday=delivery.isocalendar()[2],
-        status=DispatchStatus.draft,
-    )
-    db_session.add(dispatch)
-    db_session.flush()
-    db_session.add(
-        DispatchLine(
-            dispatch_id=dispatch.id,
-            fridge_id=seed.fridge_id,
-            product_id=seed.product_id,
-            delivery_date=delivery,  # denormalised partition key
-            qty=10,
-            unit_purchase_price=400,  # cents (EUR 4.00)
-        )
-    )
-    occurred = datetime.datetime(delivery.year, delivery.month, delivery.day, 10, 0, tzinfo=UTC)
-    _add_restock(db_session, seed, occurred, TagStatus.valid, 8)
-    _add_restock(db_session, seed, occurred, TagStatus.unreliable, 2)
-    _add_restock(db_session, seed, occurred, TagStatus.unrecognised, 3)
-    db_session.flush()
-
-    resp = client.post(f"/api/v1/dispatches/{dispatch.id}/verify")
-    assert resp.status_code == 201, resp.text
-    body = resp.json()
-    assert len(body["lines"]) == 1
-    line = body["lines"][0]
-    assert line["dispatched_qty"] == 10
-    assert line["added_qty"] == 8       # valid only
-    assert line["unreliable_qty"] == 2  # tracked separately
-    assert line["diff_qty"] == -2       # 8 - 10, unrecognised excluded
-    assert line["diff_value"] == "-8.00"
-
-    listing = client.get(f"/api/v1/verifications?dispatch_id={dispatch.id}")
-    assert listing.status_code == 200
-    assert listing.json()["total"] == 1
-
-    detail = client.get(f"/api/v1/verifications/{body['id']}")
-    assert detail.status_code == 200
-    assert detail.json()["lines"][0]["diff_qty"] == -2
+# NOTE (2026-07-28): Restock verification (legacy R9) removed. The dispatch
+# `/verify` test was deleted with it. `_add_restock` (below) is kept - it is shared
+# by the finance tests. Dispatched-vs-added reconciliation will return later as a
+# DERIVED, period-level report over dispatch_lines + restock_events, not per-dispatch.
 
 
 def _add_restock(session, seed, occurred, tag_status, count) -> None:

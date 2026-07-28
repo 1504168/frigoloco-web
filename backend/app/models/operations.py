@@ -1,8 +1,7 @@
 """Operational models - purchase orders (SECTION 3), dispatch (SECTION 5), stock
-ledger (SECTION 6), reconciliation (SECTION 8), and finance/alerts/audit
-(SECTION 9). Mirrors: order_no_counters, purchase_orders, purchase_order_lines,
-dispatches, dispatch_lines, stock_movements, restock_verifications,
-restock_verification_lines, weekly_financials, alerts, audit_log.
+ledger (SECTION 6), and finance/alerts/audit (SECTION 9). Mirrors:
+order_no_counters, purchase_orders, purchase_order_lines, dispatches,
+dispatch_lines, stock_movements, weekly_financials, alerts, audit_log.
 
 NOTE: ``weekly_financials`` (schema.sql SECTION 9) was not named in the model-
 split brief; it is a finance table and is mirrored here alongside alerts/audit.
@@ -289,70 +288,7 @@ class StockMovement(Base):
     )
 
 
-class RestockVerification(Base):
-    """One reconciliation run per dispatch (R9)."""
-
-    __tablename__ = "restock_verifications"
-
-    id: Mapped[int] = mapped_column(Integer, Identity(always=True), primary_key=True)
-    dispatch_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("dispatches.id", ondelete="CASCADE"), nullable=False
-    )
-    run_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    created_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"))
-
-
-class RestockVerificationLine(Base):
-    __tablename__ = "restock_verification_lines"
-    __table_args__ = (
-        UniqueConstraint(
-            "verification_id",
-            "fridge_id",
-            "product_id",
-            name="uq_restock_verification_lines_run_fridge_product",
-        ),
-        CheckConstraint(
-            "dispatched_qty >= 0", name="chk_restock_verification_lines_dispatched_nonneg"
-        ),
-        CheckConstraint(
-            "added_qty >= 0", name="chk_restock_verification_lines_added_nonneg"
-        ),
-        CheckConstraint(
-            "unreliable_qty >= 0", name="chk_restock_verification_lines_unreliable_nonneg"
-        ),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, Identity(always=True), primary_key=True)
-    verification_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("restock_verifications.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    fridge_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("fridges.id"), nullable=False
-    )
-    product_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("products.id"), nullable=False
-    )
-    dispatched_qty: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("0")
-    )
-    added_qty: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("0")
-    )
-    # UNRELIABLE tags: counted separately, excluded from diff totals (R9).
-    unreliable_qty: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("0")
-    )
-    diff_qty: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("0")
-    )
-    # Valued at buy price (R9). Cents, BIGINT.
-    diff_value: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, server_default=text("0")
-    )
+# NOTE (2026-07-28): Restock verification (legacy R9) models removed. Dispatched-vs-added reconciliation will be re-implemented later as a DERIVED, period-level (weekly/monthly) TOTAL report computed on demand from dispatch_lines + restock_events (action='added', tag_status='valid') joined on (fridge_id, product_id) by date range - NOT stored per-dispatch tables.
 
 
 class WeeklyFinancial(Base):

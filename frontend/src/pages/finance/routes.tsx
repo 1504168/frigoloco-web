@@ -1,6 +1,5 @@
 import type { RouteObject } from 'react-router-dom'
 import { FinancePage } from '@/pages/finance/FinancePage'
-import { VerificationsPage } from '@/pages/finance/VerificationsPage'
 import { SettingsPage } from '@/pages/finance/SettingsPage'
 
 /**
@@ -10,11 +9,12 @@ import { SettingsPage } from '@/pages/finance/SettingsPage'
  *
  * Claimed paths (matching placeholders removed from src/routes.tsx):
  *   /finance      - weekly & monthly financials + fridge report
- *   /verification - dispatch reconciliation runs
  *   /settings     - business settings editor
+ *
+ * NOTE (2026-07-28): the /verification route (legacy R9 dispatch reconciliation)
+ * was removed; reconciliation returns later as a derived period-level report.
  */
 export const financeRoutes: RouteObject[] = [
   { path: '/finance', element: <FinancePage /> },
-  { path: '/verification', element: <VerificationsPage /> },
   { path: '/settings', element: <SettingsPage /> },
 ]
