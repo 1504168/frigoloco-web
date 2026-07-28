@@ -73,8 +73,8 @@ export interface PlanningGridProps {
   onCellChange: (fridgeId: number, productId: number, rawValue: string) => void
   /** Keys the operator edited this session (highlighted, saved as manual). */
   editedKeys?: Set<string>
-  /** Minimum column slots rendered per category (config; more allowed). */
-  columnsPerCategory: number
+  /** Deprecated: empty "add here" slots were removed; retained for caller compat. */
+  columnsPerCategory?: number
   /** Optional per-supplier action shown in the supplier band (Menu: Draft PO). */
   onDraftPo?: (supplierId: number) => void
   draftPoPendingSupplierId?: number | null
@@ -96,7 +96,6 @@ export function PlanningGrid({
   draft,
   onCellChange,
   editedKeys,
-  columnsPerCategory,
   onDraftPo,
   draftPoPendingSupplierId,
   readOnly = false,
@@ -118,18 +117,6 @@ export function PlanningGrid({
           isCategoryStart: productIndex === 0,
         })
       })
-      // Pad to the configured minimum with empty (add-here) slots.
-      const padding = Math.max(columnsPerCategory - category.product_ids.length, 0)
-      for (let slot = 0; slot < padding; slot += 1) {
-        flat.push({
-          key: `c${category.category_id}-slot${slot}`,
-          productId: null,
-          categoryId: category.category_id,
-          supplierId: EMPTY_SLOT_SUPPLIER,
-          supplierName: '',
-          isCategoryStart: category.product_ids.length === 0 && slot === 0,
-        })
-      }
       catBands.push({
         categoryId: category.category_id,
         categoryName: category.category_name,
@@ -165,7 +152,7 @@ export function PlanningGrid({
     }
 
     return { columns: flat, categoryBands: catBands, supplierBands: supBands }
-  }, [categories, productMeta, columnsPerCategory])
+  }, [categories, productMeta])
 
   const columnTotals = React.useMemo(() => {
     const totals = new Map<string, number>()
@@ -212,7 +199,8 @@ export function PlanningGrid({
           <td
             key={column.key}
             className={cn(
-              'border-b border-border px-2 py-1 text-right text-[11px] tabular-nums text-muted-foreground',
+              'border-b border-l border-border px-2 py-1 text-center text-[11px] tabular-nums text-muted-foreground',
+              column.isCategoryStart && 'border-l-2',
               column.productId === null && 'bg-muted/20',
             )}
           >
@@ -238,7 +226,7 @@ export function PlanningGrid({
                 key={`cat-${band.categoryId}`}
                 colSpan={band.span}
                 className={cn(
-                  'border-b border-l-2 border-border px-2 py-1.5 text-left text-[11px] font-bold uppercase tracking-wide text-foreground',
+                  'border-b border-l-2 border-border px-2 py-1.5 text-center text-[11px] font-bold uppercase tracking-wide text-foreground',
                   band.accent,
                 )}
               >
@@ -262,14 +250,14 @@ export function PlanningGrid({
                 key={`sup-${band.key}`}
                 colSpan={band.span}
                 className={cn(
-                  'border-b border-l-2 border-border px-2 py-1 text-left text-[11px] font-semibold text-muted-foreground',
+                  'border-b border-l-2 border-border px-2 py-1 text-center text-[11px] font-semibold text-muted-foreground',
                   band.accent,
                 )}
               >
                 {band.isPlaceholder ? (
                   <span className="italic text-muted-foreground/60">Add products…</span>
                 ) : (
-                  <span className="flex items-center justify-between gap-2">
+                  <span className="flex items-center justify-center gap-2">
                     <span className="truncate">{band.supplierName}</span>
                     {onDraftPo && band.supplierId > 0 ? (
                       <Button
@@ -293,7 +281,7 @@ export function PlanningGrid({
           {/* Product name */}
           <tr>
             <th scope="col" className={cn(stickyLeft, 'border-b px-3 py-2 font-semibold text-foreground')}>
-              Fridge
+              Product
             </th>
             {columns.map((column) => {
               const meta = column.productId === null ? null : productMeta(column.productId)
@@ -301,7 +289,7 @@ export function PlanningGrid({
                 <th
                   key={column.key}
                   className={cn(
-                    'min-w-[92px] max-w-[120px] border-b border-border px-2 py-2 text-left align-bottom text-[11px] font-semibold leading-tight text-foreground',
+                    'min-w-[92px] max-w-[120px] border-b border-l border-border px-2 py-2 text-left align-bottom text-[11px] font-semibold leading-tight text-foreground',
                     column.isCategoryStart && 'border-l-2',
                     column.productId === null && 'bg-muted/20',
                   )}
@@ -342,7 +330,8 @@ export function PlanningGrid({
               <td
                 key={column.key}
                 className={cn(
-                  'border-b border-border bg-muted/30 px-2 py-1 text-right text-[11px] font-semibold tabular-nums text-foreground',
+                  'border-b border-l border-border bg-muted/30 px-2 py-1 text-center text-[11px] font-semibold tabular-nums text-foreground',
+                  column.isCategoryStart && 'border-l-2',
                   column.productId === null && 'bg-muted/20',
                 )}
               >
@@ -371,11 +360,16 @@ export function PlanningGrid({
                 const value = draft.get(key) ?? 0
                 const isEdited = editedKeys?.has(key) ?? false
                 return (
-                  <td key={column.key} className="border-b border-border p-0 text-center">
+                  <td
+                    key={column.key}
+                    className={cn(
+                      'border-b border-l border-border p-0 text-center',
+                      column.isCategoryStart && 'border-l-2',
+                    )}
+                  >
                     <input
-                      type="number"
+                      type="text"
                       inputMode="numeric"
-                      min={0}
                       disabled={readOnly}
                       value={value === 0 ? '' : value}
                       placeholder="0"
@@ -386,7 +380,7 @@ export function PlanningGrid({
                         onCellChange(fridge.fridge_id, column.productId!, event.target.value)
                       }
                       className={cn(
-                        'h-8 w-full min-w-[56px] bg-transparent px-1 text-center text-xs tabular-nums outline-none focus:bg-primary/10 disabled:cursor-not-allowed',
+                        'h-8 w-full min-w-[56px] bg-transparent px-2 text-center text-xs tabular-nums outline-none focus:bg-primary/10 disabled:cursor-not-allowed',
                         isEdited
                           ? 'font-bold text-series-1'
                           : value === 0
@@ -414,7 +408,10 @@ export function PlanningGrid({
             {columns.map((column) => (
               <td
                 key={column.key}
-                className="border-t-2 border-border bg-card px-2 py-2 text-right font-semibold tabular-nums text-foreground"
+                className={cn(
+                  'border-l border-t-2 border-border bg-card px-2 py-2 text-center font-semibold tabular-nums text-foreground',
+                  column.isCategoryStart && 'border-l-2',
+                )}
               >
                 {column.productId === null ? '' : columnTotals.get(column.key) ?? 0}
               </td>

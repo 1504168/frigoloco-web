@@ -50,7 +50,9 @@ export interface WeekDayPickerProps {
 export function WeekDayPicker({
   value,
   onChange,
-  showStageNav = true,
+  // Stage navigation is off by default: the left nav already switches between
+  // Forecast/Menu/Dispatch. Opt back in per page if key-preserving tabs are wanted.
+  showStageNav = false,
   className,
 }: WeekDayPickerProps) {
   const deliveryDate = deliveryDateFromKey(value)

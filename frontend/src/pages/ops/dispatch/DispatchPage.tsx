@@ -1,7 +1,6 @@
 import * as React from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { Download, Save, Truck, Zap } from 'lucide-react'
-import { PageHeader } from '@/components/shared/PageHeader'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { Download, Save, Truck } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
@@ -9,6 +8,7 @@ import { StatusChip } from '@/components/shared/StatusChip'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/sonner'
 import { api, ApiError } from '@/lib/api'
+import { formatEuro } from '@/lib/format'
 import { WeekDayPicker } from '@/pages/ops/components/WeekDayPicker'
 import { ConfirmDialog } from '@/pages/ops/components/ConfirmDialog'
 import { PlanningGrid } from '@/pages/ops/components/PlanningGrid'
@@ -89,6 +89,33 @@ export function DispatchPage() {
     },
   })
 
+  // Auto-load the saved dispatch for the selected date if one exists (silent
+  // when none). Fires whenever the week/day key changes; never overrides edits.
+  const savedDispatchQuery = useQuery({
+    queryKey: ['ops', 'dispatch', 'saved', key.year, key.week, key.dayName],
+    queryFn: async ({ signal }) => {
+      const saved = await api.get<DispatchRead>('/api/v1/dispatches/saved', {
+        params: { year: key.year, week: key.week, day_name: key.dayName },
+        signal,
+      })
+      const matrix = await api.get<DispatchMatrix>(`/api/v1/dispatches/${saved.id}/matrix`, {
+        signal,
+      })
+      return { saved, matrix }
+    },
+    retry: false,
+  })
+
+  React.useEffect(() => {
+    const data = savedDispatchQuery.data
+    if (data && !savedDispatchQuery.isFetching && !loaded) {
+      grid.loadFromGrid(data.matrix)
+      setStatus(data.saved.status)
+      setLoaded(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedDispatchQuery.data, savedDispatchQuery.isFetching, loaded])
+
   const saveMutation = useMutation({
     mutationFn: (overwrite: boolean) =>
       api.post<DispatchRead>('/api/v1/dispatches/save', {
@@ -162,59 +189,70 @@ export function DispatchPage() {
   const isDispatched = status === 'dispatched' || status === 'reconciled'
   const canSave = grid.fridges.length > 0 && grid.productIds.size > 0 && !isDispatched
 
+  // Summary line (mirrors the legacy Dispatch View totals): units and cost value
+  // (purchase price x qty) across the grid, plus fridge coverage.
+  const dispatchLines = grid.toLines()
+  const totalUnits = dispatchLines.reduce((sum, line) => sum + line.qty, 0)
+  const totalValueEuros = dispatchLines.reduce((sum, line) => {
+    const price = Number(productMeta(line.product_id)?.purchasePrice ?? 0)
+    return Number.isFinite(price) ? sum + line.qty * price : sum
+  }, 0)
+  const fridgesToDispatch = new Set(dispatchLines.map((line) => line.fridge_id)).size
+
   return (
     <div className="space-y-6">
-      <PageHeader
-        breadcrumb="Operations / Dispatch"
-        title={
-          <span className="flex items-center gap-2">
-            Dispatch
-            {status ? <StatusChip status={status} /> : null}
-            {isPast ? <StatusChip variant="warning" label="Past date" /> : null}
-          </span>
-        }
-        description="Import the saved menu, adjust per-fridge quantities, save as planned, then create the individual dispatch to actually move stock."
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => importMutation.mutate()}
-              disabled={importMutation.isPending}
-            >
-              <Zap className="h-4 w-4" />
-              {importMutation.isPending ? 'Importing…' : 'Import from Menu'}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => loadSavedMutation.mutate()}
-              disabled={loadSavedMutation.isPending}
-            >
-              <Download className="h-4 w-4" />
-              {loadSavedMutation.isPending ? 'Loading…' : 'Load saved'}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => saveMutation.mutate(false)}
-              disabled={saveMutation.isPending || !canSave}
-            >
-              <Save className="h-4 w-4" />
-              {saveMutation.isPending ? 'Saving…' : 'Save'}
-            </Button>
-            <Button
-              onClick={() => {
-                setForce(false)
-                setCreateOpen(true)
-              }}
-              disabled={createMutation.isPending || isDispatched || !loaded}
-            >
-              <Truck className="h-4 w-4" />
-              Create Individual Dispatch
-            </Button>
-          </div>
-        }
-      />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <WeekDayPicker value={key} onChange={setKey} />
+          {status ? <StatusChip status={status} /> : null}
+          {isPast ? <StatusChip variant="warning" label="Past date" /> : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => importMutation.mutate()}
+            disabled={importMutation.isPending}
+          >
+            <Download className="h-4 w-4" />
+            {importMutation.isPending ? 'Importing…' : 'From Menu'}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => loadSavedMutation.mutate()}
+            disabled={loadSavedMutation.isPending}
+          >
+            <Download className="h-4 w-4" />
+            {loadSavedMutation.isPending ? 'Loading…' : 'Load saved'}
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => saveMutation.mutate(false)}
+            disabled={saveMutation.isPending || !canSave}
+          >
+            <Save className="h-4 w-4" />
+            {saveMutation.isPending ? 'Saving…' : 'Save'}
+          </Button>
+          <Button
+            onClick={() => {
+              setForce(false)
+              setCreateOpen(true)
+            }}
+            disabled={createMutation.isPending || isDispatched || !loaded}
+          >
+            <Truck className="h-4 w-4" />
+            Create Individual Dispatch
+          </Button>
+        </div>
+      </div>
 
-      <WeekDayPicker value={key} onChange={setKey} />
+      {loaded && grid.hasData ? (
+        <div className="flex flex-wrap divide-x divide-border overflow-hidden rounded-xl border border-border bg-card">
+          <SummaryStat label="Fridges" value={String(grid.fridges.length)} />
+          <SummaryStat label="Fridges to dispatch" value={String(fridgesToDispatch)} />
+          <SummaryStat label="Total units" value={String(totalUnits)} />
+          <SummaryStat label="Total value (cost)" value={formatEuro(totalValueEuros)} />
+        </div>
+      ) : null}
 
       {catalogueQuery.isError ? (
         <ErrorState
@@ -287,6 +325,18 @@ export function DispatchPage() {
           affected products.
         </p>
       </ConfirmDialog>
+    </div>
+  )
+}
+
+/** One labelled figure in the dispatch summary bar. */
+function SummaryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex min-w-[10rem] flex-1 flex-col gap-1 px-5 py-3">
+      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <span className="text-xl font-semibold tabular-nums text-foreground">{value}</span>
     </div>
   )
 }

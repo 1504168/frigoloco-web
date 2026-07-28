@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Download, Play, Save, TrendingUp } from 'lucide-react'
+import { ArrowDown, ArrowUp, Download, Play, Save, TrendingUp } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { Button } from '@/components/ui/button'
@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select'
 import { toast } from '@/components/ui/sonner'
 import { api, ApiError } from '@/lib/api'
-import { EMPTY_PLACEHOLDER, formatDateTime } from '@/lib/format'
+import { EMPTY_PLACEHOLDER } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { WeekDayPicker } from '@/pages/ops/components/WeekDayPicker'
 import { ConfirmDialog } from '@/pages/ops/components/ConfirmDialog'
@@ -45,6 +45,26 @@ function ratioClass(ratio: string | null): string {
   return 'text-warning'
 }
 
+/** Sell-through ratio as a colour-coded percentage with an up/down trend icon. */
+function RatioBadge({ ratio }: { ratio: string | null }) {
+  if (ratio === null) {
+    return <span className="text-muted-foreground">{EMPTY_PLACEHOLDER}</span>
+  }
+  const value = Number(ratio)
+  const Icon = value < 0.7 ? ArrowDown : ArrowUp
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-0.5 font-medium tabular-nums',
+        ratioClass(ratio),
+      )}
+    >
+      <Icon className="h-3 w-3 shrink-0" />
+      {Math.round(value * 100)}%
+    </span>
+  )
+}
+
 /** True when a run belongs to the currently selected pipeline key. */
 function runMatchesKey(run: ForecastRun | null, key: WeekDayKey): boolean {
   return (
@@ -57,20 +77,33 @@ function runMatchesKey(run: ForecastRun | null, key: WeekDayKey): boolean {
 
 interface ForecastGridProps {
   run: ForecastRun
+  actuals: ForecastActuals | null
   fridgeName: (id: number) => string
   categories: { ordered: { id: number; name: string }[]; byId: Map<number, string> }
 }
 
+const CATEGORY_HEAD_CLASS =
+  'min-w-[7rem] whitespace-nowrap border-b border-l border-border bg-card px-3 py-2 text-center font-semibold text-foreground'
+
 /**
- * Forecast-V2 style grid: fridge rows (name · min qty · days-to-fill from the
- * run's delivery config) × category columns of forecast quantities.
+ * Forecast-V2 grid: fridge rows (name · min · days-to-fill) × category columns.
+ * The forecast quantities sit on the left; the same fridge × category axes then
+ * repeat on the right (past a heavier divider) as the Added → Sold actuals, so a
+ * single fridge line shows both its forecast and its sell-through together.
+ * Wide, so it scrolls horizontally.
  */
-function ForecastGrid({ run, fridgeName, categories }: ForecastGridProps) {
+function ForecastGrid({ run, actuals, fridgeName, categories }: ForecastGridProps) {
   const cellByKey = React.useMemo(() => {
     const map = new Map<string, ForecastResult>()
     for (const result of run.results) map.set(`${result.fridge_id}:${result.category_id}`, result)
     return map
   }, [run.results])
+
+  const actualByKey = React.useMemo(() => {
+    const map = new Map<string, ForecastActualCell>()
+    for (const cell of actuals?.cells ?? []) map.set(`${cell.fridge_id}:${cell.category_id}`, cell)
+    return map
+  }, [actuals])
 
   const fridgeIds = React.useMemo(() => {
     const ids = Array.from(new Set(run.results.map((result) => result.fridge_id)))
@@ -109,27 +142,61 @@ function ForecastGrid({ run, fridgeName, categories }: ForecastGridProps) {
     )
   }
 
+  const categoryLabel = (categoryId: number) => categories.byId.get(categoryId) ?? `#${categoryId}`
+
   return (
     <div className="overflow-x-auto rounded-xl border border-border">
       <table className="min-w-full border-separate border-spacing-0 text-xs">
         <thead>
           <tr>
-            <th className="sticky left-0 z-10 border-b border-r border-border bg-card px-3 py-2 text-left font-semibold text-foreground">
+            <th
+              rowSpan={2}
+              className="sticky left-0 z-10 whitespace-nowrap border-b border-r border-border bg-card px-3 py-2 text-left align-bottom font-semibold text-foreground"
+            >
               Fridge
             </th>
-            <th className="border-b border-border bg-card px-2 py-2 text-right font-semibold text-muted-foreground">
-              Min qty
+            <th
+              rowSpan={2}
+              className="border-b border-border bg-card px-2 py-2 text-right align-bottom font-semibold text-muted-foreground"
+            >
+              Min
             </th>
-            <th className="border-b border-border bg-card px-2 py-2 text-right font-semibold text-muted-foreground">
-              Days to fill
+            <th
+              rowSpan={2}
+              className="border-b border-border bg-card px-2 py-2 text-right align-bottom font-semibold text-muted-foreground"
+            >
+              Days
             </th>
-            {categoryIds.map((categoryId) => (
+            <th
+              colSpan={categoryIds.length}
+              className="border-b border-l-2 border-border bg-card px-3 py-1.5 text-center font-semibold text-foreground"
+            >
+              Forecast (QTY)
+            </th>
+            <th
+              colSpan={categoryIds.length}
+              className="border-b border-l-2 border-border bg-card px-3 py-1.5 text-center font-semibold text-foreground"
+            >
+              Added → Sold Ratio
+            </th>
+          </tr>
+          <tr>
+            {categoryIds.map((categoryId, index) => (
               <th
-                key={categoryId}
-                className="border-b border-l border-border bg-card px-3 py-2 text-right font-semibold text-foreground"
+                key={`f-${categoryId}`}
+                className={cn(CATEGORY_HEAD_CLASS, index === 0 && 'border-l-2')}
                 title={categories.byId.get(categoryId)}
               >
-                {categories.byId.get(categoryId) ?? `#${categoryId}`}
+                {categoryLabel(categoryId)}
+              </th>
+            ))}
+            {categoryIds.map((categoryId, index) => (
+              <th
+                key={`a-${categoryId}`}
+                className={cn(CATEGORY_HEAD_CLASS, index === 0 && 'border-l-2')}
+                title={categories.byId.get(categoryId)}
+              >
+                {categoryLabel(categoryId)}
               </th>
             ))}
           </tr>
@@ -139,7 +206,7 @@ function ForecastGrid({ run, fridgeName, categories }: ForecastGridProps) {
             const config = fridgeConfig[String(fridgeId)]
             return (
               <tr key={fridgeId} className="hover:bg-accent/30">
-                <td className="sticky left-0 z-10 border-b border-r border-border bg-card px-3 py-1.5 font-medium text-foreground">
+                <td className="sticky left-0 z-10 whitespace-nowrap border-b border-r border-border bg-card px-3 py-1.5 font-medium text-foreground">
                   {fridgeName(fridgeId)}
                 </td>
                 <td className="border-b border-border px-2 py-1.5 text-right tabular-nums text-muted-foreground">
@@ -148,21 +215,47 @@ function ForecastGrid({ run, fridgeName, categories }: ForecastGridProps) {
                 <td className="border-b border-border px-2 py-1.5 text-right tabular-nums text-muted-foreground">
                   {config ? config.days_to_fill : EMPTY_PLACEHOLDER}
                 </td>
-                {categoryIds.map((categoryId) => {
+                {categoryIds.map((categoryId, index) => {
                   const cell = cellByKey.get(`${fridgeId}:${categoryId}`)
                   const qty = cell ? Number(cell.forecast_qty) : 0
                   return (
                     <td
-                      key={categoryId}
+                      key={`f-${categoryId}`}
                       title={
                         cell ? `${cell.valid_days} valid days · ${cell.holiday_days} holiday` : undefined
                       }
                       className={cn(
-                        'border-b border-l border-border px-3 py-1.5 text-right tabular-nums',
+                        'border-b border-l border-border px-3 py-1.5 text-center tabular-nums',
+                        index === 0 && 'border-l-2',
                         qty === 0 ? 'text-muted-foreground/40' : 'text-foreground',
                       )}
                     >
-                      {qty === 0 ? '·' : NUMBER_FMT.format(qty)}
+                      {qty === 0 ? '' : NUMBER_FMT.format(qty)}
+                    </td>
+                  )
+                })}
+                {categoryIds.map((categoryId, index) => {
+                  const actualCell = actualByKey.get(`${fridgeId}:${categoryId}`)
+                  const added = actualCell?.added_qty ?? 0
+                  const sold = actualCell?.sold_qty ?? 0
+                  const ratio = actualCell?.ratio ?? null
+                  return (
+                    <td
+                      key={`a-${categoryId}`}
+                      title="Added → Sold · ratio = sold ÷ added"
+                      className={cn(
+                        'border-b border-l border-border px-3 py-1.5 text-right',
+                        index === 0 && 'border-l-2',
+                      )}
+                    >
+                      {actuals !== null && (
+                        <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
+                          <span className="tabular-nums text-foreground">
+                            {added} → {sold}
+                          </span>
+                          <RatioBadge ratio={ratio} />
+                        </div>
+                      )}
                     </td>
                   )
                 })}
@@ -177,104 +270,25 @@ function ForecastGrid({ run, fridgeName, categories }: ForecastGridProps) {
             </th>
             <td className="border-t-2 border-border bg-card" />
             <td className="border-t-2 border-border bg-card" />
-            {categoryIds.map((categoryId) => (
+            {categoryIds.map((categoryId, index) => (
               <td
-                key={categoryId}
-                className="border-l border-t-2 border-border bg-card px-3 py-2 text-right font-semibold tabular-nums text-foreground"
+                key={`ft-${categoryId}`}
+                className={cn(
+                  'border-l border-t-2 border-border bg-card px-3 py-2 text-center font-semibold tabular-nums text-foreground',
+                  index === 0 && 'border-l-2',
+                )}
               >
                 {NUMBER_FMT.format(columnTotals.get(categoryId) ?? 0)}
               </td>
             ))}
-          </tr>
-        </tfoot>
-      </table>
-    </div>
-  )
-}
-
-interface ActualsGridProps {
-  run: ForecastRun
-  actuals: ForecastActuals
-  fridgeName: (id: number) => string
-  categories: { ordered: { id: number; name: string }[]; byId: Map<number, string> }
-}
-
-/**
- * Actuals side block: the same fridge × category axes as the forecast grid,
- * showing added → sold quantities over the forecast's 3-week window with a
- * colour-coded sell-through ratio. Fridge/category keys with no recorded
- * activity render as 0 → 0 with a placeholder ratio.
- */
-function ActualsGrid({ run, actuals, fridgeName, categories }: ActualsGridProps) {
-  const cellByKey = React.useMemo(() => {
-    const map = new Map<string, ForecastActualCell>()
-    for (const cell of actuals.cells) map.set(`${cell.fridge_id}:${cell.category_id}`, cell)
-    return map
-  }, [actuals.cells])
-
-  // Axes follow the forecast run so the two grids line up row-for-row.
-  const fridgeIds = React.useMemo(() => {
-    const ids = Array.from(new Set(run.results.map((result) => result.fridge_id)))
-    return ids.sort((a, b) => fridgeName(a).localeCompare(fridgeName(b)))
-  }, [run.results, fridgeName])
-
-  const categoryIds = React.useMemo(() => {
-    const present = new Set(run.results.map((result) => result.category_id))
-    const ordered = categories.ordered
-      .filter((category) => present.has(category.id))
-      .map((category) => category.id)
-    for (const id of present) if (!ordered.includes(id)) ordered.push(id)
-    return ordered
-  }, [run.results, categories.ordered])
-
-  return (
-    <div className="overflow-x-auto rounded-xl border border-border">
-      <table className="min-w-full border-separate border-spacing-0 text-xs">
-        <thead>
-          <tr>
-            <th className="sticky left-0 z-10 border-b border-r border-border bg-card px-3 py-2 text-left font-semibold text-foreground">
-              Fridge
-            </th>
-            {categoryIds.map((categoryId) => (
-              <th
-                key={categoryId}
-                className="border-b border-l border-border bg-card px-3 py-2 text-right font-semibold text-foreground"
-                title={categories.byId.get(categoryId)}
-              >
-                {categories.byId.get(categoryId) ?? `#${categoryId}`}
-              </th>
+            {categoryIds.map((categoryId, index) => (
+              <td
+                key={`at-${categoryId}`}
+                className={cn('border-l border-t-2 border-border bg-card', index === 0 && 'border-l-2')}
+              />
             ))}
           </tr>
-        </thead>
-        <tbody>
-          {fridgeIds.map((fridgeId) => (
-            <tr key={fridgeId} className="hover:bg-accent/30">
-              <td className="sticky left-0 z-10 border-b border-r border-border bg-card px-3 py-1.5 font-medium text-foreground">
-                {fridgeName(fridgeId)}
-              </td>
-              {categoryIds.map((categoryId) => {
-                const cell = cellByKey.get(`${fridgeId}:${categoryId}`)
-                const added = cell?.added_qty ?? 0
-                const sold = cell?.sold_qty ?? 0
-                const ratio = cell?.ratio ?? null
-                return (
-                  <td
-                    key={categoryId}
-                    className="border-b border-l border-border px-3 py-1.5 text-right align-top"
-                    title="Added → Sold · ratio = sold ÷ added"
-                  >
-                    <div className="tabular-nums text-foreground">
-                      {added} → {sold}
-                    </div>
-                    <div className={cn('text-[11px] font-medium tabular-nums', ratioClass(ratio))}>
-                      {ratio === null ? EMPTY_PLACEHOLDER : Number(ratio).toFixed(2)}
-                    </div>
-                  </td>
-                )
-              })}
-            </tr>
-          ))}
-        </tbody>
+        </tfoot>
       </table>
     </div>
   )
@@ -308,6 +322,26 @@ export function ForecastPage() {
     enabled: showRun,
     staleTime: 60_000,
   })
+
+  // Auto-load the saved forecast for the selected date if one exists (silent
+  // when none). Fires whenever the week/day key changes.
+  const savedRunQuery = useQuery({
+    queryKey: ['ops', 'forecast', 'saved', key.year, key.week, key.dayName],
+    queryFn: ({ signal }) =>
+      api.get<ForecastRun>('/api/v1/forecasts/saved', {
+        params: { year: key.year, week: key.week, day_name: key.dayName },
+        signal,
+      }),
+    retry: false,
+  })
+
+  React.useEffect(() => {
+    const saved = savedRunQuery.data
+    if (saved && runMatchesKey(saved, key) && !runMatchesKey(run, key)) {
+      setRun(saved)
+      setModel(saved.model)
+    }
+  }, [savedRunQuery.data, key, run])
 
   const runMutation = useMutation({
     mutationFn: () =>
@@ -369,9 +403,9 @@ export function ForecastPage() {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <WeekDayPicker value={key} onChange={setKey} />
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Select value={model} onValueChange={setModel}>
             <SelectTrigger className="w-56">
               <SelectValue />
@@ -408,18 +442,6 @@ export function ForecastPage() {
       </div>
 
       <section className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-foreground">
-            {weekKeyLabel(key)}
-            <span className="ml-2 font-normal text-muted-foreground">delivery {deliveryDate}</span>
-          </h2>
-          {showRun && run ? (
-            <span className="text-xs text-muted-foreground">
-              Run #{run.run_id} · {run.is_saved ? 'saved' : 'unsaved'} · {formatDateTime(run.run_at)}
-            </span>
-          ) : null}
-        </div>
-
         {runMutation.isPending || loadSavedMutation.isPending ? (
           <LoadingSkeleton rows={6} columns={6} />
         ) : !showRun ? (
@@ -429,45 +451,12 @@ export function ForecastPage() {
             description="Run the forecast for this week/day, or load a previously saved one."
           />
         ) : categoriesQuery.data && run ? (
-          <>
-            <ForecastGrid run={run} fridgeName={fridgeName} categories={categoriesQuery.data} />
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h3 className="text-xs font-semibold text-foreground">
-                  Actuals · Added → Sold · ratio
-                  {actualsQuery.data ? (
-                    <span className="ml-2 font-normal text-muted-foreground">
-                      3-week window {actualsQuery.data.window_start} → {actualsQuery.data.window_end}
-                    </span>
-                  ) : null}
-                </h3>
-                <span className="text-[11px] text-muted-foreground">
-                  ratio = sold ÷ added · <span className="text-critical">&lt;0.70</span> ·{' '}
-                  <span className="text-warning">0.70–0.89</span> ·{' '}
-                  <span className="text-good-text">≥0.90</span>
-                </span>
-              </div>
-              {actualsQuery.isLoading ? (
-                <LoadingSkeleton rows={4} columns={4} />
-              ) : actualsQuery.isError ? (
-                <EmptyState
-                  title="Actuals unavailable"
-                  description={
-                    actualsQuery.error instanceof ApiError
-                      ? actualsQuery.error.message
-                      : 'Failed to load actuals for this key.'
-                  }
-                />
-              ) : actualsQuery.data ? (
-                <ActualsGrid
-                  run={run}
-                  actuals={actualsQuery.data}
-                  fridgeName={fridgeName}
-                  categories={categoriesQuery.data}
-                />
-              ) : null}
-            </div>
-          </>
+          <ForecastGrid
+            run={run}
+            actuals={actualsQuery.data ?? null}
+            fridgeName={fridgeName}
+            categories={categoriesQuery.data}
+          />
         ) : (
           <LoadingSkeleton rows={6} columns={6} />
         )}

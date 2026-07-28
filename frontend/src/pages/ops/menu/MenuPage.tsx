@@ -1,7 +1,6 @@
 import * as React from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { Download, LayoutGrid, Plus, Save, Sparkles } from 'lucide-react'
-import { PageHeader } from '@/components/shared/PageHeader'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { Download, LayoutGrid, Plus, Save } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
@@ -21,7 +20,7 @@ import {
 } from '@/pages/ops/lib/reference'
 import { usePlanningGridState, useProductMeta } from '@/pages/ops/lib/grid'
 import { useWeekDayKey, weekKeyLabel } from '@/pages/ops/lib/pipelineKey'
-import type { MenuGrid, PurchaseOrder } from '@/pages/ops/lib/types'
+import type { MenuGrid } from '@/pages/ops/lib/types'
 
 export function MenuPage() {
   const { key, setKey } = useWeekDayKey()
@@ -36,7 +35,6 @@ export function MenuPage() {
   const [loaded, setLoaded] = React.useState(false)
   const [overwriteOpen, setOverwriteOpen] = React.useState(false)
   const [addOpen, setAddOpen] = React.useState(false)
-  const [draftPoSupplierId, setDraftPoSupplierId] = React.useState<number | null>(null)
 
   // Any stage change clears the current grid - it belongs to another key.
   React.useEffect(() => {
@@ -94,6 +92,33 @@ export function MenuPage() {
     },
   })
 
+  // Auto-load the saved menu for the selected date if one exists (silent when
+  // none). Fires whenever the week/day key changes; never overrides live edits.
+  const savedMenuQuery = useQuery({
+    queryKey: ['ops', 'menu', 'saved', key.year, key.week, key.dayName],
+    queryFn: ({ signal }) =>
+      api.get<MenuGrid>('/api/v1/menus/saved', {
+        params: { year: key.year, week: key.week, day_name: key.dayName },
+        signal,
+      }),
+    retry: false,
+  })
+
+  React.useEffect(() => {
+    const saved = savedMenuQuery.data
+    if (
+      saved &&
+      saved.year === key.year &&
+      saved.week === key.week &&
+      saved.day_name === key.dayName &&
+      !loaded
+    ) {
+      grid.loadFromGrid(saved)
+      setLoaded(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedMenuQuery.data, loaded, key.year, key.week, key.dayName])
+
   const saveMutation = useMutation({
     mutationFn: (overwrite: boolean) =>
       api.post<MenuGrid>('/api/v1/menus/save', {
@@ -118,68 +143,40 @@ export function MenuPage() {
     },
   })
 
-  const draftPoMutation = useMutation({
-    mutationFn: (supplierId: number) =>
-      api.post<PurchaseOrder>('/api/v1/menus/draft-purchase-orders', undefined, {
-        params: { year: key.year, week: key.week, day_name: key.dayName, supplier_id: supplierId },
-      }),
-    onSuccess: (order) => {
-      toast.success(`Draft PO ${order.order_no} created`, {
-        description: `Total ${order.total_incl_vat} incl. VAT · status ${order.status}`,
-      })
-      setDraftPoSupplierId(null)
-    },
-    onError: (error) => {
-      setDraftPoSupplierId(null)
-      toast.error(error instanceof ApiError ? error.message : 'Failed to draft purchase order')
-    },
-  })
-
-  function handleDraftPo(supplierId: number) {
-    setDraftPoSupplierId(supplierId)
-    draftPoMutation.mutate(supplierId)
-  }
-
   const isBusy = importMutation.isPending || loadSavedMutation.isPending
   const canSave = grid.fridges.length > 0 && grid.productIds.size > 0
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        breadcrumb="Planning / Menu"
-        title="Menu"
-        description="Build the week/day assortment: import from the saved forecast or a previous menu, add products, edit per-fridge quantities, then save."
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={() => setAddOpen(true)} disabled={!catalogueQuery.data}>
-              <Plus className="h-4 w-4" />
-              Add product
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => importMutation.mutate()}
-              disabled={importMutation.isPending}
-            >
-              <Sparkles className="h-4 w-4" />
-              {importMutation.isPending ? 'Importing…' : 'Import from Forecast'}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => loadSavedMutation.mutate()}
-              disabled={loadSavedMutation.isPending}
-            >
-              <Download className="h-4 w-4" />
-              {loadSavedMutation.isPending ? 'Loading…' : 'Load saved'}
-            </Button>
-            <Button onClick={() => saveMutation.mutate(false)} disabled={saveMutation.isPending || !canSave}>
-              <Save className="h-4 w-4" />
-              {saveMutation.isPending ? 'Saving…' : 'Save'}
-            </Button>
-          </div>
-        }
-      />
-
-      <WeekDayPicker value={key} onChange={setKey} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <WeekDayPicker value={key} onChange={setKey} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={() => setAddOpen(true)} disabled={!catalogueQuery.data}>
+            <Plus className="h-4 w-4" />
+            Add Product
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => importMutation.mutate()}
+            disabled={importMutation.isPending}
+          >
+            <Download className="h-4 w-4" />
+            {importMutation.isPending ? 'Importing…' : 'From Forecast'}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => loadSavedMutation.mutate()}
+            disabled={loadSavedMutation.isPending}
+          >
+            <Download className="h-4 w-4" />
+            {loadSavedMutation.isPending ? 'Loading…' : 'Load saved'}
+          </Button>
+          <Button onClick={() => saveMutation.mutate(false)} disabled={saveMutation.isPending || !canSave}>
+            <Save className="h-4 w-4" />
+            {saveMutation.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+      </div>
 
       {catalogueQuery.isError ? (
         <ErrorState
@@ -204,8 +201,6 @@ export function MenuPage() {
           onCellChange={grid.setCell}
           editedKeys={grid.editedKeys}
           columnsPerCategory={columnsQuery.data ?? 6}
-          onDraftPo={handleDraftPo}
-          draftPoPendingSupplierId={draftPoSupplierId}
         />
       )}
 
