@@ -39,6 +39,7 @@ from app.models.operations import Alert, Dispatch, DispatchLine, StockMovement
 from app.money import cents_to_euro_str
 from app.schemas.orders import PoLineCreate
 from app.services.orders_service import compute_po_totals
+from tests import ensure_dispatches_week_start
 
 UTC = datetime.timezone.utc
 
@@ -81,6 +82,7 @@ def test_po_totals_parity_order_2026_00360() -> None:
 def db_session():
     connection = engine.connect()
     outer = connection.begin()
+    ensure_dispatches_week_start(connection)
     session = Session(
         bind=connection,
         join_transaction_mode="create_savepoint",

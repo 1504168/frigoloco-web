@@ -20,6 +20,7 @@ from decimal import Decimal
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Computed,
     Date,
     DateTime,
     ForeignKey,
@@ -160,6 +161,15 @@ class Dispatch(Base):
     delivery_date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
     iso_week: Mapped[int] = mapped_column(Integer, nullable=False)
     weekday: Mapped[int] = mapped_column(SmallInteger, nullable=False)  # ISO: 1=Mon
+    # Monday of delivery_date's ISO week - STORED generated column (mirrors
+    # schema.sql). Computed(persisted=True) => the ORM never writes it on insert.
+    week_start: Mapped[datetime.date] = mapped_column(
+        Date,
+        Computed(
+            "delivery_date - (EXTRACT(ISODOW FROM delivery_date)::int - 1)",
+            persisted=True,
+        ),
+    )
     status: Mapped[DispatchStatus] = mapped_column(
         DISPATCH_STATUS_ENUM, nullable=False, server_default=text("'draft'")
     )

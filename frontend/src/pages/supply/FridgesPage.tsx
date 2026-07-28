@@ -12,6 +12,13 @@ import {
 import type { StatusFilter } from '@/pages/masters/sync/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { toast } from '@/components/ui/sonner'
 import { api, ApiError, type Page } from '@/lib/api'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -49,6 +56,7 @@ export function FridgesPage() {
   const queryClient = useQueryClient()
   const [offset, setOffset] = React.useState(0)
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('active')
+  const [dayFilter, setDayFilter] = React.useState<'all' | string>('all')
   const [searchInput, setSearchInput] = React.useState('')
   const [editing, setEditing] = React.useState<Fridge | null>(null)
   const [configuring, setConfiguring] = React.useState<Fridge | null>(null)
@@ -66,10 +74,10 @@ export function FridgesPage() {
     [clientsQuery.data],
   )
 
-  // Reset to first page whenever the status filter or search term changes.
+  // Reset to first page whenever the status filter, day filter or search term changes.
   React.useEffect(() => {
     setOffset(0)
-  }, [statusFilter, search])
+  }, [statusFilter, dayFilter, search])
 
   // Fetch the full (status-filtered) set once; search + pagination are applied
   // client-side. The fleet is small (~50 fridges), so this stays cheap and lets
@@ -113,6 +121,17 @@ export function FridgesPage() {
         sortValue: (row) => row.effective_status,
       },
       {
+        id: 'delivery_days',
+        header: 'Delivery days',
+        cell: (row) =>
+          row.delivery_weekdays.length ? (
+            <span>{row.delivery_weekdays.map((w) => WEEKDAYS[w - 1].slice(0, 3)).join(', ')}</span>
+          ) : (
+            <span className="text-muted-foreground">-</span>
+          ),
+        sortValue: (row) => row.delivery_weekdays.length,
+      },
+      {
         id: 'actions',
         header: '',
         align: 'right',
@@ -145,14 +164,14 @@ export function FridgesPage() {
   // Search matches the Fridge column (friendly_name), the Client column
   // (resolved client name) or the Husky ID; then paginate the result locally.
   const allFridges = fridgesQuery.data?.items ?? []
-  const filteredFridges = search
-    ? allFridges.filter(
-        (fridge) =>
-          fridge.friendly_name.toLowerCase().includes(search) ||
-          fridge.husky_id.toLowerCase().includes(search) ||
-          clientName(fridge.client_id).toLowerCase().includes(search),
-      )
-    : allFridges
+  const filteredFridges = allFridges.filter(
+    (fridge) =>
+      (dayFilter === 'all' || fridge.delivery_weekdays.includes(Number(dayFilter))) &&
+      (!search ||
+        fridge.friendly_name.toLowerCase().includes(search) ||
+        fridge.husky_id.toLowerCase().includes(search) ||
+        clientName(fridge.client_id).toLowerCase().includes(search)),
+  )
   const pageData: Page<Fridge> | undefined = fridgesQuery.data
     ? {
         items: filteredFridges.slice(offset, offset + PAGE_SIZE),
@@ -166,6 +185,19 @@ export function FridgesPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-2">
         <StatusFilterSelect value={statusFilter} onChange={setStatusFilter} />
+        <Select value={dayFilter} onValueChange={setDayFilter}>
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="All days" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All days</SelectItem>
+            {WEEKDAYS.map((name, i) => (
+              <SelectItem key={name} value={String(i + 1)}>
+                {name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <HuskySyncControl
           feed="catalogue"
           endpoint="catalogue"

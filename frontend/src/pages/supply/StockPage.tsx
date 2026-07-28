@@ -1,7 +1,6 @@
 import * as React from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search, SlidersHorizontal } from 'lucide-react'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
@@ -118,32 +117,23 @@ export function StockPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        breadcrumb="Operations / Stock"
-        title="Stock"
-        description="Balances and movement history. Available = on order + physical − dispatched."
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={searchInput}
-                onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="Search code or name…"
-                className="w-64 pl-8"
-              />
-            </div>
-            <Button variant="outline" onClick={() => setAdjusting(true)}>
-              <SlidersHorizontal className="h-4 w-4" /> Manual adjustment
-            </Button>
-          </div>
-        }
-      />
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="Search code or name…"
+            className="w-64 pl-8"
+          />
+        </div>
+        <Button variant="outline" onClick={() => setAdjusting(true)}>
+          <SlidersHorizontal className="h-4 w-4" /> Manual adjustment
+        </Button>
+      </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.4fr_1fr]">
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold text-foreground">Stock levels</h3>
-          <p className="text-xs text-muted-foreground">Click a row to see its movement history.</p>
           <DataTable
             columns={columns}
             page={balancesQuery.data}

@@ -399,6 +399,12 @@ CREATE TABLE IF NOT EXISTS dispatches (
     delivery_date  DATE             NOT NULL,
     iso_week       INTEGER          NOT NULL CHECK (iso_week BETWEEN 1 AND 53),
     weekday        SMALLINT         NOT NULL CHECK (weekday BETWEEN 1 AND 7),  -- ISO: 1=Mon
+    -- Monday of delivery_date's ISO week. STORED-generated from delivery_date so
+    -- it can never drift and is recreated identically on any fresh DB from this
+    -- script (no backfill/trigger needed). ISODOW: Mon=1..Sun=7.
+    week_start     DATE             GENERATED ALWAYS AS
+                                    (delivery_date - (EXTRACT(ISODOW FROM delivery_date)::int - 1))
+                                    STORED,
     status         TEXT             NOT NULL DEFAULT 'draft'
                                     CONSTRAINT chk_dispatches_status
                                     CHECK (status IN ('draft', 'saved', 'dispatched', 'reconciled')),

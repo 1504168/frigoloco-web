@@ -1,5 +1,4 @@
 import * as React from 'react'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { SegmentTabs } from '@/pages/finance/components'
 import { WeeklyView } from '@/pages/finance/WeeklyView'
 import { MonthlyView } from '@/pages/finance/MonthlyView'
@@ -22,12 +21,6 @@ export function FinancePage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        breadcrumb="Finance"
-        title="Finance"
-        description="Weekly returns and monthly P&L analysis. Money is displayed as reported by the backend (euro)."
-      />
-
       <SegmentTabs tabs={VIEW_TABS} value={view} onChange={setView} />
 
       {view === 'weekly' ? <WeeklyView /> : <MonthlyView />}

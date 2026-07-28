@@ -14,7 +14,6 @@ import {
   EffectiveStatusBadge,
   HuskySyncControl,
   StatusFilterSelect,
-  StatusOverrideSelect,
 } from '@/pages/masters/sync/components'
 import type { StatusFilter } from '@/pages/masters/sync/types'
 
@@ -124,18 +123,6 @@ export function ProductsPage() {
         header: 'Status',
         cell: (row) => <EffectiveStatusBadge status={row.effective_status} />,
         sortValue: (row) => row.effective_status,
-      },
-      {
-        id: 'override',
-        header: 'Override',
-        cell: (row) => (
-          <StatusOverrideSelect
-            resourcePath={`/api/v1/products/${row.id}`}
-            localStatus={row.local_status}
-            invalidateKeys={[PRODUCTS_QUERY_KEY]}
-            entityLabel={`Product ${row.code}`}
-          />
-        ),
       },
     ],
     [categoryName],

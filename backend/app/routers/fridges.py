@@ -58,8 +58,15 @@ def list_fridges(
         .scalars()
         .all()
     )
+    weekdays_by_fridge = _delivery_weekdays_by_fridge(session, [f.id for f in rows])
+    items = [
+        FridgeRead.model_validate(f).model_copy(
+            update={"delivery_weekdays": weekdays_by_fridge.get(f.id, [])}
+        )
+        for f in rows
+    ]
     return Page(
-        items=[FridgeRead.model_validate(row) for row in rows],
+        items=items,
         total=int(total),
         limit=page.limit,
         offset=page.offset,
@@ -83,7 +90,11 @@ def create_fridge(body: FridgeCreate, session: Session = Depends(get_db)) -> Fri
 
 @router.get("/{fridge_id}", response_model=FridgeRead)
 def get_fridge(fridge_id: int, session: Session = Depends(get_db)) -> FridgeRead:
-    return FridgeRead.model_validate(_get_or_404(fridge_id, session))
+    fridge = _get_or_404(fridge_id, session)
+    weekdays_by_fridge = _delivery_weekdays_by_fridge(session, [fridge.id])
+    return FridgeRead.model_validate(fridge).model_copy(
+        update={"delivery_weekdays": weekdays_by_fridge.get(fridge.id, [])}
+    )
 
 
 @router.put("/{fridge_id}", response_model=FridgeRead)
@@ -163,3 +174,20 @@ def replace_delivery_config(
         )
     session.commit()
     return get_delivery_config(fridge_id, session)
+
+
+def _delivery_weekdays_by_fridge(
+    session: Session, fridge_ids: list[int]
+) -> dict[int, list[int]]:
+    """Map fridge_id -> sorted ISO weekdays (1-7) it has delivery configured for."""
+    if not fridge_ids:
+        return {}
+    rows = session.execute(
+        select(FridgeDeliveryConfig.fridge_id, FridgeDeliveryConfig.weekday)
+        .where(FridgeDeliveryConfig.fridge_id.in_(fridge_ids))
+        .order_by(FridgeDeliveryConfig.fridge_id, FridgeDeliveryConfig.weekday)
+    ).all()
+    result: dict[int, list[int]] = {}
+    for fridge_id, weekday in rows:
+        result.setdefault(fridge_id, []).append(weekday)
+    return result

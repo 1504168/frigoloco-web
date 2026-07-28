@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.db import engine, get_db
 from app.main import app
 from app.models import FridgeStock
+from tests import ensure_dispatches_week_start
 
 PREFIX = "/api/v1"
 TAG = "ZZTEST-"
@@ -40,6 +41,7 @@ def ctx():
         expire_on_commit=False,
     )
     _ensure_fridge_stock_table(connection)
+    ensure_dispatches_week_start(connection)
 
     def _override_get_db():
         yield session

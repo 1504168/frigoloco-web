@@ -327,6 +327,7 @@ class FridgeRead(ApiModel):
     local_status: FridgeLocalStatus | None
     # Effective status = local_status if set, else active/inactive from is_active.
     effective_status: str
+    delivery_weekdays: list[int] = []  # ISO 1-7 (Mon..Sun) this fridge gets deliveries
     created_at: datetime.datetime
     updated_at: datetime.datetime
 

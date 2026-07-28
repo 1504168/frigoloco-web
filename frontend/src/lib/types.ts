@@ -60,6 +60,8 @@ export interface Fridge {
   local_status: 'inactive' | 'cancelled' | null
   /** Husky-derived effective activity shown on the status badge. */
   effective_status: 'active' | 'inactive' | 'cancelled'
+  /** ISO weekday numbers (Mon=1 … Sun=7) this fridge has delivery configured for. */
+  delivery_weekdays: number[]
   created_at: string
   updated_at: string
 }

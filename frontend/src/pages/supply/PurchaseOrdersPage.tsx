@@ -1,7 +1,6 @@
 import * as React from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Trash2 } from 'lucide-react'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { StatusChip } from '@/components/shared/StatusChip'
@@ -19,10 +18,13 @@ import { toast } from '@/components/ui/sonner'
 import { api, ApiError, type Page } from '@/lib/api'
 import { formatEuro } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { WeekDayPicker } from '@/pages/ops/components/WeekDayPicker'
+import { currentWeekDayKey, type WeekDayKey } from '@/pages/ops/lib/pipelineKey'
 import { Dialog } from './components/Dialog'
 import { Field, Textarea, fieldErrorsFromApiError, generalErrorMessage } from './components/form'
 import { ProductPicker } from './components/ProductPicker'
 import type {
+  MenuDraftLineOut,
   OverReceiptDetail,
   PoLineCreate,
   PoStatus,
@@ -173,17 +175,6 @@ export function PurchaseOrdersPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        breadcrumb="Operations / Purchase Orders"
-        title="Purchase Orders"
-        description="Supplier POs: raise, receive stock, and cancel with reversal."
-        actions={
-          <Button onClick={() => setCreating(true)}>
-            <Plus className="h-4 w-4" /> New PO
-          </Button>
-        }
-      />
-
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
@@ -210,16 +201,19 @@ export function PurchaseOrdersPage() {
               ))}
             </SelectContent>
           </Select>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Search order no / supplier…"
+              className="w-64 pl-8"
+            />
+          </div>
         </div>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-            placeholder="Search order no / supplier…"
-            className="w-64 pl-8"
-          />
-        </div>
+        <Button onClick={() => setCreating(true)}>
+          <Plus className="h-4 w-4" /> New PO
+        </Button>
       </div>
 
       <DataTable
@@ -290,9 +284,50 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
   const [deliveryAddress, setDeliveryAddress] = React.useState('')
   const [comment, setComment] = React.useState('')
   const [lines, setLines] = React.useState<DraftLine[]>([])
+  const [weekKey, setWeekKey] = React.useState<WeekDayKey>(() => currentWeekDayKey())
 
   const chosenIds = React.useMemo(() => new Set(lines.map((line) => line.product.id)), [lines])
   const totals = React.useMemo(() => computeTotals(lines), [lines])
+
+  const loadFromMenu = useMutation({
+    mutationFn: () =>
+      api.get<MenuDraftLineOut[]>('/api/v1/menus/draft-purchase-order-lines', {
+        params: {
+          year: weekKey.year,
+          week: weekKey.week,
+          day_name: weekKey.dayName,
+          supplier_id: Number(supplierId),
+        },
+      }),
+    onSuccess: (draftLines) => {
+      if (draftLines.length === 0) {
+        toast.info('No menu items for this supplier')
+        return
+      }
+      const mapped: DraftLine[] = draftLines.map((line) => ({
+        product: {
+          id: line.product_id,
+          code: line.code,
+          name: line.name,
+          purchase_price: line.unit_price,
+          vat_rate: line.vat_rate,
+        },
+        qty: String(line.qty),
+        unitPrice: line.unit_price,
+        vatPercent: String(Number(line.vat_rate) * 100),
+      }))
+      setLines(mapped)
+      toast.success(`Loaded ${mapped.length} line(s) from the menu`)
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 404) {
+        toast.error('No saved menu for that week/day')
+        return
+      }
+      const message = error instanceof ApiError ? error.message : 'Failed to load from menu'
+      toast.error(message)
+    },
+  })
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -412,8 +447,19 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
         </Field>
 
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h4 className="text-sm font-semibold">Order lines</h4>
+            <div className="flex flex-wrap items-center gap-2">
+              <WeekDayPicker value={weekKey} onChange={setWeekKey} />
+              <Button
+                variant="outline"
+                onClick={() => loadFromMenu.mutate()}
+                disabled={supplierId === '' || loadFromMenu.isPending}
+                title={supplierId === '' ? 'Pick a supplier first' : undefined}
+              >
+                {loadFromMenu.isPending ? 'Loading…' : 'Load from menu'}
+              </Button>
+            </div>
           </div>
           <ProductPicker onSelect={addProduct} disabledIds={chosenIds} />
           {fieldErrors.lines ? (

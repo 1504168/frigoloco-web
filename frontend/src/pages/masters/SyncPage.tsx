@@ -1,6 +1,5 @@
 import * as React from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
@@ -22,7 +21,6 @@ import {
 } from '@/components/ui/table'
 import { api, type Page } from '@/lib/api'
 import { EMPTY_PLACEHOLDER, formatDateTime } from '@/lib/format'
-import { SYNC_OVERRIDE_CAPTION } from '@/pages/masters/sync/components'
 import type { SyncRun } from '@/pages/masters/sync/types'
 
 const PAGE_LIMIT = 50
@@ -76,25 +74,20 @@ export function SyncPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        breadcrumb="Masters / Sync"
-        title="Husky Sync"
-        description={SYNC_OVERRIDE_CAPTION}
-        actions={
-          <Select value={endpoint} onValueChange={setEndpoint}>
-            <SelectTrigger className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ENDPOINT_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        }
-      />
+      <div className="flex items-center justify-end">
+        <Select value={endpoint} onValueChange={setEndpoint}>
+          <SelectTrigger className="w-48">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ENDPOINT_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       {anyRunning ? (
         <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">

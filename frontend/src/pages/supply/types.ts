@@ -134,6 +134,18 @@ export interface PurchaseOrderCreate {
   lines: PoLineCreate[]
 }
 
+/** GET /api/v1/menus/draft-purchase-order-lines item (schema: MenuDraftLineOut). */
+export interface MenuDraftLineOut {
+  product_id: number
+  code: string
+  name: string
+  qty: number
+  /** Unit purchase price as a euro decimal string. */
+  unit_price: string
+  /** VAT as a fraction string (e.g. "0.06"). */
+  vat_rate: string
+}
+
 /** POST /api/v1/purchase-orders/{id}/receive line (schema: PoReceiveLine). */
 export interface PoReceiveLine {
   po_line_id: number
