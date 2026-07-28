@@ -169,6 +169,19 @@ Status: register COMPLETE. Implementing P1 items in untouched files, one at a ti
   GUIDANCE for that session: pass `delivery_from`/`delivery_to` (ISO dates) to the
   existing GET; add a "due this week / overdue" quick filter keyed on those params.
 
+- **P2 #8 New-product baseline score (<=250 sales)** - DONE (backend). In
+  `scoring_service.recompute_scores`: after computing every product's score, products
+  whose window sales are at/under the threshold inherit the AVERAGE score of established
+  products (sales above the threshold) as a placeholder, so sparse data can't skew their
+  rank. Threshold is `new_product_sales_threshold` setting (default 250). Pure helper
+  `_average_established_score` unit-tested in `tests/test_scoring_baseline.py` (3 tests).
+  ASSUMPTIONS: (a) "sales" = count of non-refunded sales_events in the 365-day window;
+  (b) threshold is strict (sales == 250 counts as NEW); (c) when no product clears the
+  threshold, NO baseline is applied (everyone keeps their computed score); (d) new
+  products keep their raw pct_sold/margin/review components stored - only final_score is
+  replaced (there is no is_baseline column to flag it). The per-fridge half of the
+  dual-scoring model (slide 18, `fridge_product_scores` table) is still OPEN (P2 #7).
+
 ### Backups still OPEN (need your go-ahead or the other session's coordination)
 - P1 #3 low-stock/expiry alerts, P1 #4 withdrawal list, all P2, all P3 (see register).
   I am pausing broad implementation because the other session is mid-flight across

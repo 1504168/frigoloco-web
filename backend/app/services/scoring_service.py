@@ -34,6 +34,11 @@ _DEFAULT_WEIGHTS = {
     "review": Decimal("0.05"),
 }
 
+# Slide 18: products with too few sales in the window get the average global
+# score as a placeholder until real data accumulates. Threshold is on sales
+# count and is overridable via the ``new_product_sales_threshold`` setting.
+_DEFAULT_NEW_PRODUCT_SALES_THRESHOLD = 250
+
 
 @dataclass(frozen=True)
 class ScoringWeights:
@@ -60,6 +65,15 @@ def _load_weights(session: Session) -> ScoringWeights:
         margin=Decimal(str(raw.get("margin", _DEFAULT_WEIGHTS["margin"]))),
         review=Decimal(str(raw.get("review", _DEFAULT_WEIGHTS["review"]))),
     )
+
+
+def _load_new_product_threshold(session: Session) -> int:
+    setting = session.get(Setting, "new_product_sales_threshold")
+    value = setting.value if setting is not None else None
+    try:
+        return int(value)  # accepts JSON number or numeric string
+    except (TypeError, ValueError):
+        return _DEFAULT_NEW_PRODUCT_SALES_THRESHOLD
 
 
 def _counts(query: str, params: dict, session: Session) -> dict[int, tuple]:
@@ -111,6 +125,22 @@ def _compute_components(
     )
 
 
+def _average_established_score(
+    computed: list[tuple[_ProductScoreComponents, int]], threshold: int
+) -> Decimal | None:
+    """Average final score of products whose sales exceed ``threshold``.
+
+    Returns None when no product clears the threshold (so no baseline is applied
+    and every product keeps its computed score).
+    """
+    established = [comp.final_score for comp, sold in computed if sold > threshold]
+    if not established:
+        return None
+    return (sum(established, Decimal("0")) / Decimal(len(established))).quantize(
+        _FOUR_PLACES
+    )
+
+
 def recompute_scores(
     *, as_of: datetime.date, user_id: int | None, session: Session
 ) -> int:
@@ -121,6 +151,7 @@ def recompute_scores(
     """
     window_start = as_of - datetime.timedelta(days=_WINDOW_DAYS)
     weights = _load_weights(session)
+    new_product_threshold = _load_new_product_threshold(session)
     params = {"start": window_start, "end": as_of}
 
     sold_map = _counts(
@@ -159,7 +190,8 @@ def recompute_scores(
         .all()
     }
 
-    scored = 0
+    # Pass 1: compute each product's components alongside its sales count.
+    computed: list[tuple[_ProductScoreComponents, int]] = []
     for product_id in product_ids:
         product = products.get(product_id)
         if product is None:  # sales for a product not in the catalogue
@@ -170,6 +202,18 @@ def recompute_scores(
         components = _compute_components(
             product, sold, added, int(positive), int(negative), weights
         )
+        computed.append((components, sold))
+
+    # New-product baseline: established products (sales above the threshold) set
+    # the average global score; low-data products inherit it as a placeholder so
+    # sparse data cannot skew their ranking (slide 18).
+    baseline = _average_established_score(computed, new_product_threshold)
+
+    scored = 0
+    for components, sold in computed:
+        final_score = components.final_score
+        if baseline is not None and sold <= new_product_threshold:
+            final_score = baseline
         session.execute(
             pg_insert(ProductScore)
             .values(
@@ -178,7 +222,7 @@ def recompute_scores(
                 pct_sold=components.pct_sold,
                 review_score=components.review,
                 margin_score=components.margin,
-                final_score=components.final_score,
+                final_score=final_score,
                 sample_size=components.sample_size,
             )
             .on_conflict_do_update(
@@ -187,7 +231,7 @@ def recompute_scores(
                     "pct_sold": components.pct_sold,
                     "review_score": components.review,
                     "margin_score": components.margin,
-                    "final_score": components.final_score,
+                    "final_score": final_score,
                     "sample_size": components.sample_size,
                     "computed_at": text("now()"),
                 },
