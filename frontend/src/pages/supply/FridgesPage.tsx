@@ -432,14 +432,14 @@ function DeliveryConfigDialog({ fridge, onClose }: { fridge: Fridge; onClose: ()
       onClose={onClose}
       title={`Delivery schedule: ${fridge.friendly_name}`}
       description="Tick each weekday this fridge is restocked. Min daily qty and days-to-fill drive the forecast."
-      widthClassName="max-w-2xl"
+      widthClassName="max-w-md"
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={saveMutation.isPending}>
             Cancel
           </Button>
           <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || configQuery.isLoading}>
-            {saveMutation.isPending ? 'Saving…' : `Save schedule (${enabledCount} day${enabledCount === 1 ? '' : 's'})`}
+            {saveMutation.isPending ? 'Saving…' : `Save (${enabledCount} day${enabledCount === 1 ? '' : 's'})`}
           </Button>
         </>
       }
@@ -450,17 +450,17 @@ function DeliveryConfigDialog({ fridge, onClose }: { fridge: Fridge; onClose: ()
         <ErrorState error={configQuery.error} onRetry={() => configQuery.refetch()} />
       ) : (
         <div className="space-y-2">
-          <div className="grid grid-cols-[auto_1fr_1fr] items-center gap-3 px-1 text-xs font-medium text-muted-foreground">
+          <div className="grid grid-cols-[7rem_5rem_1fr] items-center gap-3 px-3 text-xs font-medium text-muted-foreground">
             <span>Weekday</span>
-            <span>Min daily qty</span>
-            <span>Days to fill (auto)</span>
+            <span>Min QTY</span>
+            <span>Days To Fill</span>
           </div>
           {rows.map((row, index) => (
             <div
               key={WEEKDAYS[index]}
-              className="grid grid-cols-[auto_1fr_1fr] items-center gap-3 rounded-md border border-border px-3 py-2"
+              className="grid grid-cols-[7rem_5rem_1fr] items-center gap-3 rounded-md border border-border px-3 py-2"
             >
-              <label className="flex w-32 items-center gap-2 text-sm font-medium">
+              <label className="flex items-center gap-2 text-sm font-medium">
                 <input
                   type="checkbox"
                   checked={row.enabled}
@@ -476,7 +476,7 @@ function DeliveryConfigDialog({ fridge, onClose }: { fridge: Fridge; onClose: ()
                 disabled={!row.enabled}
                 onChange={(event) => updateRow(index, { min_daily_qty: event.target.value })}
               />
-              <div className="flex h-9 items-center rounded-md border border-transparent px-3 text-sm tabular-nums">
+              <div className="flex h-9 items-center text-sm tabular-nums">
                 {row.enabled ? (
                   <span>
                     {derivedDaysToFill[index]}

@@ -6,8 +6,9 @@ Two steps, both idempotent:
    configured ``DB_URL``. The file is run whole (not statement-split) because it
    contains ``$$``-quoted PL/pgSQL function bodies that a naive ``;`` splitter
    would break; psycopg2 executes multi-statement scripts natively.
-2. Create the two sync tables (``sync_run``, ``stock_snapshots``) - which are not
-   part of schema.sql - via SQLAlchemy ``create_all(checkfirst=True)``.
+2. Create the sync-layer tables (``sync_run``, ``fridge_stock``) via SQLAlchemy
+   ``create_all(checkfirst=True)``. ``sync_run`` is not part of schema.sql;
+   ``fridge_stock`` is, so create_all is a no-op safety net for it.
 
 Usage:
     python scripts/apply_schema.py            # apply schema + sync tables

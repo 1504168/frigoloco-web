@@ -1,12 +1,21 @@
-"""Sync bookkeeping tables - NOT present in schema.sql (introduced by spec 0004).
+"""Sync bookkeeping tables (introduced by spec 0004).
 
-These two tables are created from ORM metadata via ``create_all(checkfirst=True)``
-in ``scripts/apply_schema.py`` (schema.sql does not define them):
+* ``sync_run``     - one row per Husky sync chunk (raw-first ELT audit trail,
+                     resumable/auditable). NOT present in schema.sql: created
+                     from ORM metadata via ``create_all(checkfirst=True)`` in
+                     ``scripts/apply_schema.py``.
+* ``fridge_stock`` - latest-known in-fridge stock from ``GET /stock/current``:
+                     ONE row per (fridge, product), overwritten in place by the
+                     snapshot job. It is a cache of current state, not a time
+                     series - no stock history is kept, because nothing reads it
+                     (the only consumer is the menu allocation engine, which
+                     needs the current value). Mark-and-sweep: each run stamps a
+                     single shared ``taken_at`` and deletes older rows, so the
+                     table mirrors the last vendor response exactly and a missing
+                     row means "not in that fridge right now". Defined in
+                     schema.sql AND here (migration 0009).
 
-* ``sync_run``        - one row per Husky sync chunk (raw-first ELT audit trail,
-                        resumable/auditable).
-* ``stock_snapshots`` - point-in-time stock captures (GET /stock/current is
-                        point-in-time only, so history must be snapshotted).
+Warehouse stock is a different thing entirely - see ``v_stock_balances``.
 """
 
 from __future__ import annotations
@@ -18,9 +27,9 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Text,
-    UniqueConstraint,
     func,
     text,
 )
@@ -66,26 +75,23 @@ class SyncRun(Base):
     )
 
 
-class StockSnapshot(Base):
-    __tablename__ = "stock_snapshots"
+class FridgeStock(Base):
+    __tablename__ = "fridge_stock"
     __table_args__ = (
-        UniqueConstraint(
-            "taken_at",
-            "fridge_id",
-            "product_code",
-            name="uq_stock_snapshots_taken_fridge_code",
-        ),
-        CheckConstraint("units >= 0", name="chk_stock_snapshots_units_nonneg"),
+        CheckConstraint("units >= 0", name="chk_fridge_stock_units_nonneg"),
+        Index("ix_fridge_stock_product", "product_id"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # (fridge_id, product_code) is the identity, NOT product_id: product_id is
+    # NULLable (unmapped vendor codes) and so cannot key the row.
+    fridge_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("fridges.id"), primary_key=True
+    )
+    product_code: Mapped[str] = mapped_column(Text, primary_key=True)
+    # NULLable: snapshots can arrive for products not yet in the catalogue.
+    product_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("products.id"))
+    units: Mapped[int] = mapped_column(Integer, nullable=False)
+    # One shared generation timestamp per snapshot run (mark-and-sweep).
     taken_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
-    fridge_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("fridges.id"), nullable=False
-    )
-    # NULLable: snapshots can arrive for products not yet mapped in the catalogue.
-    product_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("products.id"))
-    product_code: Mapped[str] = mapped_column(Text, nullable=False)
-    units: Mapped[int] = mapped_column(Integer, nullable=False)

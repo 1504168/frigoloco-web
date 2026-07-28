@@ -15,11 +15,12 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import Connection, text
 from sqlalchemy.orm import Session
 
 from app.db import engine, get_db
 from app.main import app
+from app.models import FridgeStock
 
 PREFIX = "/api/v1"
 TAG = "ZZTEST-"
@@ -38,6 +39,7 @@ def ctx():
         join_transaction_mode="create_savepoint",
         expire_on_commit=False,
     )
+    _ensure_fridge_stock_table(connection)
 
     def _override_get_db():
         yield session
@@ -120,6 +122,84 @@ def _seed_sales(session: Session, *, fridge_id: int, product_id: int, days: int)
             },
         )
     session.flush()
+
+
+def _ensure_fridge_stock_table(connection: Connection) -> None:
+    """Create ``fridge_stock`` on the test connection when migration 0009 has not
+    been applied to this database yet.
+
+    ``checkfirst=True`` makes it a no-op once the migration is in. The DDL runs
+    inside the fixture's outer transaction, so it is rolled back like everything
+    else and never persists.
+    """
+    FridgeStock.__table__.create(bind=connection, checkfirst=True)
+
+
+def _seed_fridge_stock(
+    session: Session,
+    *,
+    fridge_id: int,
+    product_id: int,
+    units: int,
+    age: datetime.timedelta,
+) -> None:
+    """Write one ``fridge_stock`` reading ``age`` old (the snapshot generation)."""
+    session.add(
+        FridgeStock(
+            fridge_id=fridge_id,
+            product_code=f"{TAG}code-{product_id}",
+            product_id=product_id,
+            units=units,
+            taken_at=datetime.datetime.now(datetime.timezone.utc) - age,
+        )
+    )
+    session.flush()
+
+
+def _drink_allocation_setup(ctx) -> dict[str, int]:
+    """Fridge + drinks product + menu + target(5) + forecast run, ready to allocate."""
+    cats = _category_ids(ctx.session)
+    drink_pid = _create_product(
+        ctx.client, code=f"{TAG}Pstale{cats['drinks']}", category_id=cats["drinks"]
+    )
+    fid = _create_fridge(ctx.client, f"{TAG}frStale")
+    ctx.client.put(
+        f"{PREFIX}/fridges/{fid}/delivery-config",
+        json={"items": [{"weekday": DELIVERY_WEEKDAY, "min_daily_qty": 0, "days_to_fill": 3}]},
+    )
+    run = ctx.client.post(
+        f"{PREFIX}/forecasts/run", json={"delivery_date": DELIVERY_DATE.isoformat()}
+    )
+    assert run.status_code == 200, run.text
+
+    menu = ctx.client.post(f"{PREFIX}/menus", params={"year": 2026, "week": 25}).json()
+    ctx.client.put(
+        f"{PREFIX}/menus/{menu['id']}/products", json={"product_ids": [drink_pid]}
+    )
+    ctx.client.put(
+        f"{PREFIX}/menus/product-targets",
+        params={"fridge_id": fid},
+        json={"items": [{"product_id": drink_pid, "target_qty": 5}]},
+    )
+    return {
+        "fridge_id": fid,
+        "product_id": drink_pid,
+        "menu_id": menu["id"],
+        "run_id": run.json()["run_id"],
+    }
+
+
+def _allocate_drink_line(ctx, setup: dict[str, int]) -> dict:
+    resp = ctx.client.post(
+        f"{PREFIX}/menus/{setup['menu_id']}/allocate",
+        params={"forecast_run_id": setup["run_id"]},
+    )
+    assert resp.status_code == 200, resp.text
+    return next(
+        line
+        for line in resp.json()["lines"]
+        if line["product_id"] == setup["product_id"]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -371,9 +451,46 @@ def test_forecast_scoring_allocation_end_to_end(ctx):
         params={"forecast_run_id": run_body["run_id"]},
     )
     assert alloc.status_code == 200, alloc.text
-    lines = {(l["product_id"], l["source"]): l["qty"] for l in alloc.json()["lines"]}
-    assert lines[(normal_pid, "forecast")] == 3
-    assert lines[(drink_pid, "target_replenish")] == 5
+    lines = {(l["product_id"], l["source"]): l for l in alloc.json()["lines"]}
+    assert lines[(normal_pid, "forecast")]["qty"] == 3
+    assert lines[(drink_pid, "target_replenish")]["qty"] == 5
+    # No fridge_stock reading at all -> live = 0 (full target) and the generation
+    # is absent, so the target line is flagged stale. Forecast lines never read
+    # stock and keep the default.
+    assert lines[(drink_pid, "target_replenish")]["stock_stale"] is True
+    assert lines[(normal_pid, "forecast")]["stock_stale"] is False
+
+
+def test_allocation_fresh_fridge_stock_is_not_stale(ctx):
+    setup = _drink_allocation_setup(ctx)
+    _seed_fridge_stock(
+        ctx.session,
+        fridge_id=setup["fridge_id"],
+        product_id=setup["product_id"],
+        units=2,
+        age=datetime.timedelta(minutes=10),
+    )
+    line = _allocate_drink_line(ctx, setup)
+    # target 5 - live 2 = 3, reading is inside STOCK_READING_MAX_AGE.
+    assert line["qty"] == 3
+    assert line["source"] == "target_replenish"
+    assert line["stock_stale"] is False
+
+
+def test_allocation_stale_fridge_stock_keeps_last_known_units_and_flags(ctx):
+    setup = _drink_allocation_setup(ctx)
+    _seed_fridge_stock(
+        ctx.session,
+        fridge_id=setup["fridge_id"],
+        product_id=setup["product_id"],
+        units=2,
+        age=datetime.timedelta(hours=3),  # > STOCK_READING_MAX_AGE (2h)
+    )
+    line = _allocate_drink_line(ctx, setup)
+    # F7: the forecast still runs on the last-known units (qty unchanged at 3) -
+    # only the staleness is surfaced.
+    assert line["qty"] == 3
+    assert line["stock_stale"] is True
 
 
 # ---------------------------------------------------------------------------

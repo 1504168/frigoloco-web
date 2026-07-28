@@ -1,39 +1,101 @@
 # FrigoLoco ERP - Scheduled Jobs (Cron Layer)
 
-> **⚠ DRIFT NOTICE (verifier, 2026-07-03):** parts of this document predate the canonical decisions in
-> [`architecture/IMPLEMENTATION-BRIEF.md`](../IMPLEMENTATION-BRIEF.md) and the scaffolded code. Where they disagree,
-> the BRIEF + code win: **no Alembic** (plain SQL via `backend/scripts/apply_schema.py`), **APScheduler worker in `cron/`**
-> (not in-process, not Railway cron), **`sync_run` + trailing-overlap re-pull** (no `sync_cursors` table),
-> env keys `DB_URL`/`FRIGOLOCO_API_*`, models split `master/planning/operations/events/sync`.
+> **⚠ SCOPE NOTICE (2026-07-13):** this document was written ahead of the code and described a much larger job
+> fleet than exists. It has been corrected against `cron/cron/scheduler.py`. **Exactly seven jobs are scheduled**
+> (§1). Everything this document previously catalogued beyond those seven (alert scans, the email digest, the
+> RFID-offline detector, auto-forecast, daily reconciliation) is **NOT BUILT** and is retained below only as
+> roadmap intent, clearly labelled. Where this document and the code disagree, the code wins.
+>
+> Other corrections: **no Alembic** (plain SQL migrations via `backend/scripts/apply_schema.py`), **APScheduler
+> worker in its own `cron/` container** (not in-process in FastAPI, not Railway cron), **`sync_run` + trailing-overlap
+> re-pull** (there is no `sync_cursors` table, no `job_runs` table, no `backfill_checkpoints` table, and no
+> `GET /health/jobs` endpoint).
 
-> Layer: **CRON / JOBS** · APScheduler running **in-process** inside the FastAPI web service (modular-monolith Decision 4 in the spec) · single-run guarantee via PostgreSQL advisory locks · all runs logged to `job_runs`.
+> Layer: **CRON / JOBS** · APScheduler (`BlockingScheduler`) running in a **separate Docker container**
+> (`python -m cron.scheduler`) · every job registered `max_instances=1` + `coalesce=True` so a slow run never
+> overlaps itself or stacks missed fires · a failing job is logged and swallowed so it never kills the scheduler ·
+> logs go to stdout.
 >
-> Code home: `backend/app/jobs/` (`scheduler.py` = engine + locking + retry + logging, `definitions.py` = the job registrations below). Companion document: [`../backend/README.md`](../backend/README.md). Source of truth: spec `0001-frigoloco-excel-to-cloud-erp` (Husky sync strategy, R1/R2, Phase 5 automation).
+> Code home: `cron/cron/` (`scheduler.py` = the seven registrations below, `jobs/<name>.py` = one module per job).
+> The sync/transform logic itself lives in the backend (`app.husky.sync`) and is shared with the FastAPI sync API;
+> the cron layer only orchestrates. Companion documents: [`../../cron/README.md`](../../cron/README.md) (the
+> operational job reference, kept current) and [`../backend/README.md`](../backend/README.md).
 >
-> All cron expressions are evaluated in **`Europe/Brussels`** - delivery days, alert mornings, and the ops team's clock are Belgian; UTC crons would drift an hour twice a year.
+> All cron expressions are evaluated in **`Europe/Brussels`**: delivery days and the ops team's clock are Belgian,
+> so UTC crons would drift an hour twice a year.
 
 ---
 
 ## 1. Job catalogue
 
-| Job id | Schedule (cron) | What it does | Reads → Writes | Idempotency mechanism | Failure behavior / alerting |
-|---|---|---|---|---|---|
-| `husky_sync_purchases` | `5 * * * *` (hourly @ :05) | Incremental pull of `GET /purchases` since the feed cursor (minus 2 h overlap); normalizes cents/refunds/discounts | Husky API, `sync_cursors` → `sales_events`, `sync_cursors`, `job_runs` | Upsert `ON CONFLICT (husky_ref) DO UPDATE`; cursor advances only after successful commit | Retry ×3 exp. backoff within the run; cursor not advanced on failure so next hour replays the window; `sync_failed` alert after 3 consecutive failed runs |
-| `husky_sync_restock` | `10 * * * *` (hourly @ :10) | Incremental pull of `GET /restock` (ADDED + REMOVED); maps tag status (`UNRELIABLE`/`UNRECOGNISED`) | Husky API, `sync_cursors` → `restock_events`, `sync_cursors`, `job_runs` | Same as purchases (upsert on `husky_ref` + cursor) | Same as purchases |
-| `husky_stock_snapshot` | `*/15 * * * *` | Pulls `GET /stock/current`; refreshes the in-memory/table snapshot used by snacks-drinks targets (R3), below-target alerts, and the withdrawal list | Husky API → `live_stock_snapshot` (replace-all), `job_runs` | Full replace of the snapshot table in one transaction - re-run is harmless by definition | Silent single failure (next tick is 15 min away); alert only if snapshot is stale > 2 h (checked by the same job); staleness also surfaces on `/health/jobs` |
-| `husky_catalogue_sync` | `0 2 * * *` (nightly 02:00) | Syncs `GET /producttype`: new products inserted (inactive until reviewed), price/VAT/expiry changes updated, "Box n°" test lines excluded | Husky API → `products` (upsert on `code`), `job_runs` | Upsert keyed on product `code`; no deletes - delisted products flagged `is_active=false` | Retry ×3; on final failure `sync_failed` alert - scoring still runs on yesterday's catalogue |
-| `husky_reviews_sync` | `15 2 * * *` (nightly 02:15) | Incremental pull of `GET /productreview` (`rating == 1` positive, else negative) | Husky API, `sync_cursors` → `product_reviews`, `job_runs` | Upsert on Husky review reference + cursor | Retry ×3; failure alert; scoring proceeds with existing reviews |
-| `recompute_product_scores` | `30 2 * * *` (nightly 02:30) | **R2**: trailing-365-day global scores (+ per-fridge scores when `DUAL_SCORING` on); ≤ 250-lifetime-sales baseline | `sales_events`, `restock_events`, `product_reviews`, `products`, `settings` → `product_scores`, `fridge_product_scores`, `job_runs` | Deterministic recompute keyed on `(product_id, period_end)` - re-run overwrites the same rows | Retry ×3; on failure yesterday's scores remain in force (menus/allocation degrade gracefully); `job_failed` alert |
-| `auto_forecast` | Per `fridge_delivery_config` - e.g. `0 15 * * WED` for Thursday deliveries (one APScheduler trigger per configured weekday/hour pair) | **R1**: runs the forecast for the next delivery date and pre-creates a **draft** dispatch with forecast-sourced lines (Phase 5.1) | `sales_events`, `fridge_delivery_config`, `settings` → `forecast_runs`, `forecast_results`, `dispatches` (draft), `dispatch_lines`, `job_runs` | `UNIQUE(delivery_date)` on `dispatches`: if a draft already exists, lines are refreshed only where `source='forecast'` - manual edits are never overwritten | Retry ×3; on failure `job_failed` alert **and** ops can always run the forecast manually from the UI (`POST /forecasts/run`) - the job is a convenience, not a gate |
-| `below_target_alerts` | `0 6 * * *` (daily 06:00) | Compares latest live-stock snapshot vs `product_targets` per fridge × product; alerts on shortfalls | `live_stock_snapshot`, `product_targets` → `alerts(below_target)`, `job_runs` | Alert dedup key `(type, fridge_id, product_id, date)` - re-run inserts nothing new | Retry ×3; failure alert; skipped when snapshot stale > 2 h (better no alert than a false one) |
-| `expiry_alerts` | `10 6 * * *` (daily 06:10) | Flags tags in fridges with expiry ≤ threshold (default 2 days, from `settings`) | `live_stock_snapshot` (per-tag expiry), `settings` → `alerts(expiry)`, `job_runs` | Same date-scoped dedup key | Same as below_target |
-| `low_stock_alerts` | `20 6 * * *` (daily 06:20) | Warehouse balances vs per-product thresholds | `stock_movements` (balances view), `settings` → `alerts(low_stock)`, `job_runs` | Same date-scoped dedup key | Retry ×3; failure alert |
-| `rfid_offline_detector` | `30 * * * *` (hourly @ :30) | Active fridge with **zero** sales events for N hours (threshold in `settings`, business-hours aware) → probable RFID/network outage (Phase 5.2) | `sales_events`, `fridges` → `alerts(rfid_offline)`, `job_runs` | Open-alert check: no new alert while an unacked `rfid_offline` alert exists for the fridge | Retry ×3; failure alert |
-| `alert_email_digest` | `0 7 * * *` (daily 07:00) | Emails ops one digest of the last 24 h of alerts (replaces the remaining PA email flows) | `alerts` → email out, `alerts.digested_at`, `job_runs` | Only alerts with `digested_at IS NULL` are included and stamped in the same tx as the successful send | Retry ×3; on final failure alerts stay undigested and roll into tomorrow's digest; `job_failed` alert (visible in inbox even if email is down) |
-| `partition_maintenance` | `0 1 1 * *` (monthly, 1st @ 01:00) | Creates next month's partitions for `sales_events` / `restock_events` (+ safety: also the month after) | `pg_catalog` → DDL `CREATE TABLE ... PARTITION OF`, `job_runs` | `CREATE TABLE IF NOT EXISTS` - re-run is a no-op | Retry ×3; failure = **high-severity** alert (a missing partition would break hourly syncs at month rollover); double-ahead creation gives a 1-month buffer |
-| `daily_husky_reconciliation` | `0 3 * * *` (daily 03:00) | Counts yesterday's purchase + restock events in the API (per fridge) vs local tables; divergence beyond tolerance (0.1%, from `settings`) raises an alert. This is the shadow-mode gate metric (Phase 1.8) kept alive forever | Husky API, `sales_events`, `restock_events` → `reconciliation_daily` (one row per day), `alerts(sync_divergence)`, `job_runs` | Keyed on `(check_date)` - re-run overwrites the same row | Retry ×3; failure alert. A **divergence** alert links to the affected feed so ops can trigger a manual re-sync of that day via `POST /sync/husky/{feed}` |
+These are the **seven** jobs registered in `cron/cron/scheduler.py`. Each is also runnable standalone as
+`python -m cron.jobs.<job id>`. Every job archives the raw payload **before** transforming it, writes a `sync_run`
+row (start, then finish/failed), and upserts via `ON CONFLICT` on the key below, so re-runs and overlapping windows
+are free.
 
-Ordering rationale for the nightly chain: catalogue (02:00) and reviews (02:15) land **before** scoring (02:30) so scores always use the freshest inputs; reconciliation (03:00) runs after the 02:xx syncs have settled; morning alerts (06:00–06:20) run after the 05:xx hourly syncs so they judge complete overnight data; the digest (07:00) collects everything the morning produced.
+| Job id | Schedule (cron) | What it does | Reads → Writes | Idempotency mechanism | Failure behavior |
+|---|---|---|---|---|---|
+| `sync_purchases` | `5 * * * *` (hourly @ :05) | Incremental pull of `GET /purchases` over a trailing 48 h window; normalizes cents/refunds/discounts | Husky API → `sales_events`, `sync_run` | Upsert `ON CONFLICT (husky_ref, sold_at)` | Logged, swallowed; the next hour's trailing window re-pulls the same period, so a missed run self-heals |
+| `sync_restock` | `10 * * * *` (hourly @ :10) | Incremental pull of `GET /restock` (ADDED + REMOVED); maps tag status (`UNRELIABLE`/`UNRECOGNISED`) | Husky API → `restock_events`, `sync_run` | Upsert `ON CONFLICT (husky_ref, occurred_at)` | Same as purchases |
+| `snapshot_stock` | `*/15 * * * *` | Pulls `GET /stock/current` and refreshes **fridge live stock** (see §1.1) | Husky API → `fridge_stock`, `sync_run` | Mark-and-sweep in one transaction, **scoped to the fridges the payload reported on**: upsert every payload row under one run-wide `taken_at`, then delete the older-`taken_at` rows **of those fridges only**. A fridge absent from the payload keeps its rows and its old `taken_at` (the signal the reader uses to flag it stale); sweeping globally would wipe it and the allocation engine would over-dispatch it to full target | Logged, swallowed (the next tick is 15 min away). An **empty payload never sweeps**: that means a vendor problem, not empty fridges |
+| `catalogue_sync` | `0 2 * * *` (nightly 02:00) | Syncs the master catalogue: `GET /producttype`, fridges, clients, per-fridge price overrides | Husky API → `products`, `fridges`, `clients`, `fridge_product_prices`, `sync_run` | Upsert on `code` / `husky_id` / name / `(fridge_id, product_id)`; no deletes | Logged, swallowed; scoring still runs on yesterday's catalogue |
+| `reviews_sync` | `15 2 * * *` (nightly 02:15) | Incremental pull of `GET /productreview` over a trailing 14 d window | Husky API → `product_reviews`, `sync_run` | Upsert on a synthesized `husky_ref` | Logged, swallowed; scoring proceeds with existing reviews |
+| `recompute_scores` | `30 2 * * *` (nightly 02:30) | **R2**: trailing-365-day product scores | `sales_events`, `restock_events`, `product_reviews`, `products`, `settings` → `product_scores` | Deterministic recompute keyed on `(product_id, period_end)`; a re-run overwrites the same rows | Logged, swallowed; yesterday's scores remain in force, so menus/allocation degrade gracefully |
+| `partition_maintenance` | `0 1 1 * *` (monthly, 1st @ 01:00) | Creates next month's partitions for the partitioned event tables (plus, for safety, the month after) | `pg_catalog` → DDL `CREATE TABLE ... PARTITION OF` | `CREATE TABLE IF NOT EXISTS`, so a re-run is a no-op | Logged, swallowed. Double-ahead creation gives a one-month buffer, which is the real protection: a missing partition would break the hourly syncs at month rollover |
+
+Plus `python -m cron.jobs.backfill`: a **CLI-only entry point, not scheduled** (see §4).
+
+Ordering rationale for the nightly chain: catalogue (02:00) and reviews (02:15) land **before** scoring (02:30), so
+scores always use the freshest inputs.
+
+**Failure handling is uniform and simple:** `_run_safely` in `scheduler.py` catches, logs and swallows any exception
+so one bad job never kills the scheduler. There is **no in-run retry ladder, no `job_runs` table, no consecutive-failure
+escalation and no alerting on job failure** - the sync jobs are self-healing because their trailing windows re-pull
+what a failed run missed, and failures are found in the container logs and the `sync_run` table. Automated escalation
+is **NOT BUILT**.
+
+### 1.1 What `snapshot_stock` actually maintains: fridge live stock
+
+`fridge_stock` is **not** warehouse stock. Keep the two apart:
+
+- **Warehouse stock** is DERIVED, never stored: the `v_stock_balances` view computes it from `stock_movements` plus
+  pending `purchase_order_lines`. Per product, **no fridge dimension**. No cron job touches it.
+- **Fridge live stock** IS stored: `fridge_stock` holds one row per `(fridge_id, product_code)` (that pair is the PK),
+  columns `fridge_id, product_code, product_id` (nullable), `units`, `taken_at`. It is the only source of fridge-level
+  stock, and `snapshot_stock` is its only writer.
+
+Because the refresh is mark-and-sweep, the table always mirrors **exactly** what the vendor reported in the last run:
+a fridge or product that disappears from the feed disappears from the table, and a missing row means "not in that
+fridge right now" (live = 0). **No history is retained, and none is needed** - nothing ever read it, only the newest
+value per (fridge, product) was ever queried, so there is no retention or downsampling question to re-open.
+
+Its **sole consumer** is the menu allocation engine (`backend/app/services/menu_allocation_service.py`), which uses it
+for the snacks/drinks branch: `restock = max(target_qty - live, 0)`. **No API endpoint and no frontend page reads it.**
+
+**Freshness is guarded in the reader, not here.** `menu_allocation_service` compares the newest `taken_at` against
+`STOCK_READING_MAX_AGE` (2 h). If the generation is older than that or absent, allocation still runs on last-known
+units, but every `target_replenish` line is flagged `stock_stale=True` (surfaced as `AllocationLineOut.stock_stale`)
+and a warning is logged. This job does **not** check its own staleness, does not raise an alert, and does not report
+to any health endpoint. Earlier revisions of this document claimed a "stale > 2 h" cron alert: that never existed.
+
+### 1.2 Jobs that are NOT BUILT
+
+Retained as roadmap intent from the spec's Phase 5. **None of these exist in code** - do not cite them as behaviour,
+and note that the Power Automate alert emails they were meant to replace are therefore **still in service**:
+
+| Planned job | Intended purpose | Status |
+|---|---|---|
+| `below_target_alerts` | Fridge live stock vs `product_targets`, alert on shortfalls | **NOT BUILT** (and there is no `v_below_target` view and no `GET /reports/below-target` endpoint) |
+| `expiry_alerts` | Flag tags in fridges nearing DLC | **NOT BUILT**. No per-tag expiry data is stored, so this needs a data source first |
+| `low_stock_alerts` | Warehouse balances vs per-product thresholds | **NOT BUILT** |
+| `rfid_offline_detector` | Active fridge with zero sales for N hours implies an RFID/network outage | **NOT BUILT**. This is a real gap: when one fridge's RFID drops out while the others still report, its rows are swept from `fridge_stock`, so it reads as empty (not stale) and allocation over-dispatches to the full target |
+| `alert_email_digest` | Daily email digest of alerts | **NOT BUILT**. No email or digest path exists anywhere in the codebase |
+| `auto_forecast` | Pre-create a draft dispatch per delivery day | **NOT BUILT**. Ops runs the forecast from the UI (`POST /forecasts/run`) |
+| `daily_husky_reconciliation` | Compare API event counts vs local tables, alert on divergence | **NOT BUILT**. There is no `reconciliation_daily` table and no reconciliation job of any kind |
+
+`AlertType` declares `expiry` / `low_stock` / `below_target` / `negative_blocked` / `rfid_offline`, but
+**only `negative_blocked` is ever constructed** (`backend/app/services/dispatch_service.py`, when a dispatch would
+drive warehouse stock negative). Every other alert class is a declared enum value with no producer.
 
 ---
 
@@ -41,114 +103,100 @@ Ordering rationale for the nightly chain: catalogue (02:00) and reviews (02:15) 
 
 ```mermaid
 gantt
-    title Typical day - scheduled job timeline (all times Europe/Brussels)
+    title Typical day - the seven scheduled jobs (all times Europe/Brussels)
     dateFormat HH:mm
     axisFormat %H:%M
 
     section Nightly batch
-    husky_catalogue_sync            :n1, 02:00, 10m
-    husky_reviews_sync              :n2, 02:15, 10m
-    recompute_product_scores (R2)   :n3, 02:30, 25m
-    daily_husky_reconciliation      :n4, 03:00, 20m
+    catalogue_sync            :n1, 02:00, 10m
+    reviews_sync              :n2, 02:15, 10m
+    recompute_scores (R2)     :n3, 02:30, 25m
 
-    section Morning alerts
-    below_target_alerts             :m1, 06:00, 5m
-    expiry_alerts                   :m2, 06:10, 5m
-    low_stock_alerts                :m3, 06:20, 5m
-    alert_email_digest              :m4, 07:00, 5m
+    section Hourly (08-10 shown as a sample)
+    sync_purchases            :h1, 08:05, 8m
+    sync_restock              :h2, 08:10, 8m
+    sync_purchases            :h4, 09:05, 8m
+    sync_restock              :h5, 09:10, 8m
+    sync_purchases            :h7, 10:05, 8m
+    sync_restock              :h8, 10:10, 8m
 
-    section Hourly (shown 08-11 as sample)
-    husky_sync_purchases            :h1, 08:05, 8m
-    husky_sync_restock              :h2, 08:10, 8m
-    rfid_offline_detector           :h3, 08:30, 4m
-    husky_sync_purchases            :h4, 09:05, 8m
-    husky_sync_restock              :h5, 09:10, 8m
-    rfid_offline_detector           :h6, 09:30, 4m
-    husky_sync_purchases            :h7, 10:05, 8m
-    husky_sync_restock              :h8, 10:10, 8m
-    rfid_offline_detector           :h9, 10:30, 4m
+    section Every 15 min (one sample hour)
+    snapshot_stock            :s1, 08:00, 3m
+    snapshot_stock            :s2, 08:15, 3m
+    snapshot_stock            :s3, 08:30, 3m
+    snapshot_stock            :s4, 08:45, 3m
 
-    section Every 15 min (sample hour)
-    husky_stock_snapshot            :s1, 08:00, 3m
-    husky_stock_snapshot            :s2, 08:15, 3m
-    husky_stock_snapshot            :s3, 08:30, 3m
-    husky_stock_snapshot            :s4, 08:45, 3m
-
-    section Afternoon
-    auto_forecast (Wed run for Thu deliveries, R1) :a1, 15:00, 15m
+    section Monthly (1st only)
+    partition_maintenance     :p1, 01:00, 10m
 ```
 
-The hourly and 15-minute jobs repeat around the clock - the gantt shows a sample window. `auto_forecast` fires per configured fridge-delivery-day (the Wednesday 15:00 run shown pre-creates Thursday's draft dispatches).
+The hourly and 15-minute jobs repeat around the clock: the gantt shows a sample window. `partition_maintenance` runs
+only on the 1st of the month. Nothing runs in the morning or afternoon: the alert scans, the email digest and the
+auto-forecast that earlier revisions charted here are **NOT BUILT** (§1.2).
 
 ---
 
 ## 3. Scheduling architecture
 
-### In-process APScheduler
+### A standalone APScheduler worker
 
-APScheduler (`AsyncIOScheduler`) starts in FastAPI's lifespan hook and shares the web process - the spec's Decision 4 accepts this at 40–200-fridge load, with a cheap escape hatch: deploy the same image twice and set `SCHEDULER_ENABLED=false` on the web role if sync work ever measurably hurts API latency.
+The scheduler is a **`BlockingScheduler` in its own Docker container**, started by `python -m cron.scheduler`. It is
+**not** in-process inside FastAPI: an earlier revision of this document described an `AsyncIOScheduler` in the FastAPI
+lifespan hook behind a `SCHEDULER_ENABLED` flag. That design was dropped, and no such flag exists.
 
 ```
-FastAPI lifespan startup
-  └─ if settings.SCHEDULER_ENABLED:
-        scheduler = AsyncIOScheduler(timezone="Europe/Brussels")
-        register_all_jobs(scheduler)      # jobs/definitions.py
-        scheduler.start()
-FastAPI lifespan shutdown
-  └─ scheduler.shutdown(wait=True)        # let a running upsert finish before Railway restarts
+python -m cron.scheduler        (cron/Dockerfile, its own Railway service)
+  └─ BlockingScheduler(timezone="Europe/Brussels")
+       └─ for each of the seven jobs:
+            add_job(_run_safely, trigger=CronTrigger(...),
+                    max_instances=1, coalesce=True, misfire_grace_time=300)
 ```
 
-Every job callable is wrapped by `run_job(...)` in `scheduler.py`, which provides the four guarantees below.
+Each job is a plain callable in `cron/cron/jobs/<name>.py` exposing `run()`, so the same code path serves the
+scheduler and the manual CLI (`python -m cron.jobs.<name>`).
 
-### 3.1 Single-instance locking (Railway replicas)
+### 3.1 Overlap and misfire protection
 
-If Railway ever runs a second replica (scale-up, or the overlap window during a rolling deploy), both processes fire the same cron. Guard: a **PostgreSQL advisory lock** per job.
+- `max_instances=1`: a slow run can never overlap itself.
+- `coalesce=True`: if the container was down and several fires were missed, they collapse into one catch-up run
+  rather than stacking.
+- `misfire_grace_time=300`: a fire more than 5 minutes late is dropped rather than run at the wrong time.
 
-```python
-@dataclass(frozen=True)
-class JobLockKey:
-    job_id: str
-    def as_bigint(self) -> int:            # stable hash of job_id into the pg advisory-lock keyspace
-        ...
+**Single-instance locking is NOT BUILT.** There are no PostgreSQL advisory locks. Correctness today rests on running
+**exactly one scheduler container**. If the cron service is ever scaled past one replica, both replicas will fire every
+job, and an advisory lock (or equivalent) has to be added first. The idempotent upserts make a duplicate sync run
+harmless in practice, but the mark-and-sweep in `snapshot_stock` is the one job where concurrent runs are genuinely
+unsafe.
 
-acquired = session.execute(select(func.pg_try_advisory_lock(key.as_bigint()))).scalar()
-if not acquired:
-    log_job_run(job_id, status="skipped_lock")   # the other replica has it - not an error
-    return
-try:
-    ...run the job...
-finally:
-    session.execute(select(func.pg_advisory_unlock(key.as_bigint())))
-```
+### 3.2 Run bookkeeping - `sync_run`
 
-`pg_try_advisory_lock` (non-blocking) rather than the blocking variant: a skipped run is correct behavior, a queued duplicate run is not. Session-scoped locks also self-release if the process dies mid-run - no stuck-lock cleanup needed.
+There is **no `job_runs` table**. The Husky-facing jobs write to **`sync_run`** instead, one row per chunk:
+`job`, `endpoint`, `window_from`, `window_to`, `status` (`running` / `success` / `empty` / `failed`),
+`records_fetched`, `records_upserted`, `blob_path`, `error`, `started_at`, `finished_at`. This is also what makes the
+backfill resumable (§4). There is no retention pruning job.
 
-### 3.2 Job run log - `job_runs`
-
-Every attempt writes a row (including skips and failures):
-
-| Column | Notes |
-|---|---|
-| `id`, `job_id` | `job_id` = catalogue id above |
-| `started_at`, `finished_at` | UTC |
-| `status` | `success` / `failed` / `skipped_lock` / `skipped_stale_input` |
-| `rows_affected` | upserts, alerts created, partitions created… (job-defined) |
-| `error` | truncated traceback on failure |
-| `attempt` | 1–3 within one scheduled run |
-
-Retention: pruned to 90 days by `partition_maintenance` (it is the only janitorial job, so it owns this too).
+`sync_run` and `fridge_stock` are the **only** bookkeeping tables. `job_runs`, `sync_cursors`, `backfill_checkpoints`,
+`live_stock_snapshot`, `generated_documents` and `reconciliation_daily` were all designed here but **never built**.
 
 ### 3.3 Retry policy
 
-- **Within a run**: up to **3 attempts**, exponential backoff `30 s → 2 min → 8 min`, only for retryable failures (network, 5xx from Husky, transient DB errors). Business errors (e.g. unmapped fridge id) fail immediately - retrying won't fix data.
-- **Across runs**: sync jobs are self-healing by design - the cursor didn't advance, so the next scheduled tick retries the same window (idempotent upsert makes replays safe).
-- **Escalation**: 3 consecutive *runs* failed for the same job → one `sync_failed`/`job_failed` alert (deduped on open alert, so the inbox gets one item, not one per hour).
+- **Within a run: none.** `_run_safely` catches the exception, logs it, and returns. There is no retry ladder and no
+  exponential backoff. (The HTTP client has its own throttle, but the job does not re-attempt.)
+- **Across runs**: the sync jobs are self-healing by design. They pull a **trailing window** (48 h for purchases and
+  restock, 14 d for reviews) rather than advancing a cursor, so the next scheduled tick re-pulls whatever a failed run
+  missed, and the idempotent upserts make the replay free.
+- **Escalation: NOT BUILT.** Nothing counts consecutive failures and nothing raises an alert when a job fails.
 
 ### 3.4 Monitoring
 
-- **`GET /health/jobs`** (admin-only): for each catalogued job - `last_success_at`, `last_status`, `consecutive_failures`, `expected_interval`, and a derived `healthy` boolean (`now − last_success_at < 2 × expected_interval`). Railway health checks hit plain `/health`; `/health/jobs` is for humans and an external uptime pinger.
-- **Alerts inbox**: job failures and sync divergence create `alerts` rows like any business alert - ops sees them in the same UI, and they ride the 07:00 email digest.
-- **Freshness guards**: alert jobs that depend on the live-stock snapshot check its age first and record `skipped_stale_input` instead of alerting on stale data.
+Today: **container logs plus the `sync_run` table.** That is the whole of it.
+
+**NOT BUILT** (all three were described here as if they existed):
+- `GET /health/jobs`. There is no health router in the backend at all.
+- A job-failure alerts inbox. No job writes an `alerts` row, and there is no email or digest path.
+- A cron-side freshness guard with a `skipped_stale_input` status. The only freshness guard that exists is the 2 h
+  `STOCK_READING_MAX_AGE` check in the **menu allocation reader** (§1.1), which flags lines `stock_stale` rather than
+  skipping anything.
 
 ---
 
@@ -158,45 +206,46 @@ Goal: 12+ months of history in `sales_events` / `restock_events` / `product_revi
 
 ### Prerequisites
 
-1. Dedicated backend Husky credentials in env (`HUSKY_USER`/`HUSKY_PASSWORD`) - **not** the personal account from the Office Scripts.
+1. Husky credentials in env (`FRIGOLOCO_API_USERNAME` / `FRIGOLOCO_API_PASSWORD` / `FRIGOLOCO_API_BASE_URL`), read from the repo-root `.env` via the backend `Settings`.
 2. Rate limits and history retention **confirmed with Husky** (spec Manual Step 2). The chunk pacing below is a conservative default to adjust once real limits are known - do not assume documented limits exist.
-3. Alembic migration 0001 applied; monthly partitions pre-created for the entire backfill range (the runner does this itself before pulling: same `CREATE TABLE IF NOT EXISTS` DDL as `partition_maintenance`).
-4. Regular hourly sync jobs **disabled or not yet enabled** during backfill (avoid interleaved cursor writes); enable them after step 4 below.
+3. Schema applied via `backend/scripts/apply_schema.py` (plain SQL, **no Alembic**), with monthly partitions pre-created for the entire backfill range.
+4. Run `catalogue_sync` first (see below): products and fridges must exist before any event can be normalized.
 
 ### Order of operations (dependencies flow downward)
 
 | Step | Feed | Why this order | Chunking |
 |---|---|---|---|
-| 1 | `producttype` catalogue | Products must exist before any event references them | Single pull (540 products) |
-| 2 | Fridges / facilities | Fridge id mapping (`friendlyName` **and** `fridge.name` → internal id) must exist before event normalization; merged with the Excel-migration fridge import | Single pull |
-| 3 | `purchases` - 12+ months | Largest volume; feeds scoring + forecast | **Monthly chunks**, oldest first |
-| 4 | `restock` - 12+ months | Scoring denominator (%sold) and reconciliation history | Monthly chunks, oldest first |
-| 5 | `productreview` - 12+ months | Scoring review component | Monthly chunks (small) |
-| 6 | Verify + enable | Re-run count verification, then enable the hourly jobs and set feed cursors to the backfill end timestamp | - |
+| 1 | `catalogue_sync` (products, fridges, clients, prices) | Products and the fridge id mapping (`friendlyName` **and** `fridge.name` → internal id) must exist before event normalization | Single pull |
+| 2 | `backfill --endpoint purchases` | Largest volume; feeds scoring + forecast | **7-day chunks** |
+| 3 | `backfill --endpoint restock` | Scoring denominator (%sold) | 7-day chunks |
+| 4 | `backfill --endpoint reviews` | Scoring review component | 7-day chunks (small) |
+| 5 | Verify | Re-run counts and spot-check against the API | - |
 
-### Checkpointing
+### Resumability
 
-The runner (`husky/sync.py::run_backfill`) persists a checkpoint row per `(feed, month)` in `backfill_checkpoints`:
+There is **no `backfill_checkpoints` table**. `cron/cron/jobs/backfill.py` reuses **`sync_run`** as its checkpoint
+log, which is why it needs no bookkeeping of its own:
 
-```
-feed | chunk_month | status (pending → fetched → upserted → verified) | rows_fetched | rows_upserted | finished_at
-```
-
-- A killed/crashed run resumes at the first non-`verified` chunk - re-running the whole backfill command is always safe (idempotent upserts).
-- `verified` means the chunk's local row count matches a fresh API count for that month within tolerance; mismatches mark the chunk `pending` again and log the diff.
+- It walks `--from`/`--to` in **7-day chunks**, delegating each chunk to the matching incremental sync job, so the
+  raw-first archive, the `sync_run` row and the idempotent upsert are all reused.
+- **Resumable:** a chunk whose `sync_run` already recorded `success` or `empty` for the same job + endpoint + window is
+  skipped, so re-running the whole command after a crash is always safe.
+- **Self-healing:** a chunk that raises is halved and each half retried, down to a 1-day floor, isolating a poison
+  window instead of failing the whole run.
+- `--dry-run` prints the window plan (including which windows would be skipped) without calling the vendor or writing
+  anything.
 - **Acceptance check (spec 1.5): running the entire backfill twice must yield identical row counts.**
 
 ### Duration & rate expectations
 
 Working numbers (validate against Husky's real limits in Manual Step 2):
 
-- Volume: the year-one target is ~5–10 M events (spec acceptance criteria), i.e. roughly 400–800 k events/month across purchases + restock.
-- Pacing: one monthly chunk per feed at a time, sequential, ~1 req/s ceiling with the client's backoff on 429/5xx. If a month exceeds the API's practical response size, the runner bisects the window (month → half-month → week) automatically.
-- Ballpark wall-clock: **2–6 hours** for 12 months of purchases + restock at those volumes; reviews add minutes. Run it overnight from a one-off Railway command (`python -m app.husky.backfill --from 2025-06-01`), not inside the web process.
-- The 12 monthly pulls the old `Update Rating` script did per run are the existence proof that month-sized windows are within the API's comfort zone.
+- Volume: the year-one target is ~5-10 M events (spec acceptance criteria), i.e. roughly 400-800 k events/month across purchases + restock.
+- Pacing: one 7-day chunk per feed at a time, sequential, throttled by `HUSKY_THROTTLE_RPS`. A chunk that fails is halved automatically (7 d → 3 d → 1 d floor).
+- Ballpark wall-clock: **2-6 hours** for 12 months of purchases + restock at those volumes; reviews add minutes. Run it from a one-off command against the cron image (`python -m cron.jobs.backfill --endpoint purchases --from 2025-06-01 --to 2026-06-01`), never inside the web process.
 
 ### Post-backfill
 
 1. Run the count verification across all chunks; archive the report.
-2. Set `sync_cursors` for each feed to the backfill end time; enable `SCHEDULER_ENABLED`.
-3. Start the ≥ 2-week **shadow mode** (Phase 1.8): `daily_husky_reconciliation` must show < 0.1% divergence over 14 days before the workbook numbers are trusted to the new store.
+2. Start the scheduler container. The hourly jobs need no cursor priming: they pull a trailing 48 h window, so they simply pick up from now.
+3. Shadow mode (spec Phase 1.8) called for a `daily_husky_reconciliation` job showing < 0.1% divergence over 14 days before the workbook numbers were trusted to the new store. **That job is NOT BUILT**, so this gate has to be run as a manual comparison (or the job has to be written) before the cutover it was meant to protect.

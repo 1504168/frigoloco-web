@@ -381,6 +381,7 @@ def allocate_menu(
                 product_id=line.product_id,
                 qty=line.qty,
                 source=line.source,
+                stock_stale=line.stock_stale,
             )
             for line in lines
         ],

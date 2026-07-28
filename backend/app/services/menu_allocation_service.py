@@ -12,16 +12,26 @@ rounded up rather than silently dropped. Per-product ``menu_product_caps`` are
 respected, with capped overflow redistributed to remaining products.
 
 Snacks & Drinks bypass the score split entirely: their per-product quantity is
-``max(target_qty - live_stock, 0)`` from ``product_targets`` and the latest
-``stock_snapshots`` reading.
+``max(target_qty - live_stock, 0)`` from ``product_targets`` and the in-fridge
+``fridge_stock`` reading (the latest-known state written by the snapshot job).
+
+Staleness (F7): the snapshot job refreshes ``fridge_stock`` every 15 min and only
+sweeps the fridges a payload actually reported on, so each fridge carries its own
+generation timestamp. A fridge whose generation is missing or older than
+:data:`STOCK_READING_MAX_AGE` was not reached (RFID reader offline, or a partial
+vendor response) and its readings are untrustworthy. The forecast still runs on
+that fridge's last-known units - quantities are never silently changed - but its
+target-replenish lines are flagged ``stock_stale`` so the UI can surface it.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import datetime
+import logging
+from dataclasses import dataclass, field
 from decimal import Decimal
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.master import (
@@ -36,12 +46,19 @@ from app.models.planning import (
     ProductScore,
     WeeklyMenu,
 )
+from app.models.sync import FridgeStock
 from app.schemas.masters import api_error
+
+logger = logging.getLogger("services.menu_allocation")
 
 _TARGET_CATEGORY_TOKENS = ("snack", "drink")
 
 SOURCE_FORECAST = "forecast"
 SOURCE_TARGET = "target_replenish"
+
+# Beyond this age the whole fridge_stock generation is considered untrustworthy
+# (the snapshot job runs every 15 min; the architecture docs specify a 2h bound).
+STOCK_READING_MAX_AGE = datetime.timedelta(hours=2)
 
 
 @dataclass(frozen=True)
@@ -51,6 +68,49 @@ class AllocationLine:
     product_id: int
     qty: int
     source: str
+    # True only on target-replenish lines computed from a stale/absent
+    # fridge_stock generation. Forecast lines never read stock, so they keep the
+    # default.
+    stock_stale: bool = False
+
+
+@dataclass(frozen=True)
+class FridgeStockReadings:
+    """Latest in-fridge stock per (fridge, product), plus a generation PER FRIDGE.
+
+    The snapshot job sweeps only the fridges a payload reported on, so every
+    fridge carries its own generation (``max(taken_at)`` over its rows):
+
+    * fridge reported, product gone   -> its row was swept -> ``live = 0`` against
+      a FRESH generation. Correct, and not stale.
+    * fridge absent from the payload  -> its rows are retained with their OLD
+      generation (RFID reader offline, or a partial vendor response). That old
+      timestamp is exactly what flags the fridge stale here.
+    * fridge never snapshotted at all -> no generation -> stale.
+
+    Freshness is therefore a property of the fridge's generation, never of an
+    individual (fridge, product) key.
+    """
+
+    units_by_key: dict[tuple[int, int], int] = field(default_factory=dict)
+    taken_at_by_fridge: dict[int, datetime.datetime] = field(default_factory=dict)
+
+    def units(self, fridge_id: int, product_id: int) -> int:
+        return self.units_by_key.get((fridge_id, product_id), 0)
+
+    def is_stale(self, fridge_id: int, now: datetime.datetime) -> bool:
+        taken_at = self.taken_at_by_fridge.get(fridge_id)
+        if taken_at is None:
+            return True
+        return taken_at < now - STOCK_READING_MAX_AGE
+
+    def stale_fridge_ids(
+        self, fridge_ids: list[int], now: datetime.datetime
+    ) -> dict[int, bool]:
+        """Decide staleness once per fridge, for reuse across that fridge's lines."""
+        return {
+            fridge_id: self.is_stale(fridge_id, now) for fridge_id in fridge_ids
+        }
 
 
 def _largest_remainder(target: int, weights: list[Decimal]) -> list[int]:
@@ -105,21 +165,39 @@ def _apply_caps(
     return capped
 
 
-def _latest_snapshots(
+def _fridge_stock_readings(
     fridge_ids: list[int], session: Session
-) -> dict[tuple[int, int], int]:
+) -> FridgeStockReadings:
+    """Read the latest in-fridge stock for ``fridge_ids`` plus each one's generation.
+
+    A fridge the snapshot job could not reach is deliberately NOT emptied by the
+    job's sweep: it keeps its rows with their last generation timestamp, so the
+    staleness check below can flag it instead of silently reading it as empty.
+    """
     if not fridge_ids:
-        return {}
+        return FridgeStockReadings()
     rows = session.execute(
-        text(
-            "SELECT DISTINCT ON (fridge_id, product_id) fridge_id, product_id, units "
-            "FROM stock_snapshots WHERE fridge_id = ANY(:fridge_ids) "
-            "AND product_id IS NOT NULL "
-            "ORDER BY fridge_id, product_id, taken_at DESC"
-        ),
-        {"fridge_ids": fridge_ids},
+        select(
+            FridgeStock.fridge_id,
+            FridgeStock.product_id,
+            FridgeStock.units,
+            FridgeStock.taken_at,
+        ).where(
+            FridgeStock.fridge_id.in_(fridge_ids),
+            FridgeStock.product_id.is_not(None),
+        )
     ).all()
-    return {(row.fridge_id, row.product_id): int(row.units) for row in rows}
+
+    units_by_key: dict[tuple[int, int], int] = {}
+    taken_at_by_fridge: dict[int, datetime.datetime] = {}
+    for row in rows:
+        units_by_key[(row.fridge_id, row.product_id)] = int(row.units)
+        generation = taken_at_by_fridge.get(row.fridge_id)
+        if generation is None or row.taken_at > generation:
+            taken_at_by_fridge[row.fridge_id] = row.taken_at
+    return FridgeStockReadings(
+        units_by_key=units_by_key, taken_at_by_fridge=taken_at_by_fridge
+    )
 
 
 def compute_allocation(
@@ -190,7 +268,19 @@ def compute_allocation(
         .scalars()
         .all()
     }
-    snapshots = _latest_snapshots(fridge_ids, session)
+    readings = _fridge_stock_readings(fridge_ids, session)
+    # Staleness is decided ONCE PER FRIDGE and reused across that fridge's lines.
+    stale_by_fridge = readings.stale_fridge_ids(
+        fridge_ids, datetime.datetime.now(datetime.timezone.utc)
+    )
+    stale_fridge_ids = [fid for fid, stale in stale_by_fridge.items() if stale]
+    if stale_fridge_ids:
+        logger.warning(
+            "menu allocation %s: fridge_stock reading stale or absent for fridges "
+            "%s (max age=%s) - their target replenishment uses last-known units "
+            "and is flagged stock_stale",
+            menu_id, stale_fridge_ids, STOCK_READING_MAX_AGE,
+        )
 
     lines: list[AllocationLine] = []
     for result in results:
@@ -206,7 +296,7 @@ def compute_allocation(
                 target_qty = targets.get((result.fridge_id, product_id))
                 if target_qty is None:
                     continue
-                live = snapshots.get((result.fridge_id, product_id), 0)
+                live = readings.units(result.fridge_id, product_id)
                 restock = max(target_qty - live, 0)
                 if restock > 0:
                     lines.append(
@@ -216,6 +306,7 @@ def compute_allocation(
                             product_id=product_id,
                             qty=restock,
                             source=SOURCE_TARGET,
+                            stock_stale=stale_by_fridge[result.fridge_id],
                         )
                     )
             continue

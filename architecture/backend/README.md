@@ -6,7 +6,7 @@
 > (not in-process, not Railway cron), **`sync_run` + trailing-overlap re-pull** (no `sync_cursors` table),
 > env keys `DB_URL`/`FRIGOLOCO_API_*`, models split `master/planning/operations/events/sync`.
 
-> Layer: **BACKEND** · Stack: FastAPI (Python 3.12) · SQLAlchemy 2 + Alembic · PostgreSQL · APScheduler (in-process) · httpx · openpyxl / WeasyPrint · Azure Blob · Railway (modular monolith)
+> Layer: **BACKEND** · Stack: FastAPI (Python 3.12) · SQLAlchemy 2 · PostgreSQL (plain-SQL migrations, **no Alembic**) · httpx · openpyxl / WeasyPrint · Azure Blob · Railway (modular monolith). Scheduling is **not** in-process: the APScheduler worker lives in `cron/`.
 >
 > Source of truth: spec [`0001-frigoloco-excel-to-cloud-erp`](../../specs/0001-frigoloco-excel-to-cloud-erp_2026-07-02_0810PM_UTC/0001-frigoloco-excel-to-cloud-erp_2026-07-02_0810PM_UTC_v1.html) - business rules **R1–R12**, API surface table, Husky sync strategy, 5-phase implementation plan. Scheduled jobs are documented separately in [`../cron/README.md`](../cron/README.md).
 
@@ -60,7 +60,7 @@ Rules of the road:
 - **Schemas** are the only shapes crossing the HTTP boundary. Internal service inputs/outputs are `@dataclass` or Pydantic models - never bare dicts or tuples.
 - **Services** own transactions (one `Session` per request via dependency; services decide commit/rollback boundaries for multi-step flows).
 - **Models** are persistence only - no domain rules in ORM classes beyond constraints/defaults.
-- The **stock non-negativity trigger** lives in the database (Alembic migration 0001), not in Python - the API merely translates the trigger error into a `409`.
+- The **stock non-negativity trigger** lives in the database (`schema.sql`, applied by `backend/scripts/apply_schema.py`), not in Python - the API merely translates the trigger error into a `409`.
 
 ---
 
@@ -68,7 +68,9 @@ Rules of the road:
 
 ```
 backend/
-├── alembic/                     # migrations (0001 = full 27-table schema, enums, stock trigger, event partitions)
+├── scripts/
+│   ├── apply_schema.py          # applies schema.sql + scripts/migrations/*.sql (plain SQL - NO Alembic)
+│   └── migrations/              # numbered .sql migrations (0002_money_to_cents … 0009_fridge_stock_latest_only)
 ├── tests/                       # see §7 Testing strategy
 └── app/
     ├── main.py                  # FastAPI app factory, router registration, scheduler startup/shutdown hooks
@@ -81,9 +83,12 @@ backend/
     │   ├── clients.py           # clients, fridges, fridge_delivery_config, client_fees, client_service_charges, client_interventions
     │   ├── orders.py            # purchase_orders, purchase_order_lines, stock_movements
     │   ├── dispatch.py          # weekly_menus, menu_products, forecast_runs/results, dispatches, dispatch_lines, restock_verifications(+lines)
-    │   ├── events.py            # sales_events, restock_events, product_reviews (monthly partitions), sync_cursors
+    │   ├── events.py            # sales_events, restock_events, product_reviews (monthly partitions)
+    │   ├── sync.py              # sync_run (per-run bookkeeping), fridge_stock (latest in-fridge stock, §3.3)
     │   ├── finance.py           # weekly_financials, product_scores, fridge_product_scores
-    │   └── system.py            # users, settings, alerts, audit_log, job_runs, generated_documents
+    │   └── system.py            # users, settings, alerts, audit_log
+    │                            # NOTE: there is NO job_runs and NO generated_documents table.
+    │                            # sync_run + fridge_stock are the only bookkeeping tables.
     ├── schemas/                 # Pydantic v2 models mirroring the API surface, one file per router
     ├── api/                     # routers - thin: auth check, schema validation, service call
     │   ├── auth.py              # POST /auth/login, /auth/refresh, GET /auth/me
@@ -100,8 +105,9 @@ backend/
     │   ├── finance.py           # weekly P&L, monthly analysis, fridge GSV report
     │   ├── alerts.py            # GET /alerts, PUT /alerts/{id}/ack
     │   ├── settings.py          # GET/PUT /settings (scoring weights, margins, fees, thresholds, flags)
-    │   ├── sync.py              # POST /sync/husky/{feed} - internal, admin-only; also invoked by scheduler
-    │   └── health.py            # GET /health, GET /health/jobs (last-success per job, see cron README)
+    │   └── sync.py              # POST /sync/husky/{feed} - internal, admin-only; also invoked by scheduler
+    │                            # NOT BUILT: there is no health router. GET /health/jobs does not exist;
+    │                            # job outcomes are readable only from the sync_run table.
     ├── services/                # domain logic - see §3 Service catalogue
     │   ├── forecast.py          # R1 forecast engine (+ flagged enhancements)
     │   ├── scoring.py           # R2 product scoring, current + dual model behind flag
@@ -112,15 +118,21 @@ backend/
     │   ├── reconciliation.py    # R9 dispatched vs RFID ADDED diff
     │   ├── finance.py           # R10/R11/R12 weekly P&L, bucketing/proration, fixed-cost allocation
     │   ├── documents.py         # PO / dispatch-sheet / GSV rendering (WeasyPrint PDF, openpyxl XLSX) + Blob upload
-    │   └── email.py             # outbound mail, STAGING_EMAIL_OVERRIDE, digest assembly
-    ├── husky/
-    │   ├── client.py            # typed httpx client for the 5 endpoints, Basic auth, retry/backoff, pagination
-    │   ├── normalize.py         # cents→Decimal euros, comma-decimal strings, tag_status mapping, fridge-name→id join
-    │   └── sync.py              # incremental feed sync (cursor + overlap + idempotent upsert), one-time backfill
-    └── jobs/
-        ├── scheduler.py         # APScheduler setup, Postgres advisory-lock wrapper, job_runs logging, retries
-        └── definitions.py       # the 14 job registrations (id, cron, callable) - catalogue in ../cron/README.md
+    │   └── email.py             # outbound mail, STAGING_EMAIL_OVERRIDE  (NOT BUILT: no digest assembly)
+    └── husky/
+        ├── client.py            # typed httpx client, Basic auth, retry/backoff (the API has NO pagination)
+        ├── normalize.py         # comma-decimal strings, tag_status mapping, fridge-name→id join
+        │                        # (money stays RAW int64 cents - no ÷100 at the sync boundary)
+        └── sync.py              # feed sync (sync_run + trailing-overlap re-pull + idempotent upsert),
+                                 # snapshot_stock (fridge_stock mark-and-sweep), one-time backfill
 ```
+
+There is **no `backend/app/jobs/` package**. All scheduled work lives in the separate `cron/` container
+(`cron/cron/scheduler.py`, an APScheduler worker) and calls into `app.husky.sync`. It registers **seven**
+jobs, not fourteen: `sync_purchases` (hourly :05), `sync_restock` (hourly :10), `snapshot_stock` (*/15),
+`catalogue_sync` (02:00), `reviews_sync` (02:15), `recompute_scores` (02:30), `partition_maintenance`
+(monthly, 1st 01:00), all on `Europe/Brussels`. `backfill` exists as a CLI-only, non-scheduled entry point.
+See [`../cron/README.md`](../cron/README.md).
 
 ---
 
@@ -200,26 +212,34 @@ def compute_fridge_score(inputs: FridgeScoreInputs, weights: FridgeScoringWeight
 
 ### 3.3 `services/menu_allocation.py` - implements **R3**
 
-Score-proportional split of a fridge's category forecast across menu products, descending by score, with rounding guards (allocation < 0.5 bumped to 0.51 when remainder > 0.5; leftovers to top-scored product). Snacks & Drinks bypass allocation: `to_restock = target − live RFID stock` per fridge × product. Respects `menu_product_caps`.
+Score-proportional split of a fridge's category forecast across menu products, descending by score, with rounding guards (allocation < 0.5 bumped to 0.51 when remainder > 0.5; leftovers to top-scored product). Snacks & Drinks bypass allocation: per fridge × product,
+
+```
+restock = max(target_qty - live, 0)          # never negative - an over-stocked fridge yields 0, not a return
+```
+
+where `target_qty` comes from `product_targets` and `live` is the fridge's **live in-fridge stock**. Respects `menu_product_caps`.
+
+**This service is the ONLY reader of fridge live stock.** It queries the `fridge_stock` table directly (no snapshot object is passed in, and there is no live-stock API endpoint to pass through). A missing `(fridge, product)` row means "not in that fridge right now", i.e. `live = 0` - see §3.3a.
 
 ```python
 @dataclass(frozen=True)
-class MenuAllocationRequest:
-    fridge_id: int
-    category_id: int
-    forecast_qty: int
-    menu_id: int
-
-@dataclass(frozen=True)
 class AllocationLine:
     fridge_id: int
+    category_id: int
     product_id: int
     qty: int
-    source: AllocationSource     # FORECAST | TARGET_REPLENISH
+    source: str                  # "forecast" | "target_replenish"
+    stock_stale: bool = False    # True only on target_replenish lines computed from a stale reading
 
-def allocate_category_forecast(request: MenuAllocationRequest, session: Session) -> list[AllocationLine]
-def compute_target_replenishment(fridge_id: int, snapshot: LiveStockSnapshot, session: Session) -> list[AllocationLine]
+def compute_allocation(*, menu_id: int, forecast_run_id: int, session: Session) -> list[AllocationLine]
 ```
+
+#### 3.3a Fridge-stock staleness guard (**implemented**)
+
+`fridge_stock` is mark-and-swept wholesale every 15 minutes, so every row shares one generation timestamp (`taken_at`). `STOCK_READING_MAX_AGE = 2 hours`: if the newest `taken_at` is older than that, or the table is empty, allocation **still runs** on the last-known units, but every `target_replenish` line is flagged `stock_stale=True` (surfaced to the API as `AllocationLineOut.stock_stale`) and a warning is logged.
+
+The guard lives **in the allocation reader**. It is deliberately not a cron job, not an alert row, and not a health endpoint - there is nothing else to hang it on, because nothing else reads fridge stock.
 
 ### 3.4 `services/dispatch.py` - implements **R7** (and orchestrates R8 via documents)
 
@@ -385,7 +405,11 @@ def prorate_week_to_months(week: WeekBucket, amount: Decimal) -> list[MonthShare
 
 ### 3.9 `services/documents.py` - implements **R8** (rendering half)
 
-Reproduces the three Excel templates: PO document (PDF via WeasyPrint + XLSX via openpyxl), per-fridge delivery sheets (fixed category print order Hot → Frozen → Salads → Wraps → Granolas → Soups → Desserts → Drinks → Snacks; In-box/Missing columns; withdrawal list for short-DLC products from the latest live-stock snapshot), GSV XLSX export. Uploads to Azure Blob, records `generated_documents` rows so files are re-downloadable.
+Reproduces the three Excel templates: PO document (PDF via WeasyPrint + XLSX via openpyxl), per-fridge delivery sheets (fixed category print order Hot → Frozen → Salads → Wraps → Granolas → Soups → Desserts → Drinks → Snacks; In-box/Missing columns), GSV XLSX export. Uploads to Azure Blob.
+
+> **NOT BUILT - the DLC/withdrawal list.** Earlier drafts described a withdrawal list of short-DLC products derived from the live-stock reading. No per-tag expiry data is stored anywhere (`fridge_stock` holds `units` only, not tag-level DLC), and no such reader exists. It remains a roadmap item and needs an expiry data source first.
+>
+> **NOT BUILT - the `generated_documents` table.** There is no such table, so rendered files are not currently indexed for re-download.
 
 ```python
 @dataclass(frozen=True)
@@ -421,33 +445,42 @@ class EmailSendResult:
     error: str | None
 
 def send_email(message: OutboundEmail) -> EmailSendResult
-def send_alert_digest(day: date, session: Session) -> EmailSendResult   # used by alert_email_digest job
 ```
+
+> **NOT BUILT - `send_alert_digest` / the `alert_email_digest` job.** Neither exists. There is no email/digest path off the `alerts` table today, so the Power Automate alert emails are **not yet replaced** (see §3.12).
 
 ### 3.11 `husky/` - client, normalize, sync
 
 ```python
-# husky/client.py - typed httpx client, HTTP Basic, retry with exponential backoff, rate-limit aware
+# husky/client.py - typed httpx client, HTTP Basic, retry with exponential backoff
+# NOTE: the Husky API has NO pagination anywhere. Event feeds are windowed by from/to instead.
 def get_product_types() -> list[RawProductType]
 def get_purchases(window: DateWindow) -> list[RawPurchase]
 def get_restock_events(window: DateWindow, action: RestockAction | None) -> list[RawRestockEvent]
 def get_product_reviews(window: DateWindow) -> list[RawProductReview]
-def get_current_stock() -> list[RawStockLine]        # pass-through snapshot, never persisted long-term
+def get_stock_current() -> StockCurrentFetch     # point-in-time only; PERSISTED to fridge_stock (see below)
 
 # husky/normalize.py - one normalization point for every API quirk
-def normalize_price_cents(value: int) -> Decimal                     # 595 -> Decimal('5.95')
 def normalize_comma_decimal(value: str) -> Decimal                   # '4,20' -> Decimal('4.20')
 def normalize_tag_status(raw: str) -> TagStatus                      # VALID | UNRELIABLE | UNRECOGNISED
-def resolve_fridge_id(friendly_name: str | None, husky_name: str | None, session: Session) -> int
+def resolve_fridge(index, husky_name: str | None, friendly_name: str | None) -> int | None
     # maps BOTH friendlyName and fridge.name to the internal fridge id (join-key inconsistency fix)
-def normalize_purchase(raw: RawPurchase, session: Session) -> NormalizedSaleEvent
-def normalize_restock(raw: RawRestockEvent, session: Session) -> NormalizedRestockEvent
+    # Money is NOT converted here: vendor int64 cents are stored RAW (see root CLAUDE.md).
 
-# husky/sync.py - incremental feeds + backfill (see §4c and ../cron/README.md)
-def sync_feed(feed: HuskyFeed, session: Session) -> SyncRunResult    # HuskyFeed: PURCHASES | RESTOCK | CATALOGUE | REVIEWS | STOCK_SNAPSHOT
-def run_backfill(plan: BackfillPlan, session: Session) -> BackfillResult   # monthly chunks + checkpointing
-    # SyncRunResult: feed, window, rows_fetched, rows_upserted, cursor_advanced_to
+# husky/sync.py - feeds + snapshot + backfill (see §4c and ../cron/README.md)
+def snapshot_stock(taken_at=None, run_id=None) -> JobOutcome   # fridge_stock mark-and-sweep
+def run_backfill(plan: BackfillPlan) -> BackfillResult         # CLI-only, chunked by date window
 ```
+
+**`/stock/current` is persisted - it is not a pass-through.** Each `snapshot_stock` run upserts every row the vendor returned into `fridge_stock` under a single run-wide `taken_at`, then, in the same transaction, DELETEs every row that run did not touch (mark-and-sweep). The table therefore mirrors exactly what the vendor last reported: a product pulled out of a fridge disappears from the table. Guard: an **empty payload never triggers the sweep** - an empty response means a vendor problem, not "all fridges are empty".
+
+**Fridge-stock history is not retained, and nothing consumes it.** The predecessor `stock_snapshots` table was append-only, but only the newest row per `(fridge, product)` was ever queried, by exactly one caller (§3.3). Migration `0009_fridge_stock_latest_only.sql` replaces it with the latest-only `fridge_stock` table, keyed `PRIMARY KEY (fridge_id, product_code)`. There is no retention or downsampling question to re-open here: there is no reader to serve.
+
+### 3.12 Alerts - what actually fires
+
+The `AlertType` enum declares `expiry`, `low_stock`, `below_target`, `negative_blocked` and `rfid_offline`, but **only `negative_blocked` is ever constructed** (`backend/app/services/dispatch_service.py`, in the stock-trigger rejection path). Every other alert class is **NOT BUILT**: nothing writes them, no job scans for them, and no digest mails them.
+
+Consequence to be explicit about: **the Power Automate alert emails these were meant to replace are NOT yet replaced.** The alert jobs named in earlier drafts (`below_target_alerts`, `expiry_alerts`, `low_stock_alerts`, `rfid_offline_detector`, `alert_email_digest`) do not exist, and neither does the `v_below_target` view or the `GET /reports/below-target` endpoint. They remain roadmap items.
 
 ### Business-rule ownership map
 
@@ -466,7 +499,9 @@ def run_backfill(plan: BackfillPlan, session: Session) -> BackfillResult   # mon
 
 ### 4a. Confirm dispatch - one transaction, all-or-nothing
 
-Everything up to and including the `generated_documents` rows is one DB transaction. A failure at any step (including document rendering or Blob upload) rolls back the status flip, the stock movements, and the price snapshots - the dispatch stays `saved` and can be re-confirmed. Email is deliberately **outside** the transaction: a bounced email must never un-dispatch stock; it produces an alert instead.
+> **Partly NOT BUILT.** The stock-movement and status-flip half of this flow is real. The document-generation, Blob-upload and email steps below are the **planned** design: there is no `generated_documents` table and no email/digest path today (§3.9, §3.10). The diagram is retained as the target flow - do not read the `generated_documents` / email steps as existing behaviour.
+
+Everything up to and including the document rows is intended to be one DB transaction. A failure at any step (including document rendering or Blob upload) rolls back the status flip, the stock movements, and the price snapshots - the dispatch stays `saved` and can be re-confirmed. Email is deliberately **outside** the transaction: a bounced email must never un-dispatch stock; it produces an alert instead.
 
 ```mermaid
 sequenceDiagram
@@ -588,12 +623,12 @@ Notes:
 
 ### 4c. Husky incremental sync - idempotent upsert
 
-Feed cursors live in `sync_cursors` (one row per feed). Each run re-reads a 2-hour overlap before the cursor so late-arriving events and mutated records (refund status changes on purchases) are re-upserted. Idempotency key = `husky_ref` unique constraint; the upsert is `INSERT ... ON CONFLICT (husky_ref) DO UPDATE`, so re-running any window is always safe.
+There is **no `sync_cursors` table** and no stored cursor. Each run computes a **trailing-overlap window** (a fixed look-back from now) and re-pulls it, so late-arriving events and mutated records (refund status changes on purchases) are re-upserted. Every run is recorded as a row in **`sync_run`** (job, endpoint, window, status, counts, blob path, error), which is what makes a sync auditable and resumable. Idempotency key = the `husky_ref` unique constraint; the upsert is `INSERT ... ON CONFLICT (husky_ref) DO UPDATE`, so re-running any window is always safe.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant SCH as "jobs/scheduler (APScheduler)"
+    participant SCH as "cron/scheduler (APScheduler worker)"
     participant SY as "husky/sync"
     participant DB as PostgreSQL
     participant HC as "husky/client (httpx)"
@@ -601,29 +636,25 @@ sequenceDiagram
     participant API as "Husky RFID API"
 
     SCH->>SY: sync_purchases() hourly at :05
-    SY->>DB: pg_try_advisory_lock(job key)
-    alt lock not acquired (another replica runs it)
-        SY-->>SCH: skipped, logged in job_runs
-    end
-    SY->>DB: read sync_cursors.last_synced_at for feed 'purchases'
-    SY->>HC: get_purchases(from=cursor - 2h overlap, to=now)
+    SY->>DB: INSERT sync_run (job, endpoint, window, status='running')
+    SY->>HC: get_purchases(from=now - trailing overlap, to=now)
     HC->>API: GET /purchases?from=&to= (Basic auth, retry with backoff)
-    API-->>HC: raw records (cents, comma decimals, refundStatus, discounts)
+    API-->>HC: raw records (int64 cents, comma decimals, refundStatus, discounts)
+    SY->>DB: archive raw payload to blob (raw-first ELT rule)
     HC->>NZ: normalize_purchase(raw) per record
-    NZ-->>SY: list of NormalizedSaleEvent (euros as Decimal, flags resolved)
+    NZ-->>SY: list of NormalizedSaleEvent (cents kept RAW, flags resolved)
     SY->>DB: INSERT INTO sales_events ... ON CONFLICT (husky_ref) DO UPDATE
-    note over SY,DB: idempotent upsert - the 2h overlap re-reads late-arriving\nand mutated events (refunds) without duplicating rows
-    SY->>DB: UPDATE sync_cursors SET last_synced_at = window end
-    SY->>DB: INSERT job_runs (job_id, started, finished, rows_upserted, status='success')
-    SY->>DB: pg_advisory_unlock(job key)
+    note over SY,DB: idempotent upsert - the trailing overlap re-reads late-arriving<br/>and mutated events (refunds) without duplicating rows
+    SY->>DB: UPDATE sync_run SET status='success', records_fetched, records_upserted, finished_at
     alt any step fails
-        SY->>DB: job_runs status='failed' + error, cursor NOT advanced
-        SY->>DB: INSERT alerts (type='sync_failed') after 3rd consecutive failure
-        note over SY: next hourly run retries the same window - safe because upsert is idempotent
+        SY->>DB: UPDATE sync_run SET status='failed' + error
+        note over SY: next hourly run re-pulls an overlapping window - safe because upsert is idempotent
     end
 ```
 
-The cursor only advances after a fully successful upsert, so a mid-run crash re-processes the whole window on the next tick - duplicates are impossible by construction. Divergence that slips past this is caught by the `daily_husky_reconciliation` job (see `../cron/README.md`).
+Because the window is a trailing overlap rather than a stored cursor, a mid-run crash simply means the next tick re-pulls an overlapping window: duplicates are impossible by construction, and there is no cursor that can be left "half-advanced".
+
+> **NOT BUILT:** there is no `daily_husky_reconciliation` job and no reconciliation comparing fridge stock against warehouse stock. Nothing today cross-checks Husky totals against local sums.
 
 ---
 
@@ -633,7 +664,7 @@ The cursor only advances after a fully successful upsert, so a mid-run crash re-
 
 - All routes under **`/api/v1`**. Breaking changes mean `/api/v2` - additive changes (new optional fields) do not.
 - Request/response bodies are Pydantic v2 models only. No anonymous dict payloads.
-- **Money serializes as decimal strings** (`"5.95"`, never floats) in every response; parsed back to `Decimal` on input. Internal computation is `Decimal` end-to-end; `NUMERIC(10,2)` in the DB.
+- **Money serializes as 2-decimal euro strings** (`"5.95"`, never floats) in every response, and is parsed back on input (`app/money.py`: `MoneyStr` / `MoneyIn`). Storage and computation are **integer minor units (cents), `BIGINT` in the DB** - euros exist only at this presentation edge. Use `Decimal` only where a division is unavoidable (VAT split, margin, fee %), then round half-up to whole cents.
 - Timestamps are UTC ISO-8601 with offset; dates are `YYYY-MM-DD`. Operational schedules (delivery days, job crons) are interpreted in `Europe/Brussels`.
 
 ### Role-based access matrix
@@ -654,7 +685,7 @@ The cursor only advances after a fully successful upsert, so a mid-run crash re-
 | alerts | ✔ | ✔ | ✔ | - | read |
 | settings | ✔ | ✔ (no user mgmt) | - | - | - |
 | users CRUD | ✔ | - | - | - | - |
-| sync (`/sync/husky/*`), `/health/jobs` | ✔ | - | - | - | - |
+| sync (`/sync/husky/*`) | ✔ | - | - | - | - |
 
 A wrong role always yields **403** with the standard error body. The integration test suite asserts this matrix row by row (spec acceptance criterion).
 

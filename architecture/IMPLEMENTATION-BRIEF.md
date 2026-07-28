@@ -16,11 +16,11 @@
 | 6 | Scoring | Seed legacy weights `%sold 0.62 / margin 0.33 / review 0.05`; dual deck model (global 0.55/0.30/0.15 + fridge 0.70/0.30, 50/50) behind `DUAL_SCORING` flag, default off | Parity first, deck model togglable |
 | 7 | Table names | **schema.sql (36 tables) is canonical**: `dispatches/dispatch_lines`, `sales_events/restock_events` (partitioned), `weekly_financials`, `product_targets`, `stock_movements`, `order_no_counters` | It exists and is complete |
 | 8 | Stock | Append-only `stock_movements` + DB triggers + `v_stock_balances` (all already in schema.sql) | Deck non-negotiable |
-| 9 | Sync bookkeeping | **`sync_run` table** (spec 0004) + `stock_snapshots`, added by backend as supplemental DDL; incremental jobs re-pull a trailing overlap window and upsert (no separate cursor table) | Simplest resumable model; idempotent upserts make overlap free |
+| 9 | Sync bookkeeping | **`sync_run` table** (spec 0004) + `fridge_stock`, added by backend as supplemental DDL; incremental jobs re-pull a trailing overlap window and upsert (no separate cursor table). These two are the ONLY bookkeeping tables: there is no `job_runs`, `sync_cursors` or `backfill_checkpoints` | Simplest resumable model; idempotent upserts make overlap free |
 | 10 | Dedupe keys | Whatever UNIQUE constraints schema.sql declares on events; where absent, spec 0004 natural keys (`tag_id+purchased_at`, session id) | DB-enforced idempotency |
 | 11 | Env keys | `DB_URL` (present in .env), `FRIGOLOCO_API_BASE_URL/USERNAME/PASSWORD/MERCHANT_NAME`; loaded via **python-dotenv** then pydantic-settings; accept `DATABASE_URL` as fallback alias | CLAUDE.md + user confirmation |
 | 12 | Weeks | ISO-8601 week + explicit `week_start` DATE everywhere; finance parity deltas vs legacy anchoring documented in tests, not replicated | CLAUDE.md normalisation rule |
-| 13 | Live stock | `stock_snapshots` table fed every 15 min by APScheduler; no request-time Husky proxy | Request path never calls vendor API (data-sync README) |
+| 13 | Fridge live stock | **`fridge_stock`** table (latest-only, PK `(fridge_id, product_code)`, migration `0009_fridge_stock_latest_only.sql`) fed every 15 min by the `snapshot_stock` job via mark-and-sweep; no request-time Husky proxy. **Exactly ONE consumer: `backend/app/services/menu_allocation_service.py`** (snacks/drinks branch `restock = max(target_qty - live, 0)`). There is **no API endpoint and no frontend surface** for it, and no history is retained. Distinct from **warehouse** stock, which is the derived view `v_stock_balances` over `stock_movements` (per product, no fridge dimension) and is what `GET /stock/balances` serves | Request path never calls vendor API (data-sync README); only the newest value per (fridge, product) was ever read, so the append-only log was pure cost |
 | 14 | Charts | Frontend uses **d3.js**; mockups stay self-contained inline SVG | User decision 2026-07-03 |
 | 15 | Auth | JWT per backend/README is **deferred** - routers ship without auth dependencies for now (single-tenant internal tool); role matrix wired in a later phase | Keeps this phase verifiable end-to-end; flagged in final checklist |
 
@@ -41,18 +41,22 @@
 
 ## Cron catalogue (merged, APScheduler, Europe/Brussels)
 
+Seven scheduled jobs, exactly as registered in `cron/cron/scheduler.py`, plus one CLI-only entry point. Job ids below are the real ones (`python -m cron.jobs.<name>`).
+
 | Job | Schedule | Purpose |
 |---|---|---|
-| husky_sync_purchases | hourly :05 | incremental /purchases, trailing 48h overlap, upsert sales_events |
-| husky_sync_restock | hourly :10 | incremental /restock ADDED+REMOVED → restock_events |
-| husky_stock_snapshot | every 15 min | /stock/current → stock_snapshots (+ staleness alert >2h) |
-| husky_catalogue_sync | daily 02:00 | /producttype + /fridge + /facility + /fridgeproductprice upserts; absent → is_active=false; Box n° → excluded/test |
-| husky_reviews_sync | daily 02:15 | /productreview → product_reviews |
-| recompute_product_scores | daily 02:30 | trailing-365 scores → product_scores (+fridge scores if DUAL_SCORING) |
-| below_target_alerts | daily 06:00 | stock_snapshots vs product_targets → alerts |
-| expiry_alerts / low_stock_alerts | daily 06:10/06:20 | alerts |
-| rfid_offline_detector | hourly :30 | fridge with 0 sales for N hours → alert |
-| backfill | CLI only | resumable 7-day-chunk historical pull, raw-first archive, sync_run bookkeeping |
+| sync_purchases | hourly :05 | incremental /purchases, trailing 48h overlap, upsert sales_events |
+| sync_restock | hourly :10 | incremental /restock ADDED+REMOVED → restock_events |
+| snapshot_stock | every 15 min | /stock/current → `fridge_stock`, mark-and-sweep in one transaction, **scoped to the fridges the payload reported on** (upsert every row under a single run-wide `taken_at`, then delete the older-`taken_at` rows **of those fridges only**). A fridge ABSENT from the payload keeps its rows and its old `taken_at`, so it is flagged stale rather than read as empty; an EMPTY payload never sweeps at all. No alerting: the per-fridge 2h freshness check lives in the READER (`menu_allocation_service`), not in this job |
+| catalogue_sync | daily 02:00 | /producttype + /fridge + /facility + /fridgeproductprice upserts; absent → is_active=false; Box n° → excluded/test |
+| reviews_sync | daily 02:15 | /productreview → product_reviews |
+| recompute_scores | daily 02:30 | trailing-365 scores → product_scores (+fridge scores if DUAL_SCORING) |
+| partition_maintenance | monthly, 1st 01:00 | pre-create next month's partitions for `sales_events` / `restock_events` / `dispatch_lines` |
+| backfill | CLI only (not scheduled) | resumable 7-day-chunk historical pull, raw-first archive, sync_run bookkeeping |
+
+**Alerting jobs are NOT BUILT.** `below_target_alerts`, `expiry_alerts`, `low_stock_alerts`, `rfid_offline_detector` and any email/digest job exist in no code path; the `AlertType` enum declares expiry / low_stock / below_target / rfid_offline, but the only alert ever constructed is `negative_blocked` (`backend/app/services/dispatch_service.py:399`). The Power Automate alert emails these were meant to replace are therefore still NOT replaced, and no alert mail is configured anywhere. Keep them on the roadmap; do not describe them as existing behaviour.
+
+**Fridge-stock freshness (BUILT, in the reader):** `menu_allocation_service` applies `STOCK_READING_MAX_AGE = 2 hours` to the newest `fridge_stock.taken_at`. If the reading is older than 2h (or absent), allocation still runs on the last-known units but every `target_replenish` line is flagged `stock_stale=True` (surfaced via `AllocationLineOut.stock_stale`) and a warning is logged. It is not a cron job, not an alert, not a job status, and not a health endpoint.
 
 Every job: raw-first archive (local `raw_archive/` dir now, blob later), `sync_run` row per run/chunk, per-job advisory lock, idempotent upserts.
 

@@ -102,6 +102,12 @@ CREATE TABLE IF NOT EXISTS products (
     vat_rate         NUMERIC(6,4)   NOT NULL DEFAULT 0 CHECK (vat_rate >= 0 AND vat_rate < 1),
     -- NULLable: 218 products arrive from Husky without expiry days (backfill task).
     shelf_life_days  INTEGER        CHECK (shelf_life_days > 0),
+    -- Husky /producttype extras kept store-only (migration 0010): free-text
+    -- description, currency, and the sales price BEFORE POS/RFID surcharges
+    -- (RAW cents, like sales_price).
+    description      TEXT,
+    currency_code    TEXT,
+    price_ex_surcharges BIGINT      CHECK (price_ex_surcharges >= 0),  -- cents
     is_active        BOOLEAN        NOT NULL DEFAULT TRUE,
     -- Manual status override (D5): NULL follows Husky (is_active), a non-NULL
     -- value is user-forced and wins over sync. Sync NEVER writes this column.
@@ -146,6 +152,10 @@ CREATE TABLE IF NOT EXISTS fridge_product_prices (
     fridge_id    INTEGER        NOT NULL REFERENCES fridges(id) ON DELETE CASCADE,
     product_id   INTEGER        NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     sales_price  BIGINT         NOT NULL CHECK (sales_price >= 0),  -- cents
+    -- Husky /fridgeproductprice extras kept store-only (migration 0010).
+    price_ex_surcharges BIGINT    CHECK (price_ex_surcharges >= 0),  -- cents
+    vat_rate     NUMERIC(6,4)     CHECK (vat_rate >= 0 AND vat_rate < 1),
+    currency_code TEXT,
     updated_at   TIMESTAMPTZ    NOT NULL DEFAULT now(),
     PRIMARY KEY (fridge_id, product_id)
 );
@@ -689,34 +699,59 @@ CREATE TABLE IF NOT EXISTS product_reviews (
     rating       SMALLINT     NOT NULL
                               CONSTRAINT chk_product_reviews_rating CHECK (rating IN (-1, 0, 1)),
     reviewed_at  TIMESTAMPTZ  NOT NULL,
+    -- Full Husky /productreview payload kept store-only (migration 0010): the
+    -- free-text review + reviewer, the linked purchase, the vendor category
+    -- label, and the reviewed item's RFID tag identity.
+    review_text       TEXT,
+    reviewer_email    TEXT,
+    purchase_id       TEXT,
+    purchased_at      TIMESTAMPTZ,
+    review_category   TEXT,
+    tag_id            TEXT,
+    epc               TEXT,
+    product_reference TEXT,
     synced_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
--- ============================================================================
--- SECTION 8 - RECONCILIATION (R9)
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS restock_verifications (
-    id           INTEGER      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    dispatch_id  INTEGER      NOT NULL REFERENCES dispatches(id) ON DELETE CASCADE,
-    run_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    created_by   INTEGER      REFERENCES users(id)
+-- ---------------------------------------------------------------------------
+-- Latest in-fridge stock (Husky GET /stock/current) - NOT a time series
+-- ---------------------------------------------------------------------------
+-- One row per (fridge, product): the LATEST known units in that fridge. The
+-- snapshot job (every 15 min) is mark-and-sweep, SCOPED to the fridges the vendor
+-- payload reported on: it stamps a single shared taken_at on the rows it upserts,
+-- then deletes only those fridges' older-taken_at rows. So a reported fridge
+-- mirrors the vendor response exactly (a MISSING row means "that product is not
+-- in that fridge right now" -> live = 0), while a fridge ABSENT from the payload
+-- (RFID reader offline / partial vendor response) is left untouched and keeps its
+-- OLD taken_at instead of being wrongly emptied. No stock history is kept: the
+-- only consumer (the menu allocation engine, R3) needs the current value, and each
+-- fridge's taken_at generation tells it whether that fridge was reached (older
+-- than 2h => not reached; the forecast uses last-known units but flags the line).
+-- PK is (fridge_id, product_code), NOT product_id: product_id is NULLable
+-- because a snapshot can arrive for a product not yet in the catalogue.
+-- Replaces the append-only stock_snapshots log (migration 0009).
+CREATE TABLE IF NOT EXISTS fridge_stock (
+    fridge_id    INTEGER      NOT NULL REFERENCES fridges(id),
+    product_code TEXT         NOT NULL,
+    product_id   INTEGER      REFERENCES products(id),
+    units        INTEGER      NOT NULL
+                              CONSTRAINT chk_fridge_stock_units_nonneg
+                              CHECK (units >= 0),
+    taken_at     TIMESTAMPTZ  NOT NULL,
+    PRIMARY KEY (fridge_id, product_code)
 );
 
-CREATE TABLE IF NOT EXISTS restock_verification_lines (
-    id               INTEGER        GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    verification_id  INTEGER        NOT NULL REFERENCES restock_verifications(id) ON DELETE CASCADE,
-    fridge_id        INTEGER        NOT NULL REFERENCES fridges(id),
-    product_id       INTEGER        NOT NULL REFERENCES products(id),
-    dispatched_qty   INTEGER        NOT NULL DEFAULT 0 CHECK (dispatched_qty >= 0),
-    added_qty        INTEGER        NOT NULL DEFAULT 0 CHECK (added_qty >= 0),
-    -- UNRELIABLE tags: counted separately, excluded from diff totals (R9).
-    unreliable_qty   INTEGER        NOT NULL DEFAULT 0 CHECK (unreliable_qty >= 0),
-    diff_qty         INTEGER        NOT NULL DEFAULT 0,
-    -- Valued at buy price (R9).
-    diff_value       BIGINT         NOT NULL DEFAULT 0,  -- cents
-    UNIQUE (verification_id, fridge_id, product_id)
-);
+CREATE INDEX IF NOT EXISTS ix_fridge_stock_product ON fridge_stock (product_id);
+
+-- ============================================================================
+-- NOTE (2026-07-28): Restock verification (legacy R9) removed. Dispatched-vs-added
+-- reconciliation will be re-implemented later as a DERIVED, period-level
+-- (weekly/monthly) TOTAL report computed on demand from dispatch_lines (dispatched
+-- qty) + restock_events (RFID action='added', tag_status='valid') joined on
+-- (fridge_id, product_id) by date range - NOT stored per-dispatch tables, because
+-- dispatch is one global batch per delivery_date with no per-dispatch granularity.
+-- Value diffs at dispatch_lines.unit_purchase_price, fallback products.purchase_price.
+-- ============================================================================
 
 -- ============================================================================
 -- SECTION 9 - FINANCE, SETTINGS, ALERTS, AUDIT (R10–R12)
@@ -889,10 +924,11 @@ COMMENT ON TABLE dispatches                 IS 'Replaces the Global Dispatch His
 COMMENT ON TABLE dispatch_lines             IS 'Replaces GlobalDispatchHistoryTable rows (20,692 and growing) - with price snapshots and no full-sheet backup copy on every save. RANGE-partitioned monthly on delivery_date (denormalised from dispatches; migration 0004).';
 COMMENT ON TABLE stock_movements            IS 'Replaces the StockAndOrderedTable recompute with an append-only signed ledger: balance = SUM(qty), non-negativity enforced by trigger (slide 24), cancellations are explicit reversals (fixes the Excel cancel bug).';
 COMMENT ON TABLE sales_events               IS 'Replaces the Husky /purchases pulls the scripts re-fetched on demand - the 20-30M-row store Excel could never hold. Monthly partitions on sold_at.';
-COMMENT ON TABLE restock_events             IS 'Replaces the Husky /restock pulls: ADDED/REMOVED tag events feeding reconciliation (R9) and scoring denominators. Monthly partitions on occurred_at.';
+COMMENT ON TABLE restock_events             IS 'Replaces the Husky /restock pulls: ADDED/REMOVED tag events feeding R9 reporting and scoring denominators. Monthly partitions on occurred_at.';
 COMMENT ON TABLE product_reviews            IS 'Replaces the Husky /productreview pulls feeding the review component of product scoring (R2).';
-COMMENT ON TABLE restock_verifications      IS 'Replaces RestockVerificationTemplate.xlsx: one reconciliation run per dispatch (R9).';
-COMMENT ON TABLE restock_verification_lines IS 'Replaces the RestockVerificationTemplate product-level diff rows: dispatched vs RFID-ADDED per fridge x product, UNRELIABLE tracked separately.';
+COMMENT ON TABLE fridge_stock               IS 'Latest-known IN-FRIDGE stock from Husky GET /stock/current: one row per fridge x product, mark-and-swept every 15 min per REPORTED fridge - NOT a time series (the old stock_snapshots log kept history nothing ever read). A fridge missing from a payload keeps its old taken_at so readers can flag it stale instead of reading it as empty. Feeds target-based replenishment (R3): restock = max(target_qty - units, 0). WAREHOUSE stock is a different thing entirely - see v_stock_balances.';
+-- NOTE (2026-07-28): restock_verifications / restock_verification_lines (legacy R9)
+-- removed; reconciliation will be re-implemented as a derived period-level report.
 COMMENT ON TABLE weekly_financials          IS 'Replaces the Weekly View manual inputs + WeeklySummaryDataTable in Weekly & Monthly Return V2.xlsx (R10); the 18 aggregate tables become queries over raw events.';
 COMMENT ON TABLE settings                   IS 'Replaces the tunable cells scattered across both workbooks: scoring weights, forecast margins, POS %, RFID fee, alert thresholds.';
 COMMENT ON TABLE alerts                     IS 'Replaces the Power Automate alert emails (slide 12): expiry, low stock, below target, negative-blocked, RFID offline.';

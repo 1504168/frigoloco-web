@@ -31,7 +31,7 @@ from decimal import Decimal
 from pathlib import Path
 from types import TracebackType
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -51,11 +51,11 @@ from app.models import (
     Client,
     Fridge,
     FridgeProductPrice,
+    FridgeStock,
     Product,
     ProductReview,
     RestockEvent,
     SalesEvent,
-    StockSnapshot,
     Supplier,
     SyncRun,
 )
@@ -117,6 +117,9 @@ PRODUCT_HUSKY_OWNED: tuple[str, ...] = (
     "sales_price",
     "vat_rate",
     "shelf_life_days",
+    "description",
+    "currency_code",
+    "price_ex_surcharges",
 )
 PRODUCT_SYNC_MANAGED: tuple[str, ...] = ("is_active", "husky_synced_at", "updated_at")
 PRODUCT_LOCAL_OWNED: tuple[str, ...] = ("local_status",)
@@ -134,7 +137,12 @@ FRIDGE_LOCAL_OWNED: tuple[str, ...] = (
     "delivery_instructions",
 )
 
-FRIDGE_PRODUCT_PRICE_HUSKY_OWNED: tuple[str, ...] = ("sales_price",)
+FRIDGE_PRODUCT_PRICE_HUSKY_OWNED: tuple[str, ...] = (
+    "sales_price",
+    "price_ex_surcharges",
+    "vat_rate",
+    "currency_code",
+)
 FRIDGE_PRODUCT_PRICE_SYNC_MANAGED: tuple[str, ...] = ("updated_at",)
 
 # Per-table set of columns an upsert's UPDATE clause is permitted to write.
@@ -648,6 +656,10 @@ def _apply_product_types(session: Session, product_types, outcome: JobOutcome) -
         purchase_price = euros_to_minor_units(item.reference)
         vat_rate = normalize_vat_fraction(item.vat)
         shelf_life = item.expiryDays if (item.expiryDays and item.expiryDays > 0) else None
+        # Extra Husky fields retained store-only (see migration 0010).
+        description = item.description or None
+        currency_code = item.currencyCode or None
+        price_ex_surcharges = item.priceExSurcharges
         values = {
             "code": item.productCode,
             "name": item.name or item.productCode,
@@ -666,6 +678,12 @@ def _apply_product_types(session: Session, product_types, outcome: JobOutcome) -
             values["vat_rate"] = vat_rate
         if shelf_life is not None:
             values["shelf_life_days"] = shelf_life
+        if description is not None:
+            values["description"] = description
+        if currency_code is not None:
+            values["currency_code"] = currency_code
+        if price_ex_surcharges is not None:
+            values["price_ex_surcharges"] = price_ex_surcharges
         stmt = pg_insert(Product).values(**values)
         # Contract: only Husky-owned + sync-managed columns. local_status is
         # NEVER written, so a manual override survives every catalogue sync.
@@ -690,6 +708,12 @@ def _apply_product_types(session: Session, product_types, outcome: JobOutcome) -
             update_set["vat_rate"] = stmt.excluded.vat_rate
         if shelf_life is not None:
             update_set["shelf_life_days"] = stmt.excluded.shelf_life_days
+        if description is not None:
+            update_set["description"] = stmt.excluded.description
+        if currency_code is not None:
+            update_set["currency_code"] = stmt.excluded.currency_code
+        if price_ex_surcharges is not None:
+            update_set["price_ex_surcharges"] = stmt.excluded.price_ex_surcharges
         stmt = stmt.on_conflict_do_update(
             index_elements=["code"], set_=_guarded_update_set("products", update_set)
         )
@@ -747,15 +771,37 @@ def _sync_fridge_product_prices(session: Session, client: HuskyClient, outcome: 
             if product_id is None or sales_price is None:
                 unresolved += 1
                 continue
-            stmt = pg_insert(FridgeProductPrice).values(
-                fridge_id=fridge_id, product_id=product_id, sales_price=sales_price
-            )
+            # Extra Husky fields retained store-only (see migration 0010): price
+            # before surcharges (RAW cents), per-fridge VAT fraction, currency.
+            price_ex_surcharges = price.priceExSurcharges
+            vat_rate = normalize_vat_fraction(price.vat)
+            currency_code = price.currencyCode or None
+            values = {
+                "fridge_id": fridge_id,
+                "product_id": product_id,
+                "sales_price": sales_price,
+            }
+            if price_ex_surcharges is not None:
+                values["price_ex_surcharges"] = price_ex_surcharges
+            if vat_rate is not None:
+                values["vat_rate"] = vat_rate
+            if currency_code is not None:
+                values["currency_code"] = currency_code
+            stmt = pg_insert(FridgeProductPrice).values(**values)
+            update_set = {
+                "sales_price": stmt.excluded.sales_price,
+                "updated_at": func.now(),
+            }
+            # Only overwrite when the feed actually carried the value.
+            if price_ex_surcharges is not None:
+                update_set["price_ex_surcharges"] = stmt.excluded.price_ex_surcharges
+            if vat_rate is not None:
+                update_set["vat_rate"] = stmt.excluded.vat_rate
+            if currency_code is not None:
+                update_set["currency_code"] = stmt.excluded.currency_code
             stmt = stmt.on_conflict_do_update(
                 index_elements=["fridge_id", "product_id"],
-                set_=_guarded_update_set(
-                    "fridge_product_prices",
-                    {"sales_price": stmt.excluded.sales_price, "updated_at": func.now()},
-                ),
+                set_=_guarded_update_set("fridge_product_prices", update_set),
             )
             session.execute(stmt)
             upserted += 1
@@ -1124,6 +1170,14 @@ def _upsert_reviews(session: Session, rows: list[dict]) -> int:
                 "fridge_id": stmt.excluded.fridge_id,
                 "rating": stmt.excluded.rating,
                 "reviewed_at": stmt.excluded.reviewed_at,
+                "review_text": stmt.excluded.review_text,
+                "reviewer_email": stmt.excluded.reviewer_email,
+                "purchase_id": stmt.excluded.purchase_id,
+                "purchased_at": stmt.excluded.purchased_at,
+                "review_category": stmt.excluded.review_category,
+                "tag_id": stmt.excluded.tag_id,
+                "epc": stmt.excluded.epc,
+                "product_reference": stmt.excluded.product_reference,
                 "synced_at": utcnow(),
             },
         )
@@ -1171,12 +1225,22 @@ def sync_reviews_window(
                     review.fridge.friendlyName if review.fridge else None,
                 )
                 ref = _synth_review_ref(product_code, fridge_name, reviewed_at, review.rating, review.purchaseId)
+                product = review.product
                 rows[ref] = {
                     "husky_ref": ref,
                     "product_id": product_id,
                     "fridge_id": fridge_id,
                     "rating": review.rating,
                     "reviewed_at": reviewed_at,
+                    # Extra Husky fields retained store-only (see migration 0010).
+                    "review_text": review.review or None,
+                    "reviewer_email": review.userEmailAddress or None,
+                    "purchase_id": review.purchaseId or None,
+                    "purchased_at": review.purchaseDate,
+                    "review_category": review.category or None,
+                    "tag_id": product.tagId if product else None,
+                    "epc": product.epc if product else None,
+                    "product_reference": product.reference if product else None,
                 }
             if products.stubs_created:
                 outcome.notes.append(f"stub_products_created={products.stubs_created}")
@@ -1199,24 +1263,63 @@ def sync_reviews_window(
 
 
 # ===========================================================================
-# Stock snapshot -> stock_snapshots
+# Stock snapshot -> fridge_stock (latest-only, mark-and-sweep)
 # ===========================================================================
+# fridge_stock holds ONE row per (fridge, product): the latest known in-fridge
+# stock, not a time series. Each run stamps a single shared ``taken_at`` on every
+# row it upserts (the "generation"), then sweeps away the older-generation rows
+# OF THE FRIDGES IT REPORTED ON, so the table mirrors the last /stock/current
+# response for exactly those fridges.
+# Without the sweep, a product pulled out of a fridge would keep its last
+# units > 0 row forever and the allocation engine would under-dispatch it.
+# The sweep is SCOPED to the fridges present in the payload: a partial vendor
+# response (3 of 47 fridges) must never wipe the 44 fridges it said nothing
+# about - they would then read as live = 0 and every one would be over-dispatched
+# to full target. A fridge absent from the payload keeps its rows with their OLD
+# taken_at, which is precisely the signal the allocation reader uses to flag it
+# stale (see menu_allocation_service.STOCK_READING_MAX_AGE).
+# Upsert + sweep run in the SAME transaction, so a reader never sees a
+# half-swept table.
 
 
-def _upsert_stock_snapshots(session: Session, rows: list[dict]) -> int:
+def _upsert_fridge_stock(session: Session, rows: list[dict]) -> int:
     if not rows:
         return 0
     upserted = 0
     for start in range(0, len(rows), 1000):
         chunk = rows[start : start + 1000]
-        stmt = pg_insert(StockSnapshot).values(chunk)
+        stmt = pg_insert(FridgeStock).values(chunk)
         stmt = stmt.on_conflict_do_update(
-            index_elements=["taken_at", "fridge_id", "product_code"],
-            set_={"product_id": stmt.excluded.product_id, "units": stmt.excluded.units},
+            index_elements=["fridge_id", "product_code"],
+            set_={
+                "product_id": stmt.excluded.product_id,
+                "units": stmt.excluded.units,
+                "taken_at": stmt.excluded.taken_at,
+            },
         )
         session.execute(stmt)
         upserted += len(chunk)
     return upserted
+
+
+def _sweep_fridge_stock(
+    session: Session, taken_at: datetime.datetime, fridge_ids: set[int]
+) -> int:
+    """Delete the rows of the REPORTED fridges that this run did not rewrite.
+
+    ``fridge_ids`` are the fridges present in the payload that stamped
+    ``taken_at``. Fridges outside that set are left alone on purpose (see the
+    section comment): their retained old generation is the offline signal.
+    """
+    if not fridge_ids:
+        return 0
+    result = session.execute(
+        delete(FridgeStock).where(
+            FridgeStock.taken_at < taken_at,
+            FridgeStock.fridge_id.in_(fridge_ids),
+        )
+    )
+    return result.rowcount or 0
 
 
 def snapshot_stock(
@@ -1255,7 +1358,26 @@ def snapshot_stock(
                     }
             row_list = list(rows.values())
             outcome.fetched = len(row_list) + outcome.skipped
-            outcome.upserted = _upsert_stock_snapshots(session, row_list)
+            outcome.upserted = _upsert_fridge_stock(session, row_list)
+            # The sweep only ever touches the fridges THIS payload reported on.
+            reported_fridge_ids = {row["fridge_id"] for row in row_list}
+            # GUARD (belt and braces, same defensive shape as the
+            # _apply_product_types sweep): an empty or fully-skipped payload means
+            # a vendor problem, NOT "every fridge is empty". The scoped sweep
+            # already deletes nothing in that case; say so explicitly.
+            if reported_fridge_ids:
+                swept = _sweep_fridge_stock(session, taken_at, reported_fridge_ids)
+            else:
+                swept = 0
+                logger.warning(
+                    "stock snapshot @%s produced ZERO rows (skipped=%s) - sweep "
+                    "skipped, fridge_stock left untouched",
+                    taken_at, outcome.skipped,
+                )
+            outcome.notes.append(
+                f"fridge_stock: upserted={outcome.upserted} swept={swept} "
+                f"fridges_reported={len(reported_fridge_ids)}"
+            )
             outcome.blob_path = str(blob)
             session.commit()
         except Exception:
@@ -1268,8 +1390,8 @@ def snapshot_stock(
             outcome.fetched, outcome.upserted, outcome.blob_path,
         )
     logger.info(
-        "stock snapshot @%s: fetched=%s upserted=%s skipped=%s",
-        taken_at, outcome.fetched, outcome.upserted, outcome.skipped,
+        "stock snapshot @%s: fetched=%s upserted=%s swept=%s skipped=%s",
+        taken_at, outcome.fetched, outcome.upserted, swept, outcome.skipped,
     )
     return outcome
 

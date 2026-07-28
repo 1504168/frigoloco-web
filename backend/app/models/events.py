@@ -142,6 +142,19 @@ class ProductReview(Base):
     reviewed_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+    # Full Husky /productreview payload retained for future use (store-only,
+    # NULLable): the free-text review + who wrote it, the linked purchase, the
+    # vendor's own category label, and the RFID tag identity of the reviewed item.
+    review_text: Mapped[str | None] = mapped_column(Text)
+    reviewer_email: Mapped[str | None] = mapped_column(Text)
+    purchase_id: Mapped[str | None] = mapped_column(Text)
+    purchased_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    review_category: Mapped[str | None] = mapped_column(Text)
+    tag_id: Mapped[str | None] = mapped_column(Text)
+    epc: Mapped[str | None] = mapped_column(Text)
+    product_reference: Mapped[str | None] = mapped_column(Text)
     synced_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

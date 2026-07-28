@@ -16,7 +16,7 @@ cron.jobs.<name>  ->  app.husky (client/normalize/archive)  ->  app.{config,mode
 |---|---|---|---|
 | `python -m cron.jobs.sync_purchases` | hourly :05 (trailing 48h) | `sales_events` | `(husky_ref, sold_at)` |
 | `python -m cron.jobs.sync_restock` | hourly :10 (trailing 48h) | `restock_events` | `(husky_ref, occurred_at)` |
-| `python -m cron.jobs.snapshot_stock` | every 15 min | `stock_snapshots` | `(taken_at, fridge_id, product_code)` |
+| `python -m cron.jobs.snapshot_stock` | every 15 min | `fridge_stock` (latest-only, mark-and-swept) | `(fridge_id, product_code)` |
 | `python -m cron.jobs.catalogue_sync` | daily 02:00 | `products` / `fridges` / `clients` / `fridge_product_prices` | `code` / `husky_id` / name / `(fridge_id, product_id)` |
 | `python -m cron.jobs.reviews_sync` | daily 02:15 (trailing 14d) | `product_reviews` | synthesized `husky_ref` |
 | `python -m cron.jobs.recompute_scores` | daily 02:30 | `product_scores` | `(product_id, period_end)` |

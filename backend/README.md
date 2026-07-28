@@ -17,7 +17,7 @@ backend/
 │   │   ├── planning.py    # menus, forecasts, scores
 │   │   ├── operations.py  # POs, dispatch, stock ledger, reconciliation, finance…
 │   │   ├── events.py      # sales_events, restock_events (partitioned), product_reviews
-│   │   └── sync.py        # sync_run, stock_snapshots (NOT in schema.sql)
+│   │   └── sync.py        # sync_run (NOT in schema.sql), fridge_stock (latest-only in-fridge stock)
 │   └── routers/           # placeholder; router modules arrive from other agents
 ├── scripts/
 │   └── apply_schema.py    # applies architecture/database/schema.sql + sync tables

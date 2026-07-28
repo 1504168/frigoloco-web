@@ -63,6 +63,9 @@ class AllocationLineOut(ApiModel):
     product_id: int
     qty: int
     source: str
+    # True when the line was computed from a stale/absent fridge_stock generation
+    # (the snapshot job is behind): the quantity still uses the last-known units.
+    stock_stale: bool = False
 
 
 class AllocateResponse(ApiModel):

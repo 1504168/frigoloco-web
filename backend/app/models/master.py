@@ -97,6 +97,10 @@ class Product(Base):
         ),
         CheckConstraint("shelf_life_days > 0", name="chk_products_shelf_life_positive"),
         CheckConstraint(
+            "price_ex_surcharges >= 0",
+            name="chk_products_price_ex_surcharges_nonneg",
+        ),
+        CheckConstraint(
             "local_status IN ('inactive', 'cancelled')",
             name="chk_products_local_status_values",
         ),
@@ -125,6 +129,12 @@ class Product(Base):
     )
     # NULLable: 218 products arrive from Husky without expiry days (backfill task).
     shelf_life_days: Mapped[int | None] = mapped_column(Integer)
+    # Husky /producttype extras retained for future use (store-only, NULLable):
+    # free-text description, currency, and the sales price BEFORE POS/RFID
+    # surcharges (RAW cents, like sales_price).
+    description: Mapped[str | None] = mapped_column(Text)
+    currency_code: Mapped[str | None] = mapped_column(Text)
+    price_ex_surcharges: Mapped[int | None] = mapped_column(BigInteger)
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")
     )
@@ -215,6 +225,14 @@ class FridgeProductPrice(Base):
     __table_args__ = (
         PrimaryKeyConstraint("fridge_id", "product_id"),
         CheckConstraint("sales_price >= 0", name="chk_fridge_product_prices_price_nonneg"),
+        CheckConstraint(
+            "price_ex_surcharges >= 0",
+            name="chk_fridge_product_prices_ex_surcharges_nonneg",
+        ),
+        CheckConstraint(
+            "vat_rate >= 0 AND vat_rate < 1",
+            name="chk_fridge_product_prices_vat_fraction",
+        ),
     )
 
     fridge_id: Mapped[int] = mapped_column(
@@ -224,6 +242,11 @@ class FridgeProductPrice(Base):
         Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False
     )
     sales_price: Mapped[int] = mapped_column(BigInteger, nullable=False)  # cents
+    # Husky /fridgeproductprice extras (store-only, NULLable): price before
+    # surcharges (RAW cents), per-fridge VAT fraction, and currency.
+    price_ex_surcharges: Mapped[int | None] = mapped_column(BigInteger)  # cents
+    vat_rate: Mapped[Decimal | None] = mapped_column(Numeric(6, 4))
+    currency_code: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

@@ -1,9 +1,10 @@
 """SQLAlchemy models package.
 
-Importing this package registers every table on ``Base.metadata``. The 34 tables
+Importing this package registers every table on ``Base.metadata``. The tables
 mirrored from ``architecture/database/schema.sql`` are created by that SQL file;
-only ``SYNC_TABLES`` (defined in ``sync.py``, absent from schema.sql) are meant
-to be created from ORM metadata via ``create_all``.
+only ``SYNC_TABLES`` (defined in ``sync.py``) is created from ORM metadata via
+``create_all(checkfirst=True)`` - ``sync_run`` because schema.sql does not define
+it, ``fridge_stock`` as a no-op safety net (schema.sql defines it too).
 """
 
 from __future__ import annotations
@@ -46,10 +47,12 @@ from app.models.planning import (
     ProductScore,
     WeeklyMenu,
 )
-from app.models.sync import StockSnapshot, SyncRun
+from app.models.sync import FridgeStock, SyncRun
 
-# The two tables NOT in schema.sql - created via metadata create_all().
-SYNC_TABLES = (SyncRun.__table__, StockSnapshot.__table__)
+# Sync-layer tables, created via metadata create_all(checkfirst=True). sync_run
+# is NOT in schema.sql; fridge_stock is (migration 0009) - create_all skips it
+# when the schema script already made it.
+SYNC_TABLES = (SyncRun.__table__, FridgeStock.__table__)
 
 __all__ = [
     "Base",
@@ -93,5 +96,5 @@ __all__ = [
     "ProductReview",
     # sync
     "SyncRun",
-    "StockSnapshot",
+    "FridgeStock",
 ]
