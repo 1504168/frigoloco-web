@@ -474,3 +474,103 @@ def test_stock_adjustment_validation_and_movements(ctx):
     moves = ctx.client.get(f"{PREFIX}/stock/movements", params={"product_id": pid}).json()
     assert moves["items"][0]["movement_type"] == "adjustment"
     assert moves["items"][0]["qty"] == 7
+
+
+# ---------------------------------------------------------------------------
+# Catalogue cascade: Category -> Brand -> Product dependent dropdowns
+# ---------------------------------------------------------------------------
+
+
+def test_catalog_cascade_category_brand_product(ctx):
+    cats = _category_ids(ctx.session)
+    brand_a = _create_supplier(ctx.client, f"{TAG}BrandA")
+    brand_b = _create_supplier(ctx.client, f"{TAG}BrandB")
+    # Two products for BrandA (codes deliberately out of name order) + one for B.
+    _create_product(ctx.client, code=f"{TAG}ZP-b", category_id=cats["normal"], supplier_id=brand_a)
+    _create_product(ctx.client, code=f"{TAG}ZP-a", category_id=cats["normal"], supplier_id=brand_a)
+    _create_product(ctx.client, code=f"{TAG}ZP-c", category_id=cats["normal"], supplier_id=brand_b)
+
+    # Level 1: categories sorted by display_order (NOT text name: "10" must not
+    # sort before "2").
+    cat_resp = ctx.client.get(f"{PREFIX}/catalog/categories")
+    assert cat_resp.status_code == 200
+    orders = [c["display_order"] for c in cat_resp.json()]
+    assert orders == sorted(orders) and len(orders) >= 10
+
+    # Level 2: brands under the category - distinct and sorted by name.
+    brands = ctx.client.get(
+        f"{PREFIX}/catalog/brands", params={"category_id": cats["normal"]}
+    ).json()
+    names = [b["name"] for b in brands]
+    assert f"{TAG}BrandA" in names and f"{TAG}BrandB" in names
+    # BrandA has two products but appears exactly once (distinct).
+    assert names.count(f"{TAG}BrandA") == 1
+    tag_names = [n for n in names if n.startswith(TAG)]
+    assert tag_names == sorted(tag_names)
+
+    # Level 3: products under category + brand, sorted by name; other brand excluded.
+    prods = ctx.client.get(
+        f"{PREFIX}/catalog/products",
+        params={"category_id": cats["normal"], "brand_id": brand_a},
+    ).json()
+    codes = [p["code"] for p in prods]
+    assert set(codes) == {f"{TAG}ZP-b", f"{TAG}ZP-a"}
+    assert f"{TAG}ZP-c" not in codes
+    prod_names = [p["name"] for p in prods]
+    assert prod_names == sorted(prod_names)
+
+
+def test_catalog_has_active_excludes_inactive(ctx):
+    cats = _category_ids(ctx.session)
+    brand = _create_supplier(ctx.client, f"{TAG}BrandC")
+    _create_product(ctx.client, code=f"{TAG}ZAct", category_id=cats["normal"], supplier_id=brand)
+    inactive_pid = _create_product(
+        ctx.client, code=f"{TAG}ZInact", category_id=cats["normal"], supplier_id=brand
+    )
+    # Manual D5 override: local_status wins over Husky is_active.
+    ctx.session.execute(
+        text("UPDATE products SET local_status = 'inactive' WHERE id = :id"),
+        {"id": inactive_pid},
+    )
+    ctx.session.flush()
+
+    # Default (no has_active): both products present.
+    all_codes = {
+        p["code"]
+        for p in ctx.client.get(
+            f"{PREFIX}/catalog/products",
+            params={"category_id": cats["normal"], "brand_id": brand},
+        ).json()
+    }
+    assert {f"{TAG}ZAct", f"{TAG}ZInact"} <= all_codes
+
+    # has_active=true: only the active product.
+    active_codes = {
+        p["code"]
+        for p in ctx.client.get(
+            f"{PREFIX}/catalog/products",
+            params={"category_id": cats["normal"], "brand_id": brand, "has_active": "true"},
+        ).json()
+    }
+    assert f"{TAG}ZAct" in active_codes and f"{TAG}ZInact" not in active_codes
+
+    # A brand whose only product is inactive drops out of the has_active brand list.
+    brand_only_inactive = _create_supplier(ctx.client, f"{TAG}BrandD")
+    only_inact = _create_product(
+        ctx.client, code=f"{TAG}ZOnly", category_id=cats["normal"],
+        supplier_id=brand_only_inactive,
+    )
+    ctx.session.execute(
+        text("UPDATE products SET local_status = 'inactive' WHERE id = :id"),
+        {"id": only_inact},
+    )
+    ctx.session.flush()
+    active_brand_names = {
+        b["name"]
+        for b in ctx.client.get(
+            f"{PREFIX}/catalog/brands",
+            params={"category_id": cats["normal"], "has_active": "true"},
+        ).json()
+    }
+    assert f"{TAG}BrandC" in active_brand_names
+    assert f"{TAG}BrandD" not in active_brand_names
