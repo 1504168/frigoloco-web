@@ -1,0 +1,7 @@
+# Keep the build context small; deps and prior build output are regenerated.
+node_modules
+dist
+.env
+.env.*
+*.log
+.vite
