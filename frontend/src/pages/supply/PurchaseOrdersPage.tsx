@@ -1,10 +1,12 @@
 import * as React from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Trash2 } from 'lucide-react'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { StatusChip } from '@/components/shared/StatusChip'
 import { MoneyCell } from '@/components/shared/MoneyCell'
+import { UnsavedChangesDialog } from '@/components/shared/UnsavedChangesDialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -15,8 +17,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from '@/components/ui/sonner'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { useSingleSubmit } from '@/hooks/useSingleSubmit'
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import { api, ApiError, type Page } from '@/lib/api'
-import { formatEuro } from '@/lib/format'
+import { formatEuro, formatFraction } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { WeekDayPicker } from '@/pages/ops/components/WeekDayPicker'
 import { currentWeekDayKey, type WeekDayKey } from '@/pages/ops/lib/pipelineKey'
@@ -35,17 +40,21 @@ import type {
 } from './types'
 
 const PAGE_SIZE = 25
+const SEARCH_DEBOUNCE_MS = 300
+const DEFAULT_DELIVERY_LEAD_DAYS = 2
+const LOAD_FROM_MENU_HELP =
+  "Copies the saved menu quantities for this supplier's products for the chosen week and day."
+
+const CANCEL_PO_DESCRIPTION =
+  'Any received stock, including a partial receipt, is reversed out. ' +
+  'If it has already been dispatched, the cancel is refused.'
 
 type StatusFilter = 'all' | PoStatus
 
-/** Local, editable representation of a PO line while composing a new order. */
+/** Local, editable PO line while composing a new order. Price and VAT stay the catalogue's. */
 interface DraftLine {
   product: ProductLite
   qty: string
-  /** Unit price in euros, as a string for controlled input. */
-  unitPrice: string
-  /** VAT as a percentage (e.g. "6"), converted to a fraction on submit. */
-  vatPercent: string
 }
 
 function todayIso(): string {
@@ -58,19 +67,41 @@ function isoPlusDays(days: number): string {
   return date.toISOString().slice(0, 10)
 }
 
-/** Compute ex-VAT / VAT / incl totals for a set of draft lines. */
+/** Order quantities are whole units; the API rejects fractions. */
+function isWholePositive(qty: string): boolean {
+  const units = Number(qty)
+  return Number.isInteger(units) && units > 0
+}
+
+function lineExVat(line: DraftLine): number {
+  return (Number(line.qty) || 0) * Number(line.product.purchase_price)
+}
+
+function lineVat(line: DraftLine): number {
+  return lineExVat(line) * Number(line.product.vat_rate)
+}
+
+/** Live preview of the totals; the server recomputes them from the catalogue on create. */
 function computeTotals(lines: DraftLine[]) {
   let ex = 0
   let vat = 0
   for (const line of lines) {
-    const qty = Number(line.qty) || 0
-    const price = Number(line.unitPrice) || 0
-    const rate = (Number(line.vatPercent) || 0) / 100
-    const lineEx = qty * price
-    ex += lineEx
-    vat += lineEx * rate
+    ex += lineExVat(line)
+    vat += lineVat(line)
   }
   return { ex, vat, incl: ex + vat }
+}
+
+/** A pending PO with some units already received: still open, stock partly booked. */
+function isPartlyReceived(po: PurchaseOrder): boolean {
+  return po.status === 'pending' && po.lines.some((line) => line.qty_received > 0)
+}
+
+function PoStatusChip({ po, className }: { po: PurchaseOrder; className?: string }) {
+  if (isPartlyReceived(po)) {
+    return <StatusChip status="partial" label="Partly received" className={className} />
+  }
+  return <StatusChip status={po.status} className={className} />
 }
 
 /** Shared suppliers lookup (id -> name) for the list column and create select. */
@@ -91,6 +122,7 @@ export function PurchaseOrdersPage() {
   const [offset, setOffset] = React.useState(0)
   const [creating, setCreating] = React.useState(false)
   const [detailId, setDetailId] = React.useState<number | null>(null)
+  const search = useDebouncedValue(searchInput.trim(), SEARCH_DEBOUNCE_MS)
 
   const suppliersQuery = useSuppliers()
   const supplierName = React.useCallback(
@@ -100,15 +132,16 @@ export function PurchaseOrdersPage() {
 
   React.useEffect(() => {
     setOffset(0)
-  }, [statusFilter, supplierFilter])
+  }, [statusFilter, supplierFilter, search])
 
   const posQuery = useQuery({
-    queryKey: ['supply', 'purchase-orders', { statusFilter, supplierFilter, offset }],
+    queryKey: ['supply', 'purchase-orders', { statusFilter, supplierFilter, search, offset }],
     queryFn: ({ signal }) =>
       api.get<Page<PurchaseOrder>>('/api/v1/purchase-orders', {
         params: {
           status: statusFilter === 'all' ? undefined : statusFilter,
           supplier_id: supplierFilter === 'all' ? undefined : Number(supplierFilter),
+          search: search || undefined,
           limit: PAGE_SIZE,
           offset,
         },
@@ -116,19 +149,6 @@ export function PurchaseOrdersPage() {
       }),
     placeholderData: keepPreviousData,
   })
-
-  // order_no / supplier search is client-side: the API exposes no text filter for POs.
-  const pageForTable = React.useMemo<Page<PurchaseOrder> | undefined>(() => {
-    if (!posQuery.data) return undefined
-    const term = searchInput.trim().toLowerCase()
-    if (!term) return posQuery.data
-    const items = posQuery.data.items.filter(
-      (po) =>
-        po.order_no.toLowerCase().includes(term) ||
-        supplierName(po.supplier_id).toLowerCase().includes(term),
-    )
-    return { ...posQuery.data, items }
-  }, [posQuery.data, searchInput, supplierName])
 
   const columns = React.useMemo<DataTableColumn<PurchaseOrder>[]>(
     () => [
@@ -166,7 +186,7 @@ export function PurchaseOrdersPage() {
       {
         id: 'status',
         header: 'Status',
-        cell: (row) => <StatusChip status={row.status} />,
+        cell: (row) => <PoStatusChip po={row} />,
         sortValue: (row) => row.status,
       },
     ],
@@ -218,7 +238,7 @@ export function PurchaseOrdersPage() {
 
       <DataTable
         columns={columns}
-        page={pageForTable}
+        page={posQuery.data}
         isLoading={posQuery.isLoading}
         isError={posQuery.isError}
         error={posQuery.error}
@@ -232,7 +252,7 @@ export function PurchaseOrdersPage() {
           <EmptyState
             title="No purchase orders"
             description={
-              searchInput.trim()
+              search
                 ? 'No POs match your search.'
                 : 'Raise your first purchase order to order stock from a supplier.'
             }
@@ -278,13 +298,33 @@ interface CreatePoDialogProps {
 
 function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) {
   const queryClient = useQueryClient()
+  const [initialOrderDate] = React.useState(todayIso)
+  const [initialExpectedDate] = React.useState(() => isoPlusDays(DEFAULT_DELIVERY_LEAD_DAYS))
   const [supplierId, setSupplierId] = React.useState('')
-  const [orderDate, setOrderDate] = React.useState(todayIso())
-  const [expectedDate, setExpectedDate] = React.useState(isoPlusDays(2))
+  const [orderDate, setOrderDate] = React.useState(initialOrderDate)
+  const [expectedDate, setExpectedDate] = React.useState(initialExpectedDate)
   const [deliveryAddress, setDeliveryAddress] = React.useState('')
   const [comment, setComment] = React.useState('')
   const [lines, setLines] = React.useState<DraftLine[]>([])
   const [weekKey, setWeekKey] = React.useState<WeekDayKey>(() => currentWeekDayKey())
+  const [pendingSupplierId, setPendingSupplierId] = React.useState<string | null>(null)
+  const [confirmingMenuLoad, setConfirmingMenuLoad] = React.useState(false)
+
+  const isDirty =
+    supplierId !== '' ||
+    orderDate !== initialOrderDate ||
+    expectedDate !== initialExpectedDate ||
+    deliveryAddress !== '' ||
+    comment !== '' ||
+    lines.length > 0
+  const guard = useUnsavedChangesGuard(isDirty)
+  // Dialog refocuses its panel whenever onClose changes, so the handler must stay stable
+  // while isDirty flips; the ref always holds the latest guard.
+  const confirmDiscardRef = React.useRef(guard.confirmDiscard)
+  React.useEffect(() => {
+    confirmDiscardRef.current = guard.confirmDiscard
+  }, [guard.confirmDiscard])
+  const requestClose = React.useCallback(() => confirmDiscardRef.current(onClose), [onClose])
 
   const chosenIds = React.useMemo(() => new Set(lines.map((line) => line.product.id)), [lines])
   const totals = React.useMemo(() => computeTotals(lines), [lines])
@@ -313,8 +353,6 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
           vat_rate: line.vat_rate,
         },
         qty: String(line.qty),
-        unitPrice: line.unit_price,
-        vatPercent: String(Number(line.vat_rate) * 100),
       }))
       setLines(mapped)
       toast.success(`Loaded ${mapped.length} line(s) from the menu`)
@@ -334,8 +372,6 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
       const payloadLines: PoLineCreate[] = lines.map((line) => ({
         product_id: line.product.id,
         qty: Number(line.qty) || 0,
-        unit_price: Number(line.unitPrice) || 0,
-        vat_rate: (Number(line.vatPercent) || 0) / 100,
       }))
       const body: PurchaseOrderCreate = {
         supplier_id: Number(supplierId),
@@ -354,6 +390,7 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
     },
   })
 
+  const submitOrder = useSingleSubmit(mutation)
   const fieldErrors = fieldErrorsFromApiError(mutation.error)
   const generalError =
     mutation.error && Object.keys(fieldErrors).length === 0
@@ -361,16 +398,12 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
       : null
 
   function addProduct(product: ProductLite) {
-    const vatPercent = ((Number(product.vat_rate) || 0) * 100).toString()
-    setLines((prev) => [
-      ...prev,
-      { product, qty: '1', unitPrice: product.purchase_price ?? '0', vatPercent },
-    ])
+    setLines((prev) => [...prev, { product, qty: '1' }])
   }
 
-  function updateLine(productId: number, patch: Partial<DraftLine>) {
+  function updateLineQty(productId: number, qty: string) {
     setLines((prev) =>
-      prev.map((line) => (line.product.id === productId ? { ...line, ...patch } : line)),
+      prev.map((line) => (line.product.id === productId ? { ...line, qty } : line)),
     )
   }
 
@@ -378,23 +411,52 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
     setLines((prev) => prev.filter((line) => line.product.id !== productId))
   }
 
-  const hasValidLines =
-    lines.length > 0 && lines.every((line) => Number(line.qty) > 0 && Number(line.unitPrice) >= 0)
-  const canSubmit = supplierId !== '' && orderDate !== '' && expectedDate !== '' && hasValidLines
+  // Lines belong to one supplier, so switching supplier with lines present clears them.
+  function changeSupplier(nextSupplierId: string) {
+    if (lines.length === 0) {
+      setSupplierId(nextSupplierId)
+      return
+    }
+    setPendingSupplierId(nextSupplierId)
+  }
+
+  function confirmSupplierChange() {
+    if (pendingSupplierId === null) return
+    setSupplierId(pendingSupplierId)
+    setLines([])
+    setPendingSupplierId(null)
+  }
+
+  function requestMenuLoad() {
+    if (lines.length === 0) {
+      loadFromMenu.mutate()
+      return
+    }
+    setConfirmingMenuLoad(true)
+  }
+
+  function confirmMenuLoad() {
+    setConfirmingMenuLoad(false)
+    loadFromMenu.mutate()
+  }
+
+  const hasSupplier = supplierId !== ''
+  const hasValidLines = lines.length > 0 && lines.every((line) => isWholePositive(line.qty))
+  const canSubmit = hasSupplier && orderDate !== '' && expectedDate !== '' && hasValidLines
 
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={requestClose}
       title="New purchase order"
       description="Pick a supplier, add product lines, and totals compute live."
       widthClassName="max-w-3xl"
       footer={
         <>
-          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
+          <Button variant="outline" onClick={requestClose} disabled={mutation.isPending}>
             Cancel
           </Button>
-          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !canSubmit}>
+          <Button onClick={() => submitOrder()} disabled={mutation.isPending || !canSubmit}>
             {mutation.isPending ? 'Creating…' : 'Create PO'}
           </Button>
         </>
@@ -409,7 +471,7 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Field label="Supplier" required error={fieldErrors.supplier_id}>
-            <Select value={supplierId} onValueChange={setSupplierId}>
+            <Select value={supplierId} onValueChange={changeSupplier}>
               <SelectTrigger>
                 <SelectValue placeholder="Select supplier" />
               </SelectTrigger>
@@ -450,18 +512,30 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h4 className="text-sm font-semibold">Order lines</h4>
             <div className="flex flex-wrap items-center gap-2">
-              <WeekDayPicker value={weekKey} onChange={setWeekKey} />
+              <WeekDayPicker value={weekKey} onChange={setWeekKey} compact />
               <Button
                 variant="outline"
-                onClick={() => loadFromMenu.mutate()}
-                disabled={supplierId === '' || loadFromMenu.isPending}
-                title={supplierId === '' ? 'Pick a supplier first' : undefined}
+                onClick={requestMenuLoad}
+                disabled={!hasSupplier || loadFromMenu.isPending}
+                title={hasSupplier ? LOAD_FROM_MENU_HELP : 'Pick a supplier first'}
               >
                 {loadFromMenu.isPending ? 'Loading…' : 'Load from menu'}
               </Button>
             </div>
           </div>
-          <ProductPicker onSelect={addProduct} disabledIds={chosenIds} />
+          <p className="text-xs text-muted-foreground">
+            Load from menu: {LOAD_FROM_MENU_HELP} Unit price and VAT always come from the product
+            catalogue.
+          </p>
+          <ProductPicker
+            onSelect={addProduct}
+            disabledIds={chosenIds}
+            supplierId={hasSupplier ? Number(supplierId) : undefined}
+            disabled={!hasSupplier}
+            placeholder={
+              hasSupplier ? "Search this supplier's products…" : 'Pick a supplier first'
+            }
+          />
           {fieldErrors.lines ? (
             <p className="text-xs text-critical">{fieldErrors.lines}</p>
           ) : null}
@@ -478,74 +552,51 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
                     <th className="px-3 py-2 text-left font-medium">Product</th>
                     <th className="px-3 py-2 text-right font-medium">Qty</th>
                     <th className="px-3 py-2 text-right font-medium">Unit €</th>
-                    <th className="px-3 py-2 text-right font-medium">VAT %</th>
+                    <th className="px-3 py-2 text-right font-medium">VAT</th>
                     <th className="px-3 py-2 text-right font-medium">Line incl.</th>
                     <th className="px-2 py-2" />
                   </tr>
                 </thead>
                 <tbody>
-                  {lines.map((line) => {
-                    const qty = Number(line.qty) || 0
-                    const price = Number(line.unitPrice) || 0
-                    const rate = (Number(line.vatPercent) || 0) / 100
-                    const lineIncl = qty * price * (1 + rate)
-                    return (
-                      <tr key={line.product.id} className="border-t border-border">
-                        <td className="px-3 py-2">
-                          <div className="font-medium">{line.product.name}</div>
-                          <div className="font-mono text-xs text-muted-foreground">
-                            {line.product.code}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <Input
-                            type="number"
-                            min={1}
-                            value={line.qty}
-                            onChange={(event) => updateLine(line.product.id, { qty: event.target.value })}
-                            className="ml-auto h-8 w-20 text-right"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min={0}
-                            value={line.unitPrice}
-                            onChange={(event) =>
-                              updateLine(line.product.id, { unitPrice: event.target.value })
-                            }
-                            className="ml-auto h-8 w-24 text-right"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <Input
-                            type="number"
-                            step="0.1"
-                            min={0}
-                            value={line.vatPercent}
-                            onChange={(event) =>
-                              updateLine(line.product.id, { vatPercent: event.target.value })
-                            }
-                            className="ml-auto h-8 w-20 text-right"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-right font-medium tabular-nums">
-                          {formatEuro(lineIncl)}
-                        </td>
-                        <td className="px-2 py-2 text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label="Remove line"
-                            onClick={() => removeLine(line.product.id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-critical" />
-                          </Button>
-                        </td>
-                      </tr>
-                    )
-                  })}
+                  {lines.map((line) => (
+                    <tr key={line.product.id} className="border-t border-border">
+                      <td className="px-3 py-2">
+                        <div className="font-medium">{line.product.name}</div>
+                        <div className="font-mono text-xs text-muted-foreground">
+                          {line.product.code}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <Input
+                          type="number"
+                          min={1}
+                          step={1}
+                          value={line.qty}
+                          onChange={(event) => updateLineQty(line.product.id, event.target.value)}
+                          className="ml-auto h-8 w-20 text-right"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                        {formatEuro(line.product.purchase_price)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                        {formatFraction(line.product.vat_rate)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums">
+                        {formatEuro(lineExVat(line) + lineVat(line))}
+                      </td>
+                      <td className="px-2 py-2 text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Remove line"
+                          onClick={() => removeLine(line.product.id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-critical" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -571,6 +622,26 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pendingSupplierId !== null}
+        onClose={() => setPendingSupplierId(null)}
+        onConfirm={confirmSupplierChange}
+        title="Change supplier?"
+        description="The order lines belong to the current supplier and will be removed."
+        confirmLabel="Change and clear lines"
+        destructive
+      />
+      <ConfirmDialog
+        open={confirmingMenuLoad}
+        onClose={() => setConfirmingMenuLoad(false)}
+        onConfirm={confirmMenuLoad}
+        title="Replace order lines?"
+        description="Loading from the menu replaces all current lines with the saved menu quantities."
+        confirmLabel="Replace lines"
+        destructive
+      />
+      <UnsavedChangesDialog guard={guard} />
     </Dialog>
   )
 }
@@ -655,6 +726,8 @@ function PoDetailDialog({ poId, supplierName, onClose }: PoDetailDialogProps) {
     },
   })
 
+  const submitReceipt = useSingleSubmit(receiveMutation)
+  const submitCancel = useSingleSubmit(cancelMutation)
   const receivingTotal = Object.values(receiveQty).reduce((sum, qty) => sum + (Number(qty) || 0), 0)
 
   return (
@@ -667,13 +740,13 @@ function PoDetailDialog({ poId, supplierName, onClose }: PoDetailDialogProps) {
       footer={
         po ? (
           <div className="flex w-full flex-wrap items-center gap-2">
-            <StatusChip status={po.status} className="mr-auto" />
+            <PoStatusChip po={po} className="mr-auto" />
             {isPending ? (
               <Button
-                onClick={() => receiveMutation.mutate(false)}
+                onClick={() => submitReceipt(false)}
                 disabled={receiveMutation.isPending || receivingTotal <= 0}
               >
-                {receiveMutation.isPending ? 'Receiving…' : 'Mark received'}
+                {receiveMutation.isPending ? 'Receiving…' : 'Receive goods'}
               </Button>
             ) : null}
             {po.status !== 'cancelled' ? (
@@ -773,7 +846,7 @@ function PoDetailDialog({ poId, supplierName, onClose }: PoDetailDialogProps) {
           open
           onClose={() => setConfirmingCancel(false)}
           title="Cancel this purchase order?"
-          description="Received stock is reversed out. If it has already been dispatched, the cancel is refused."
+          description={CANCEL_PO_DESCRIPTION}
           footer={
             <>
               <Button variant="outline" onClick={() => setConfirmingCancel(false)} disabled={cancelMutation.isPending}>
@@ -781,7 +854,7 @@ function PoDetailDialog({ poId, supplierName, onClose }: PoDetailDialogProps) {
               </Button>
               <Button
                 variant="destructive"
-                onClick={() => cancelMutation.mutate()}
+                onClick={() => submitCancel()}
                 disabled={cancelMutation.isPending}
               >
                 {cancelMutation.isPending ? 'Cancelling…' : 'Cancel PO'}
@@ -804,7 +877,7 @@ function PoDetailDialog({ poId, supplierName, onClose }: PoDetailDialogProps) {
               <Button variant="outline" onClick={() => setOverReceipt(null)} disabled={receiveMutation.isPending}>
                 Go back
               </Button>
-              <Button onClick={() => receiveMutation.mutate(true)} disabled={receiveMutation.isPending}>
+              <Button onClick={() => submitReceipt(true)} disabled={receiveMutation.isPending}>
                 {receiveMutation.isPending ? 'Confirming…' : 'Acknowledge & receive'}
               </Button>
             </>

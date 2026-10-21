@@ -1,0 +1,92 @@
+# Deploy to Railway on TAG push only (not every push to main).
+#
+# Trigger:  push a tag matching v*      e.g.  git tag v1.0.0 && git push origin v1.0.0
+# Effect:   deploys the services to the chosen Railway environment.
+#
+# Prerequisites (one-time):
+#   1. Railway auto-deploy-on-push is DISABLED for each service (so only this
+#      workflow deploys). Set in each service's Settings -> Deploy triggers.
+#   2. GitHub repo secret RAILWAY_TOKEN is set to a Railway token that can deploy
+#      this project (Project token, or an account token). Repo -> Settings ->
+#      Secrets and variables -> Actions -> New repository secret.
+#   3. The services already exist in the project. Their names differ per
+#      environment (see the "Map Railway service names" step):
+#        testing:    backend generous-endurance, frontend feisty-motivation,
+#                    cron frigoloco-cron
+#        production: backend authentic-kindness, frontend supportive-expression,
+#                    no cron service yet (the cron step is skipped)
+#
+# Environment selection:
+#   - Tags like v1.2.3        -> deploys to `production`.
+#   - Tags like v1.2.3-rc.1   -> deploys to `testing` (pre-release tags).
+#   Adjust the `environment` step below if you prefer a different convention.
+
+name: Deploy to Railway (on tag)
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: railway-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+    steps:
+      - name: Checkout the tagged commit
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli
+
+      - name: Pick environment from tag (pre-release -> testing, else production)
+        id: env
+        run: |
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            echo "name=testing" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=production" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Railway generated the service names, and they differ per environment.
+      # An empty cron name means that environment has no cron service yet, so
+      # the cron step is skipped.
+      - name: Map Railway service names for the environment
+        id: services
+        run: |
+          if [[ "${{ steps.env.outputs.name }}" == "testing" ]]; then
+            echo "backend=generous-endurance" >> "$GITHUB_OUTPUT"
+            echo "frontend=feisty-motivation" >> "$GITHUB_OUTPUT"
+            echo "cron=frigoloco-cron" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend=authentic-kindness" >> "$GITHUB_OUTPUT"
+            echo "frontend=supportive-expression" >> "$GITHUB_OUTPUT"
+            echo "cron=" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Every deploy uploads from the repo root: backend and frontend have their
+      # Railway Root Directory set (backend/, frontend/), and cron builds
+      # cron/Dockerfile with the whole repo as context (RAILWAY_DOCKERFILE_PATH).
+      - name: Deploy backend
+        run: >-
+          railway up --ci
+          --service ${{ steps.services.outputs.backend }}
+          --environment ${{ steps.env.outputs.name }}
+
+      - name: Deploy frontend
+        run: >-
+          railway up --ci
+          --service ${{ steps.services.outputs.frontend }}
+          --environment ${{ steps.env.outputs.name }}
+
+      - name: Deploy cron
+        if: steps.services.outputs.cron != ''
+        run: >-
+          railway up --ci
+          --service ${{ steps.services.outputs.cron }}
+          --environment ${{ steps.env.outputs.name }}

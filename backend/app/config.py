@@ -44,6 +44,9 @@ if OVERLAY_ENV_FILE is not None:
     load_dotenv(dotenv_path=OVERLAY_ENV_FILE, override=False)
 load_dotenv(dotenv_path=ENV_FILE, override=False)
 
+PRODUCTION_APP_ENVS = {"production", "prod"}
+DEV_ONLY_SECRET_KEY = "dev-only-insecure-change-me"
+
 
 class Settings(BaseSettings):
     """Runtime configuration sourced from environment variables / repo-root .env."""
@@ -86,6 +89,14 @@ class Settings(BaseSettings):
     backfill_from: date | None = Field(default=None, validation_alias="BACKFILL_FROM")
     husky_throttle_rps: float = Field(
         default=1.0, validation_alias="HUSKY_THROTTLE_RPS"
+    )
+
+    # --- Authentication -----------------------------------------------------
+    # SECRET_KEY signs the JWTs. The default is DEV-ONLY; every deployed
+    # environment MUST set its own strong SECRET_KEY (distinct per environment).
+    secret_key: str = Field(default=DEV_ONLY_SECRET_KEY, validation_alias="SECRET_KEY")
+    access_token_expire_minutes: int = Field(
+        default=60 * 24 * 7, validation_alias="ACCESS_TOKEN_EXPIRE_MINUTES"
     )
 
 

@@ -1,10 +1,10 @@
 import * as React from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BellOff, Check } from 'lucide-react'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { StatusChip } from '@/components/shared/StatusChip'
+import { Toolbar } from '@/components/shared/Toolbar'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -20,6 +20,9 @@ import { EMPTY_PLACEHOLDER, formatDateTime } from '@/lib/format'
 import { ALERTS_COUNT_KEY } from '@/hooks/useAlertsCount'
 
 const PAGE_SIZE = 25
+
+/** Summaries longer than this are clamped to a few lines with a "Show all" toggle. */
+const LONG_DETAILS_CHARS = 240
 
 type AckFilter = 'unacknowledged' | 'acknowledged' | 'all'
 
@@ -38,7 +41,35 @@ function summarizePayload(payload: Record<string, unknown>): string {
   if (candidate) return candidate
   const keys = Object.keys(payload)
   if (keys.length === 0) return EMPTY_PLACEHOLDER
-  return keys.map((key) => `${key}: ${String(payload[key])}`).join(', ')
+  return keys.map((key) => `${key}: ${formatPayloadValue(payload[key])}`).join(', ')
+}
+
+/** Nested lists and objects (e.g. offending_lines) print as JSON, not "[object Object]". */
+function formatPayloadValue(value: unknown): string {
+  if (typeof value === 'object' && value !== null) return JSON.stringify(value)
+  return String(value)
+}
+
+function AlertDetails({ payload }: { payload: Record<string, unknown> }) {
+  const [expanded, setExpanded] = React.useState(false)
+  const summary = summarizePayload(payload)
+  const isLong = summary.length > LONG_DETAILS_CHARS
+  const clampClass = isLong && !expanded ? 'line-clamp-3' : ''
+
+  return (
+    <div className="max-w-xl">
+      <p className={`text-muted-foreground [overflow-wrap:anywhere] ${clampClass}`}>{summary}</p>
+      {isLong && (
+        <button
+          type="button"
+          className="mt-1 text-xs font-medium text-primary hover:underline"
+          onClick={() => setExpanded((wasExpanded) => !wasExpanded)}
+        >
+          {expanded ? 'Show less' : 'Show all'}
+        </button>
+      )}
+    </div>
+  )
 }
 
 export function AlertsPage() {
@@ -88,9 +119,7 @@ export function AlertsPage() {
       {
         id: 'details',
         header: 'Details',
-        cell: (row) => (
-          <span className="text-muted-foreground">{summarizePayload(row.payload)}</span>
-        ),
+        cell: (row) => <AlertDetails payload={row.payload} />,
       },
       {
         id: 'status',
@@ -139,13 +168,16 @@ export function AlertsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        breadcrumb="System / Alerts"
-        title="Alerts"
-        description="Operational alerts raised by the forecasting and dispatch engines."
-        actions={
-          <Select value={ackFilter} onValueChange={(value) => setAckFilter(value as AckFilter)}>
-            <SelectTrigger className="w-44">
+      <Toolbar
+        left={
+          <Select
+            value={ackFilter}
+            onValueChange={(value) => setAckFilter(value as AckFilter)}
+          >
+            <SelectTrigger
+              className="w-44"
+              aria-label="Acknowledgement status"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

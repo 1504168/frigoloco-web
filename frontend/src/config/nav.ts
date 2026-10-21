@@ -11,6 +11,7 @@ import {
   Star,
   TrendingUp,
   Truck,
+  UserCog,
   Users,
   Wallet,
   type LucideIcon,
@@ -23,6 +24,8 @@ export interface NavItem {
   icon: LucideIcon
   /** react-query key whose data drives a count badge (e.g. unacknowledged alerts). */
   badgeKey?: 'alerts'
+  /** When true, the item only renders for a signed-in user whose role is admin. */
+  adminOnly?: boolean
 }
 
 /** A titled group of nav links (mirrors the mockup's `.nav-section` blocks). */
@@ -72,6 +75,7 @@ export const NAV_SECTIONS: NavSection[] = [
     title: 'System',
     items: [
       { label: 'Alerts', path: '/alerts', icon: Bell, badgeKey: 'alerts' },
+      { label: 'Users', path: '/users', icon: UserCog, adminOnly: true },
       { label: 'Settings', path: '/settings', icon: Settings },
     ],
   },

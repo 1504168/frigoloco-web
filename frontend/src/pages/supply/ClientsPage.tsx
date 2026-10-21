@@ -32,8 +32,6 @@ const PAGE_SIZE = 25
 interface ClientForm {
   name: string
   location: string
-  workers_count: string
-  worker_type: string
   preferences: string
   notes: string
 }
@@ -41,19 +39,14 @@ interface ClientForm {
 const EMPTY_FORM: ClientForm = {
   name: '',
   location: '',
-  workers_count: '',
-  worker_type: '',
   preferences: '',
   notes: '',
 }
 
 function toCreatePayload(form: ClientForm): ClientCreate {
-  const workers = form.workers_count.trim()
   return {
     name: form.name.trim(),
     location: form.location.trim() || null,
-    workers_count: workers === '' ? null : Number(workers),
-    worker_type: form.worker_type.trim() || null,
     preferences: form.preferences.trim() || null,
     notes: form.notes.trim() || null,
   }
@@ -89,21 +82,6 @@ export function ClientsPage() {
         header: 'Location',
         cell: (row) => <span className="text-muted-foreground">{row.location ?? EMPTY_PLACEHOLDER}</span>,
         sortValue: (row) => row.location ?? '',
-      },
-      {
-        id: 'workers',
-        header: 'Workers',
-        align: 'right',
-        cell: (row) => (
-          <span className="tabular-nums">{row.workers_count ?? EMPTY_PLACEHOLDER}</span>
-        ),
-        sortValue: (row) => row.workers_count ?? -1,
-      },
-      {
-        id: 'worker_type',
-        header: 'Worker type',
-        cell: (row) => <span className="text-muted-foreground">{row.worker_type ?? EMPTY_PLACEHOLDER}</span>,
-        sortValue: (row) => row.worker_type ?? '',
       },
       {
         id: 'actions',
@@ -196,8 +174,6 @@ export function ClientsPage() {
           initial={{
             name: editing.name,
             location: editing.location ?? '',
-            workers_count: editing.workers_count === null ? '' : String(editing.workers_count),
-            worker_type: editing.worker_type ?? '',
             preferences: editing.preferences ?? '',
             notes: editing.notes ?? '',
           }}
@@ -297,25 +273,6 @@ function ClientFormDialog({
             <Input
               value={form.location}
               onChange={(event) => setForm((prev) => ({ ...prev, location: event.target.value }))}
-            />
-          </Field>
-          <Field label="Workers count" error={fieldErrors.workers_count}>
-            <Input
-              type="number"
-              min={0}
-              value={form.workers_count}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, workers_count: event.target.value }))
-              }
-            />
-          </Field>
-          <Field label="Worker type" error={fieldErrors.worker_type}>
-            <Input
-              value={form.worker_type}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, worker_type: event.target.value }))
-              }
-              placeholder="office, warehouse…"
             />
           </Field>
         </div>
@@ -434,8 +391,6 @@ function ClientDetailsTab({ client }: { client: Client }) {
   return (
     <div className="space-y-1">
       <DetailRow label="Location" value={client.location} />
-      <DetailRow label="Workers count" value={client.workers_count} />
-      <DetailRow label="Worker type" value={client.worker_type} />
       <DetailRow label="Preferences" value={client.preferences} />
       <DetailRow label="Notes" value={client.notes} />
     </div>

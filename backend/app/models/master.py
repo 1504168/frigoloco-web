@@ -23,7 +23,6 @@ from sqlalchemy import (
     PrimaryKeyConstraint,
     SmallInteger,
     Text,
-    UniqueConstraint,
     func,
     text,
 )
@@ -77,7 +76,8 @@ class Category(Base):
 
     id: Mapped[int] = mapped_column(Integer, Identity(always=True), primary_key=True)
     name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
-    display_order: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    # Not unique: two "2." categories share a prefix; lists break ties by name.
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False)
     # Fixed order in which categories print on driver delivery sheets (R8).
     dispatch_print_order: Mapped[int] = mapped_column(
         Integer, nullable=False, unique=True
@@ -161,15 +161,10 @@ class Product(Base):
 
 class Client(Base):
     __tablename__ = "clients"
-    __table_args__ = (
-        CheckConstraint("workers_count >= 0", name="chk_clients_workers_count_nonneg"),
-    )
 
     id: Mapped[int] = mapped_column(Integer, Identity(always=True), primary_key=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     location: Mapped[str | None] = mapped_column(Text)
-    workers_count: Mapped[int | None] = mapped_column(Integer)
-    worker_type: Mapped[str | None] = mapped_column(Text)
     preferences: Mapped[str | None] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime.datetime] = mapped_column(

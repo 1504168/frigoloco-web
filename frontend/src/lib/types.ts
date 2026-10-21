@@ -13,6 +13,7 @@ export interface Product {
   name: string
   category_id: number
   supplier_id: number | null
+  supplier_name: string | null
   purchase_price: string
   sales_price: string
   vat_rate: string

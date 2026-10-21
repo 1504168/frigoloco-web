@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models.enums import PoStatus
+from app.models.master import User
 from app.schemas.orders import (
     Page,
     PoCancelResult,
@@ -19,6 +20,7 @@ from app.schemas.orders import (
     PurchaseOrderRead,
     PurchaseOrderUpdate,
 )
+from app.security import get_current_user
 from app.services import orders_service
 from app.services.orders_service import (
     PageParams,
@@ -37,6 +39,10 @@ def list_purchase_orders(
     supplier_id: int | None = None,
     delivery_from: datetime.date | None = None,
     delivery_to: datetime.date | None = None,
+    search: str | None = Query(
+        default=None,
+        description="Case-insensitive contains match on order number or supplier name.",
+    ),
     page: PageParams = Depends(get_page_params),
     db: Session = Depends(get_db),
 ) -> Page[PurchaseOrderRead]:
@@ -47,6 +53,7 @@ def list_purchase_orders(
         supplier_id=supplier_id,
         delivery_from=delivery_from,
         delivery_to=delivery_to,
+        search=search,
     )
     return Page(items=items, total=total, limit=page.limit, offset=page.offset)
 
@@ -94,12 +101,14 @@ def receive_purchase_order(
     po_id: int,
     payload: PoReceiveRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> PoReceiveResult:
     order, movements = orders_service.receive_purchase_order(
         db,
         po_id,
         [ReceiptLine(r.po_line_id, r.qty_received) for r in payload.received],
         payload.acknowledge_over_receipt,
+        user_id=current_user.id,
     )
     return PoReceiveResult(order=order, movements=movements)
 
@@ -109,8 +118,11 @@ def receive_purchase_order(
 def cancel_purchase_order(
     po_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> PoCancelResult:
-    order, previous, reversals = orders_service.cancel_purchase_order(db, po_id)
+    order, previous, reversals = orders_service.cancel_purchase_order(
+        db, po_id, user_id=current_user.id
+    )
     return PoCancelResult(
         order=order, previous_status=previous, reversal_movements=reversals
     )

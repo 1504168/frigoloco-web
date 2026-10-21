@@ -82,7 +82,9 @@ CREATE TABLE IF NOT EXISTS suppliers (
 CREATE TABLE IF NOT EXISTS categories (
     id                    INTEGER      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name                  TEXT         NOT NULL UNIQUE,
-    display_order         INTEGER      NOT NULL UNIQUE,
+    -- Numeric name prefix ("10. Frozen Warm Dishes" -> 10); NOT unique because two
+    -- "2." categories exist, ties sort by name; 'Uncategorised' = 999 (migration 0013).
+    display_order         INTEGER      NOT NULL,
     -- Fixed order in which categories print on driver delivery sheets (R8).
     dispatch_print_order  INTEGER      NOT NULL UNIQUE,
     created_at            TIMESTAMPTZ  NOT NULL DEFAULT now()
@@ -121,8 +123,6 @@ CREATE TABLE IF NOT EXISTS clients (
     id             INTEGER      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name           TEXT         NOT NULL,
     location       TEXT,
-    workers_count  INTEGER      CHECK (workers_count >= 0),
-    worker_type    TEXT,
     preferences    TEXT,
     notes          TEXT,
     created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -329,7 +329,8 @@ CREATE TABLE IF NOT EXISTS menu_lines (
 CREATE INDEX IF NOT EXISTS ix_menu_lines_menu ON menu_lines (menu_id);
 CREATE INDEX IF NOT EXISTS ix_menu_lines_product ON menu_lines (product_id);
 
--- model: extensible enum-style selector (only 'moving_average_3w' today).
+-- model: forecast method (migration 0014): moving averages over the 3 weeks /
+-- 13 weeks before delivery, or the same windows shifted back 52 weeks (364 days).
 -- is_saved: false = ephemeral /forecasts/run compute; true = the ONE persisted
 -- forecast per (year, week, day). day_name mirrors delivery_date's ISO weekday
 -- for saved runs. Natural key: delivery_date (bijective with year/week/day).
@@ -339,7 +340,12 @@ CREATE TABLE IF NOT EXISTS forecast_runs (
     delivery_date  DATE         NOT NULL,
     model          TEXT         NOT NULL DEFAULT 'moving_average_3w'
                                 CONSTRAINT chk_forecast_runs_model
-                                CHECK (model IN ('moving_average_3w')),
+                                CHECK (model IN (
+                                    'moving_average_3w',
+                                    'moving_average_3m',
+                                    'last_year_3w',
+                                    'last_year_3m'
+                                )),
     is_saved       BOOLEAN      NOT NULL DEFAULT false,
     day_name       TEXT,
     -- Snapshot of the parameters the run used: window weeks, scoring weights,
@@ -373,8 +379,20 @@ CREATE TABLE IF NOT EXISTS product_scores (
     final_score   NUMERIC(7,4)  NOT NULL,
     sample_size   INTEGER       NOT NULL DEFAULT 0 CHECK (sample_size >= 0),
     computed_at   TIMESTAMPTZ   NOT NULL DEFAULT now(),
-    UNIQUE (product_id, period_end)
+    window_days   INTEGER       NOT NULL DEFAULT 365,
+    sold_qty         INTEGER,
+    positive_reviews INTEGER,
+    negative_reviews INTEGER,
+    uses_new_product_baseline BOOLEAN NOT NULL DEFAULT false,
+    CONSTRAINT chk_product_scores_window_days CHECK (window_days > 0),
+    CONSTRAINT chk_product_scores_counts_nonneg CHECK (
+        sold_qty >= 0 AND positive_reviews >= 0 AND negative_reviews >= 0
+    ),
+    CONSTRAINT uq_product_scores_product_period_window
+        UNIQUE (product_id, period_end, window_days)
 );
+CREATE INDEX IF NOT EXISTS ix_product_scores_window_period
+    ON product_scores (window_days, period_end DESC);
 
 CREATE TABLE IF NOT EXISTS fridge_product_scores (
     id            INTEGER       GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -977,12 +995,6 @@ INSERT INTO settings (key, value, description) VALUES
     ('scoring_weights',
      '{"pct_sold": 0.62, "review": 0.05, "margin": 0.33}',
      'R2 product-score weights (Product Rating sheet cells).'),
-    ('forecast_margins',
-     '{"1. Cold Dishes": 0, "2. Warm Dishes": 0, "3. Warm Dishes Jar": 0,
-       "4. Wraps & Sandwiches": 0, "5. Breakfast & Granolas": 0, "6. Soup": 0,
-       "7. Desserts": 0, "8. Drinks": 0, "9. Snacks": 0,
-       "10. Frozen Warm Dishes": 0}',
-     'R1 per-category forecast margin % (fraction), user-tunable; defaults to 0.'),
     ('pos_fee_pct',
      '0.09',
      'R10 POS/software fee: 9% of sales (Return workbook Settings sheet).'),
@@ -996,6 +1008,16 @@ INSERT INTO settings (key, value, description) VALUES
     ('menu_category_columns',
      '6',
      'Minimum product column slots per category in Menu/Dispatch grids')
+ON CONFLICT (key) DO NOTHING;
+
+-- Forecast margins are keyed by category id (migration 0015) so a category
+-- rename cannot orphan its margin; categories missing from the map use 0.
+INSERT INTO settings (key, value, description)
+SELECT 'forecast_margins',
+       COALESCE(jsonb_object_agg(id::text, 0), '{}'::jsonb),
+       'R1 per-category forecast margin (fraction) keyed by category id; '
+       'missing categories use 0.'
+FROM categories
 ON CONFLICT (key) DO NOTHING;
 
 COMMIT;

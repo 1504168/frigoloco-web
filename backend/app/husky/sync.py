@@ -22,29 +22,46 @@ the products/fridges list endpoints use for ``?status=``.
 
 from __future__ import annotations
 
+import csv
 import datetime
 import gzip
+import io
 import json
 import logging
+import re
+import time
+from collections import defaultdict
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal
+from functools import partial
 from pathlib import Path
 from types import TracebackType
 
-from sqlalchemy import and_, delete, func, or_, select, update
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from pydantic import BaseModel
+from sqlalchemy import Table, and_, column, delete, func, or_, select, table, text, update
+from sqlalchemy.dialects.postgresql import Insert, insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import SessionLocal
 from app.husky.archive import archive_raw
-from app.husky.client import HuskyClient
+from app.husky.client import FetchResult, HuskyClient
 from app.husky.normalize import (
     euros_to_minor_units,
     first_discount_provider,
     is_refunded,
     normalize_vat_fraction,
     sum_discount_minor_units,
+)
+from app.husky.schemas import (
+    CurrentStock,
+    FacilityItem,
+    FridgeItem,
+    ProductFridgeItem,
+    ProductReviewItem,
+    ProductTypeItem,
 )
 from app.models import (
     Category,
@@ -83,6 +100,10 @@ REPORT_LAG = datetime.timedelta(minutes=6)
 TRAILING_EVENT_WINDOW = datetime.timedelta(hours=48)
 # Reviews accumulate slowly; the cron default reaches back further than 48h.
 REVIEW_WINDOW = datetime.timedelta(days=14)
+# Timestamp format of raw-archive file names and report window labels.
+ARCHIVE_STAMP_FORMAT = "%Y%m%dT%H%M%SZ"
+# An unquoted NULL inside a Postgres array literal is a NULL element.
+ARRAY_NULL_ELEMENT = "NULL"
 
 
 def clamp_report_to(window_to: datetime.datetime) -> datetime.datetime:
@@ -92,7 +113,9 @@ def clamp_report_to(window_to: datetime.datetime) -> datetime.datetime:
 
 
 def _window_label(window_from: datetime.datetime, window_to: datetime.datetime) -> str:
-    return f"{window_from.strftime('%Y%m%dT%H%M%SZ')}_{window_to.strftime('%Y%m%dT%H%M%SZ')}"
+    window_start = window_from.strftime(ARCHIVE_STAMP_FORMAT)
+    window_end = window_to.strftime(ARCHIVE_STAMP_FORMAT)
+    return f"{window_start}_{window_end}"
 
 
 # ===========================================================================
@@ -390,6 +413,18 @@ def resolve_fridge(index: dict[str, int], *candidates: str | None) -> int | None
 # Sentinel code for event rows that carry a tag identity but no product code.
 UNKNOWN_PRODUCT_CODE = "UNKNOWN"
 UNCATEGORISED_NAME = "Uncategorised"
+# Category names carry their screen position as a number prefix ("10. Frozen Warm Dishes").
+CATEGORY_NUMBER_PREFIX = re.compile(r"^(\d+)\.")
+# Unnumbered categories, Uncategorised included, sort after every numbered one.
+UNNUMBERED_CATEGORY_DISPLAY_ORDER = 999
+
+
+def category_display_order(category_name: str) -> int:
+    """Screen position of a category: its number prefix, else after every numbered one."""
+    number_prefix = CATEGORY_NUMBER_PREFIX.match(category_name)
+    if number_prefix is None:
+        return UNNUMBERED_CATEGORY_DISPLAY_ORDER
+    return int(number_prefix.group(1))
 
 
 def effective_product_code(product_code: str | None, *tag_identity: str | None) -> str | None:
@@ -428,12 +463,6 @@ class ProductResolver:
                 select(Category.id).where(Category.name == UNCATEGORISED_NAME)
             ).scalar()
             if found is None:  # defensive - the row is expected to be seeded
-                next_display = (
-                    self._session.execute(
-                        select(func.coalesce(func.max(Category.display_order), 0))
-                    ).scalar()
-                    or 0
-                ) + 1
                 next_print = (
                     self._session.execute(
                         select(func.coalesce(func.max(Category.dispatch_print_order), 0))
@@ -442,7 +471,7 @@ class ProductResolver:
                 ) + 1
                 category = Category(
                     name=UNCATEGORISED_NAME,
-                    display_order=next_display,
+                    display_order=category_display_order(UNCATEGORISED_NAME),
                     dispatch_print_order=next_print,
                 )
                 self._session.add(category)
@@ -491,10 +520,89 @@ class ProductResolver:
 
 
 # ===========================================================================
+# Bulk writes: COPY into a staging table, then one INSERT ... ON CONFLICT
+# ===========================================================================
+
+
+def copy_upsert(
+    session: Session,
+    target: Table,
+    rows: list[dict],
+    conflict_columns: list[str],
+    build_update_set: Callable[[Insert], dict],
+) -> int:
+    """Upsert ``rows`` into ``target`` in four round trips; return the rows touched.
+
+    The rows are streamed with COPY into a staging table, then moved with one
+    ``INSERT ... SELECT ... ON CONFLICT DO UPDATE``. Every row carries the same
+    keys and no two rows share a conflict key (Postgres rejects a statement that
+    updates one row twice). ``build_update_set`` receives the insert statement so
+    it can refer to ``excluded``. The returned count is inserted plus updated
+    rows: every conflicting row counts, even when its values did not change.
+    """
+    if not rows:
+        return 0
+    column_names = list(rows[0])
+    _require_same_columns(rows, column_names)
+    staging_name = f"staging_{target.name}"
+    quoted_staging = _quoted_identifier(staging_name)
+    quoted_columns = _quoted_column_list(column_names)
+    # Not LIKE target: that would copy NOT NULL id/identity columns the rows never fill.
+    session.execute(
+        text(
+            f"CREATE TEMP TABLE {quoted_staging} AS "
+            f"SELECT {quoted_columns} FROM {_quoted_identifier(target.name)} WITH NO DATA"
+        )
+    )
+    _copy_rows_into(session, staging_name, column_names, rows)
+    staging = table(staging_name, *[column(name) for name in column_names])
+    insert_from_staging = pg_insert(target).from_select(column_names, select(staging))
+    upsert = insert_from_staging.on_conflict_do_update(
+        index_elements=conflict_columns,
+        set_=build_update_set(insert_from_staging),
+    )
+    rows_touched = session.execute(upsert).rowcount
+    # Dropped now, not ON COMMIT: one transaction may upsert the same target twice.
+    session.execute(text(f"DROP TABLE {quoted_staging}"))
+    return rows_touched
+
+
+@contextmanager
+def write_transaction(job: str) -> Iterator[Session]:
+    """One short transaction for a sync's DB work, logging how long it stayed open."""
+    started = time.monotonic()
+    with SessionLocal() as session, session.begin():
+        yield session
+    logger.info("%s: write transaction open for %.2fs", job, time.monotonic() - started)
+
+
+# ===========================================================================
 # Catalogue sync - /facility, /fridge, /producttype, /fridgeproductprice
 # ===========================================================================
 
 _BOX_PREFIX = "box n"  # 'Box n°...' test/placeholder product types are skipped.
+
+# Product columns the catalogue only overwrites when this run's feed carried a value.
+PRODUCT_COLUMNS_WRITTEN_WHEN_PRESENT: tuple[str, ...] = (
+    "supplier_id",
+    "sales_price",
+    "purchase_price",
+    "vat_rate",
+    "shelf_life_days",
+    "description",
+    "currency_code",
+    "price_ex_surcharges",
+)
+
+
+@dataclass
+class CatalogueFeeds:
+    """Every catalogue payload, fetched and archived before any DB work starts."""
+
+    facilities: list[FacilityItem]
+    fridges: list[FridgeItem]
+    product_types: list[ProductTypeItem]
+    fridge_prices: list[ProductFridgeItem]
 
 
 def _is_box_name(name: str | None) -> bool:
@@ -512,9 +620,14 @@ def _get_or_create_category(
     if existing is not None:
         cache[key] = existing.id
         return existing.id, False
-    next_display = (session.execute(select(func.coalesce(func.max(Category.display_order), 0))).scalar() or 0) + 1
-    next_print = (session.execute(select(func.coalesce(func.max(Category.dispatch_print_order), 0))).scalar() or 0) + 1
-    category = Category(name=key, display_order=next_display, dispatch_print_order=next_print)
+    highest_print_order = session.execute(
+        select(func.coalesce(func.max(Category.dispatch_print_order), 0))
+    ).scalar_one()
+    category = Category(
+        name=key,
+        display_order=category_display_order(key),
+        dispatch_print_order=highest_print_order + 1,
+    )
     session.add(category)
     session.flush()
     cache[key] = category.id
@@ -549,26 +662,82 @@ def _get_or_create_supplier(
     return supplier.id
 
 
-def _sync_facilities(session: Session, client: HuskyClient, outcome: JobOutcome) -> None:
-    result = client.get_facilities()
-    archive_raw("facility", utcnow().strftime("%Y%m%dT%H%M%SZ"), result.raw)
+def sync_catalogue(run_id: int | None = None) -> JobOutcome:
+    """Sync the full master catalogue (facilities, fridges, products, prices)."""
+    outcome = JobOutcome()
+    with SyncRunRecorder("catalogue_sync", "catalogue", run_id=run_id) as recorder:
+        with HuskyClient() as client:
+            feeds = _fetch_catalogue_feeds(client)
+        with write_transaction("catalogue_sync") as session:
+            _apply_facilities(session, feeds.facilities, outcome)
+            _apply_fridges(session, feeds.fridges, outcome)
+            _apply_product_types(session, feeds.product_types, outcome)
+            _apply_fridge_product_prices(session, feeds.fridge_prices, outcome)
+        recorder.finish(
+            "success" if outcome.fetched else "empty", outcome.fetched, outcome.upserted
+        )
+    for note in outcome.notes:
+        logger.info("%s", note)
+    return outcome
+
+
+def sync_prices(run_id: int | None = None) -> JobOutcome:
+    """Sync only the per-fridge product prices (``/fridgeproductprice``)."""
+    outcome = JobOutcome()
+    with SyncRunRecorder("catalogue_sync", "fridgeproductprice", run_id=run_id) as recorder:
+        with HuskyClient() as client:
+            fridge_prices = _fetch_archived(client.get_fridge_product_prices, "fridgeproductprice")
+        outcome.fetched = _count_price_entries(fridge_prices.fridges)
+        with write_transaction("sync_prices") as session:
+            _apply_fridge_product_prices(session, fridge_prices.fridges, outcome)
+        recorder.finish(
+            "success" if outcome.upserted else "empty", outcome.fetched, outcome.upserted
+        )
+    for note in outcome.notes:
+        logger.info("%s", note)
+    return outcome
+
+
+def _fetch_catalogue_feeds(client: HuskyClient) -> CatalogueFeeds:
+    facilities = _fetch_archived(client.get_facilities, "facility")
+    fridges = _fetch_archived(client.get_fridges, "fridge")
+    product_types = _fetch_archived(client.get_product_types, "producttype")
+    fridge_prices = _fetch_archived(client.get_fridge_product_prices, "fridgeproductprice")
+    return CatalogueFeeds(
+        facilities=facilities.facilities,
+        fridges=fridges.fridges,
+        product_types=product_types.productTypes,
+        fridge_prices=fridge_prices.fridges,
+    )
+
+
+def _fetch_archived(
+    fetch_endpoint: Callable[[], FetchResult],
+    archive_endpoint: str,
+) -> BaseModel:
+    """Call one Husky endpoint, archive its raw bytes, and return the parsed payload."""
+    fetch_result = fetch_endpoint()
+    archive_raw(archive_endpoint, utcnow().strftime(ARCHIVE_STAMP_FORMAT), fetch_result.raw)
+    return fetch_result.data
+
+
+def _apply_facilities(
+    session: Session,
+    facilities: list[FacilityItem],
+    outcome: JobOutcome,
+) -> None:
+    clients_by_name = {client.name: client for client in session.execute(select(Client)).scalars()}
     fetched = 0
-    for facility in result.data.facilities:
+    for facility in facilities:
         if not facility.name:
             continue
         fetched += 1
-        location_text = None
-        if facility.location is not None:
-            parts = [
-                facility.location.address,
-                facility.location.zipPostalCode,
-                facility.location.city,
-                facility.location.countryCode,
-            ]
-            location_text = ", ".join(p for p in parts if p) or None
-        existing = session.execute(select(Client).where(Client.name == facility.name)).scalars().first()
+        location_text = _facility_location_text(facility)
+        existing = clients_by_name.get(facility.name)
         if existing is None:
-            session.add(Client(name=facility.name, location=location_text))
+            new_client = Client(name=facility.name, location=location_text)
+            session.add(new_client)
+            clients_by_name[facility.name] = new_client
         elif location_text is not None:
             existing.location = location_text
     session.flush()
@@ -576,62 +745,51 @@ def _sync_facilities(session: Session, client: HuskyClient, outcome: JobOutcome)
     outcome.notes.append(f"facilities->clients: {fetched}")
 
 
-def _sync_fridges(session: Session, client: HuskyClient, outcome: JobOutcome) -> None:
-    result = client.get_fridges()
-    archive_raw("fridge", utcnow().strftime("%Y%m%dT%H%M%SZ"), result.raw)
-    client_by_name = {c.name: c.id for c in session.execute(select(Client)).scalars()}
+def _apply_fridges(session: Session, fridges: list[FridgeItem], outcome: JobOutcome) -> None:
+    client_ids_by_name = {
+        client.name: client.id for client in session.execute(select(Client)).scalars()
+    }
+    rows_by_husky_id: dict[str, dict] = {}
     fetched = 0
-    for fridge in result.data.fridges:
+    for fridge in fridges:
         if not fridge.name:
             continue
         fetched += 1
-        friendly = fridge.friendlyName or fridge.name
-        client_id = client_by_name.get(fridge.facility) if fridge.facility else None
-        stmt = pg_insert(Fridge).values(
-            husky_id=fridge.name,
-            husky_name=fridge.description,
-            friendly_name=friendly,
-            client_id=client_id,
-            is_active=True,  # present in the feed -> Husky-active
-        )
-        # Contract: only Husky-owned + sync-managed columns. local_status and
-        # delivery_* are NEVER written here.
-        update_set = _guarded_update_set(
-            "fridges",
-            {
-                "husky_name": stmt.excluded.husky_name,
-                "friendly_name": stmt.excluded.friendly_name,
-                "client_id": stmt.excluded.client_id,
-                "is_active": stmt.excluded.is_active,
-                "updated_at": func.now(),
-            },
-        )
-        stmt = stmt.on_conflict_do_update(index_elements=["husky_id"], set_=update_set)
-        session.execute(stmt)
-    session.flush()
+        rows_by_husky_id[fridge.name] = {
+            "husky_id": fridge.name,
+            "husky_name": fridge.description,
+            "friendly_name": fridge.friendlyName or fridge.name,
+            "client_id": client_ids_by_name.get(fridge.facility),
+            "is_active": True,  # present in the feed -> Husky-active
+        }
+    copy_upsert(
+        session,
+        target=Fridge.__table__,
+        rows=list(rows_by_husky_id.values()),
+        conflict_columns=["husky_id"],
+        build_update_set=_fridge_update_set,
+    )
     outcome.fetched += fetched
     outcome.upserted += fetched
     outcome.notes.append(f"fridges: {fetched}")
 
 
-def _sync_product_types(session: Session, client: HuskyClient, outcome: JobOutcome) -> None:
-    result = client.get_product_types()
-    archive_raw("producttype", utcnow().strftime("%Y%m%dT%H%M%SZ"), result.raw)
-    _apply_product_types(session, result.data.productTypes, outcome)
-
-
-def _apply_product_types(session: Session, product_types, outcome: JobOutcome) -> None:
+def _apply_product_types(
+    session: Session,
+    product_types: list[ProductTypeItem],
+    outcome: JobOutcome,
+) -> None:
     """Upsert parsed producttype items. Split from the fetch so it is testable
     without a live vendor call.
     """
-    category_cache: dict[str, int] = {}
-    supplier_cache: dict[str, int] = {}
+    category_cache = _load_ids_by_name(session, Category)
+    supplier_cache = _load_ids_by_name(session, Supplier)
     created_categories: set[str] = set()
     created_suppliers = 0
     linked_suppliers = 0
     fetched = 0
     skipped_box = 0
-    seen_codes: list[str] = []
+    rows_by_code: dict[str, dict] = {}
     now = utcnow()
     for item in product_types:
         if not item.productCode:
@@ -643,90 +801,32 @@ def _apply_product_types(session: Session, product_types, outcome: JobOutcome) -
         category_id, created = _get_or_create_category(session, item.productCategory, category_cache)
         if created:
             created_categories.add(item.productCategory or "Uncategorised")
-        # productBrand -> suppliers (SupplierInfoTable replacement). Created on
-        # first sight; a product with no brand keeps its NULL supplier.
         supplier_count_before = len(supplier_cache)
         supplier_id = _get_or_create_supplier(session, item.productBrand, supplier_cache)
         if len(supplier_cache) > supplier_count_before:
             created_suppliers += 1
-        # Vendor int64 minor units (cents) stored RAW (BIGINT column).
-        sales_price = item.price or item.priceExSurcharges or None
-        # BUY price: `reference` is a euro DECIMAL STRING (e.g. "5.95"), NOT
-        # integer cents like `price`. Scale euros -> cents for the BIGINT column.
-        purchase_price = euros_to_minor_units(item.reference)
-        vat_rate = normalize_vat_fraction(item.vat)
-        shelf_life = item.expiryDays if (item.expiryDays and item.expiryDays > 0) else None
-        # Extra Husky fields retained store-only (see migration 0010).
-        description = item.description or None
-        currency_code = item.currencyCode or None
-        price_ex_surcharges = item.priceExSurcharges
-        values = {
+        if supplier_id is not None:
+            linked_suppliers += 1
+        row = {
             "code": item.productCode,
             "name": item.name or item.productCode,
             "category_id": category_id,
             "is_active": True,
             "husky_synced_at": now,
+            **_present_product_values(item, supplier_id),
         }
-        if supplier_id is not None:
-            values["supplier_id"] = supplier_id
-            linked_suppliers += 1
-        if sales_price is not None:
-            values["sales_price"] = sales_price
-        if purchase_price is not None:
-            values["purchase_price"] = purchase_price
-        if vat_rate is not None:
-            values["vat_rate"] = vat_rate
-        if shelf_life is not None:
-            values["shelf_life_days"] = shelf_life
-        if description is not None:
-            values["description"] = description
-        if currency_code is not None:
-            values["currency_code"] = currency_code
-        if price_ex_surcharges is not None:
-            values["price_ex_surcharges"] = price_ex_surcharges
-        stmt = pg_insert(Product).values(**values)
-        # Contract: only Husky-owned + sync-managed columns. local_status is
-        # NEVER written, so a manual override survives every catalogue sync.
-        update_set = {
-            "name": stmt.excluded.name,
-            "category_id": stmt.excluded.category_id,
-            "is_active": True,
-            "husky_synced_at": now,
-            "updated_at": func.now(),
-        }
-        # supplier_id is Husky-owned: link it whenever the feed carries a brand
-        # (do not clear an existing link when the brand is absent this run).
-        if supplier_id is not None:
-            update_set["supplier_id"] = stmt.excluded.supplier_id
-        # Only overwrite prices/shelf life when the feed actually carried them
-        # (do not clobber manually-entered values with defaults/NULLs).
-        if sales_price is not None:
-            update_set["sales_price"] = stmt.excluded.sales_price
-        if purchase_price is not None:
-            update_set["purchase_price"] = stmt.excluded.purchase_price
-        if vat_rate is not None:
-            update_set["vat_rate"] = stmt.excluded.vat_rate
-        if shelf_life is not None:
-            update_set["shelf_life_days"] = stmt.excluded.shelf_life_days
-        if description is not None:
-            update_set["description"] = stmt.excluded.description
-        if currency_code is not None:
-            update_set["currency_code"] = stmt.excluded.currency_code
-        if price_ex_surcharges is not None:
-            update_set["price_ex_surcharges"] = stmt.excluded.price_ex_surcharges
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["code"], set_=_guarded_update_set("products", update_set)
-        )
-        session.execute(stmt)
-        seen_codes.append(item.productCode)
-    session.flush()
+        # A code listed twice: the later item wins column by column, as a second upsert would.
+        rows_by_code.setdefault(item.productCode, {}).update(row)
+
+    _upsert_products(session, list(rows_by_code.values()))
 
     # Products previously synced from Husky but absent now -> deactivate (never
     # delete, never touch local_status). Restricted to husky-sourced rows so
     # manual/seed products survive.
     deactivated = 0
+    seen_codes = list(rows_by_code)
     if seen_codes:
-        res = session.execute(
+        deactivation = session.execute(
             update(Product)
             .where(
                 Product.husky_synced_at.is_not(None),
@@ -735,7 +835,7 @@ def _apply_product_types(session: Session, product_types, outcome: JobOutcome) -
             )
             .values(is_active=False, updated_at=func.now())
         )
-        deactivated = res.rowcount or 0
+        deactivated = deactivation.rowcount
 
     outcome.fetched += fetched
     outcome.upserted += fetched
@@ -753,108 +853,183 @@ def _apply_product_types(session: Session, product_types, outcome: JobOutcome) -
         )
 
 
-def _sync_fridge_product_prices(session: Session, client: HuskyClient, outcome: JobOutcome) -> None:
-    result = client.get_fridge_product_prices()
-    archive_raw("fridgeproductprice", utcnow().strftime("%Y%m%dT%H%M%SZ"), result.raw)
+def _apply_fridge_product_prices(
+    session: Session,
+    fridge_prices: list[ProductFridgeItem],
+    outcome: JobOutcome,
+) -> None:
     fridge_index = load_fridge_index(session)
     product_index = load_product_index(session)
+    rows_by_fridge_product: dict[tuple[int, int], dict] = {}
     upserted = 0
     unresolved = 0
-    for fridge_entry in result.data.fridges:
+    for fridge_entry in fridge_prices:
         fridge_id = resolve_fridge(fridge_index, fridge_entry.name, fridge_entry.friendlyName)
         if fridge_id is None:
             unresolved += 1
             continue
         for price in fridge_entry.prices:
-            product_id = product_index.get(price.productCode) if price.productCode else None
-            sales_price = price.price  # raw cents (BIGINT column)
-            if product_id is None or sales_price is None:
+            product_id = product_index.get(price.productCode)
+            if product_id is None or price.price is None:
                 unresolved += 1
                 continue
-            # Extra Husky fields retained store-only (see migration 0010): price
-            # before surcharges (RAW cents), per-fridge VAT fraction, currency.
-            price_ex_surcharges = price.priceExSurcharges
-            vat_rate = normalize_vat_fraction(price.vat)
-            currency_code = price.currencyCode or None
-            values = {
+            upserted += 1
+            row = {
                 "fridge_id": fridge_id,
                 "product_id": product_id,
-                "sales_price": sales_price,
+                "sales_price": price.price,  # raw cents (BIGINT column)
+                "price_ex_surcharges": price.priceExSurcharges,
+                "vat_rate": normalize_vat_fraction(price.vat),
+                "currency_code": price.currencyCode or None,
             }
-            if price_ex_surcharges is not None:
-                values["price_ex_surcharges"] = price_ex_surcharges
-            if vat_rate is not None:
-                values["vat_rate"] = vat_rate
-            if currency_code is not None:
-                values["currency_code"] = currency_code
-            stmt = pg_insert(FridgeProductPrice).values(**values)
-            update_set = {
-                "sales_price": stmt.excluded.sales_price,
-                "updated_at": func.now(),
-            }
-            # Only overwrite when the feed actually carried the value.
-            if price_ex_surcharges is not None:
-                update_set["price_ex_surcharges"] = stmt.excluded.price_ex_surcharges
-            if vat_rate is not None:
-                update_set["vat_rate"] = stmt.excluded.vat_rate
-            if currency_code is not None:
-                update_set["currency_code"] = stmt.excluded.currency_code
-            stmt = stmt.on_conflict_do_update(
-                index_elements=["fridge_id", "product_id"],
-                set_=_guarded_update_set("fridge_product_prices", update_set),
-            )
-            session.execute(stmt)
-            upserted += 1
-    session.flush()
+            row_key = (fridge_id, product_id)
+            earlier_row = rows_by_fridge_product.get(row_key)
+            if earlier_row is not None:
+                row = _merge_present_values(earlier_row, row)
+            rows_by_fridge_product[row_key] = row
+    copy_upsert(
+        session,
+        target=FridgeProductPrice.__table__,
+        rows=list(rows_by_fridge_product.values()),
+        conflict_columns=["fridge_id", "product_id"],
+        build_update_set=_fridge_price_update_set,
+    )
     outcome.upserted += upserted
     outcome.notes.append(f"fridge_product_prices: upserted={upserted} unresolved={unresolved}")
 
 
-def sync_catalogue(run_id: int | None = None) -> JobOutcome:
-    """Sync the full master catalogue (facilities, fridges, products, prices)."""
-    outcome = JobOutcome()
-    with SyncRunRecorder("catalogue_sync", "catalogue", run_id=run_id) as recorder:
-        session = SessionLocal()
-        try:
-            with HuskyClient() as client:
-                _sync_facilities(session, client, outcome)
-                _sync_fridges(session, client, outcome)
-                _sync_product_types(session, client, outcome)
-                _sync_fridge_product_prices(session, client, outcome)
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
-        recorder.finish(
-            "success" if outcome.fetched else "empty", outcome.fetched, outcome.upserted
-        )
-    for note in outcome.notes:
-        logger.info("%s", note)
-    return outcome
+def _count_price_entries(fridge_prices: list[ProductFridgeItem]) -> int:
+    price_entry_count = 0
+    for fridge_entry in fridge_prices:
+        price_entry_count += len(fridge_entry.prices)
+    return price_entry_count
 
 
-def sync_prices(run_id: int | None = None) -> JobOutcome:
-    """Sync only the per-fridge product prices (``/fridgeproductprice``)."""
-    outcome = JobOutcome()
-    with SyncRunRecorder("catalogue_sync", "fridgeproductprice", run_id=run_id) as recorder:
-        session = SessionLocal()
-        try:
-            with HuskyClient() as client:
-                _sync_fridge_product_prices(session, client, outcome)
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
-        recorder.finish(
-            "success" if outcome.upserted else "empty", outcome.fetched, outcome.upserted
+def _facility_location_text(facility: FacilityItem) -> str | None:
+    if facility.location is None:
+        return None
+    parts = [
+        facility.location.address,
+        facility.location.zipPostalCode,
+        facility.location.city,
+        facility.location.countryCode,
+    ]
+    return ", ".join(part for part in parts if part) or None
+
+
+def _fridge_update_set(upsert: Insert) -> dict:
+    """Fridge columns a catalogue sync refreshes.
+
+    Only Husky-owned and sync-managed columns: local_status and delivery_* are
+    never written. ``client_id`` is COALESCE(stored, feed) on purpose (tracker
+    item A4): a client assigned by hand survives every Husky refresh, and the
+    facility's client only fills a fridge that has none yet.
+    """
+    return _guarded_update_set(
+        "fridges",
+        {
+            "husky_name": upsert.excluded.husky_name,
+            "friendly_name": upsert.excluded.friendly_name,
+            "client_id": func.coalesce(Fridge.client_id, upsert.excluded.client_id),
+            "is_active": upsert.excluded.is_active,
+            "updated_at": func.now(),
+        },
+    )
+
+
+def _load_ids_by_name(
+    session: Session,
+    model: type[Category] | type[Supplier],
+) -> dict[str, int]:
+    """Map each stored name, stripped like the get-or-create lookups strip it, to its id."""
+    named_rows = session.execute(select(model.name, model.id))
+    return {name.strip(): row_id for name, row_id in named_rows}
+
+
+def _present_product_values(item: ProductTypeItem, supplier_id: int | None) -> dict:
+    """The optional product columns this item carries; absent ones keep the stored value."""
+    shelf_life = item.expiryDays if (item.expiryDays and item.expiryDays > 0) else None
+    optional_values = {
+        "supplier_id": supplier_id,
+        # Vendor int64 minor units (cents) stored RAW (BIGINT column). A price of 0
+        # means "not priced": fall back to priceExSurcharges, else keep the stored price.
+        "sales_price": item.price or item.priceExSurcharges or None,
+        # BUY price: `reference` is a euro DECIMAL STRING (e.g. "5.95"), NOT
+        # integer cents like `price`. Scale euros -> cents for the BIGINT column.
+        "purchase_price": euros_to_minor_units(item.reference),
+        "vat_rate": normalize_vat_fraction(item.vat),
+        "shelf_life_days": shelf_life,
+        "description": item.description or None,
+        "currency_code": item.currencyCode or None,
+        "price_ex_surcharges": item.priceExSurcharges,
+    }
+    return {name: value for name, value in optional_values.items() if value is not None}
+
+
+def _upsert_products(session: Session, rows: list[dict]) -> None:
+    """Upsert products, one statement per set of columns the feed carried.
+
+    A column the feed left out stays out of the INSERT (the server default
+    applies to a new product) and out of the UPDATE (an existing product keeps
+    its value), so a manually-entered price is never clobbered by a default.
+    """
+    rows_by_column_set: dict[frozenset[str], list[dict]] = defaultdict(list)
+    for row in rows:
+        rows_by_column_set[frozenset(row)].append(row)
+    for column_set, rows_with_same_columns in rows_by_column_set.items():
+        copy_upsert(
+            session,
+            target=Product.__table__,
+            rows=rows_with_same_columns,
+            conflict_columns=["code"],
+            build_update_set=partial(_product_update_set, present_columns=column_set),
         )
-    for note in outcome.notes:
-        logger.info("%s", note)
-    return outcome
+
+
+def _product_update_set(upsert: Insert, present_columns: frozenset[str]) -> dict:
+    # Contract: only Husky-owned + sync-managed columns. local_status is
+    # NEVER written, so a manual override survives every catalogue sync.
+    update_set = {
+        "name": upsert.excluded.name,
+        "category_id": upsert.excluded.category_id,
+        "is_active": True,
+        "husky_synced_at": upsert.excluded.husky_synced_at,
+        "updated_at": func.now(),
+    }
+    for column_name in PRODUCT_COLUMNS_WRITTEN_WHEN_PRESENT:
+        if column_name in present_columns:
+            update_set[column_name] = upsert.excluded[column_name]
+    return _guarded_update_set("products", update_set)
+
+
+def _fridge_price_update_set(upsert: Insert) -> dict:
+    excluded = upsert.excluded
+    # Only overwrite a stored extra when this run's feed carried a value for it.
+    return _guarded_update_set(
+        "fridge_product_prices",
+        {
+            "sales_price": excluded.sales_price,
+            "price_ex_surcharges": func.coalesce(
+                excluded.price_ex_surcharges,
+                FridgeProductPrice.price_ex_surcharges,
+            ),
+            "vat_rate": func.coalesce(excluded.vat_rate, FridgeProductPrice.vat_rate),
+            "currency_code": func.coalesce(
+                excluded.currency_code,
+                FridgeProductPrice.currency_code,
+            ),
+            "updated_at": func.now(),
+        },
+    )
+
+
+def _merge_present_values(earlier_row: dict, later_row: dict) -> dict:
+    """Later values win, but a value the later row lacks (None) keeps the earlier one."""
+    merged_row = dict(earlier_row)
+    for column_name, value in later_row.items():
+        if value is not None:
+            merged_row[column_name] = value
+    return merged_row
 
 
 def backfill_supplier_links_from_archive() -> JobOutcome:
@@ -967,27 +1142,25 @@ def _build_purchase_rows(
 
 
 def _upsert_sales_events(session: Session, rows: list[dict]) -> int:
-    if not rows:
-        return 0
-    upserted = 0
-    for start in range(0, len(rows), 1000):
-        chunk = rows[start : start + 1000]
-        stmt = pg_insert(SalesEvent).values(chunk)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["husky_ref", "sold_at"],
-            set_={
-                "fridge_id": stmt.excluded.fridge_id,
-                "product_id": stmt.excluded.product_id,
-                "unit_price": stmt.excluded.unit_price,
-                "is_refunded": stmt.excluded.is_refunded,
-                "discount_amount": stmt.excluded.discount_amount,
-                "discount_provider": stmt.excluded.discount_provider,
-                "synced_at": utcnow(),
-            },
-        )
-        session.execute(stmt)
-        upserted += len(chunk)
-    return upserted
+    return copy_upsert(
+        session,
+        target=SalesEvent.__table__,
+        rows=rows,
+        conflict_columns=["husky_ref", "sold_at"],
+        build_update_set=_sales_event_update_set,
+    )
+
+
+def _sales_event_update_set(upsert: Insert) -> dict:
+    return {
+        "fridge_id": upsert.excluded.fridge_id,
+        "product_id": upsert.excluded.product_id,
+        "unit_price": upsert.excluded.unit_price,
+        "is_refunded": upsert.excluded.is_refunded,
+        "discount_amount": upsert.excluded.discount_amount,
+        "discount_provider": upsert.excluded.discount_provider,
+        "synced_at": utcnow(),
+    }
 
 
 def sync_purchases_window(
@@ -1000,11 +1173,10 @@ def sync_purchases_window(
     window_from = window_from or (window_to - TRAILING_EVENT_WINDOW)
     outcome = JobOutcome()
     with SyncRunRecorder("sync_purchases", "purchases", window_from, window_to, run_id=run_id) as recorder:
-        session = SessionLocal()
-        try:
-            with HuskyClient() as client:
-                fetch = client.get_purchases(window_from, window_to)
-            blob = archive_raw("purchases", _window_label(window_from, window_to), fetch.raw)
+        with HuskyClient() as client:
+            fetch = client.get_purchases(window_from, window_to)
+        blob = archive_raw("purchases", _window_label(window_from, window_to), fetch.raw)
+        with write_transaction("sync_purchases") as session:
             fridge_index = load_fridge_index(session)
             products = ProductResolver(session)
             rows_map = _build_purchase_rows(fetch.data.fridges, fridge_index, products, outcome)
@@ -1013,13 +1185,7 @@ def sync_purchases_window(
             rows = list(rows_map.values())
             outcome.fetched = len(rows) + outcome.skipped
             outcome.upserted = _upsert_sales_events(session, rows)
-            outcome.blob_path = str(blob)
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
+        outcome.blob_path = str(blob)
         recorder.finish(
             "success" if outcome.upserted else "empty",
             outcome.fetched, outcome.upserted, outcome.blob_path,
@@ -1079,25 +1245,23 @@ def _build_restock_rows(
 
 
 def _upsert_restock_events(session: Session, rows: list[dict]) -> int:
-    if not rows:
-        return 0
-    upserted = 0
-    for start in range(0, len(rows), 1000):
-        chunk = rows[start : start + 1000]
-        stmt = pg_insert(RestockEvent).values(chunk)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["husky_ref", "occurred_at"],
-            set_={
-                "fridge_id": stmt.excluded.fridge_id,
-                "product_id": stmt.excluded.product_id,
-                "action": stmt.excluded.action,
-                "tag_status": stmt.excluded.tag_status,
-                "synced_at": utcnow(),
-            },
-        )
-        session.execute(stmt)
-        upserted += len(chunk)
-    return upserted
+    return copy_upsert(
+        session,
+        target=RestockEvent.__table__,
+        rows=rows,
+        conflict_columns=["husky_ref", "occurred_at"],
+        build_update_set=_restock_event_update_set,
+    )
+
+
+def _restock_event_update_set(upsert: Insert) -> dict:
+    return {
+        "fridge_id": upsert.excluded.fridge_id,
+        "product_id": upsert.excluded.product_id,
+        "action": upsert.excluded.action,
+        "tag_status": upsert.excluded.tag_status,
+        "synced_at": utcnow(),
+    }
 
 
 def sync_restock_window(
@@ -1110,11 +1274,10 @@ def sync_restock_window(
     window_from = window_from or (window_to - TRAILING_EVENT_WINDOW)
     outcome = JobOutcome()
     with SyncRunRecorder("sync_restock", "restock", window_from, window_to, run_id=run_id) as recorder:
-        session = SessionLocal()
-        try:
-            with HuskyClient() as client:
-                fetch = client.get_restock(window_from, window_to)
-            blob = archive_raw("restock", _window_label(window_from, window_to), fetch.raw)
+        with HuskyClient() as client:
+            fetch = client.get_restock(window_from, window_to)
+        blob = archive_raw("restock", _window_label(window_from, window_to), fetch.raw)
+        with write_transaction("sync_restock") as session:
             fridge_index = load_fridge_index(session)
             products = ProductResolver(session)
             rows_map = _build_restock_rows(fetch.data.sessions, fridge_index, products, outcome)
@@ -1123,13 +1286,7 @@ def sync_restock_window(
             rows = list(rows_map.values())
             outcome.fetched = len(rows) + outcome.skipped
             outcome.upserted = _upsert_restock_events(session, rows)
-            outcome.blob_path = str(blob)
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
+        outcome.blob_path = str(blob)
         recorder.finish(
             "success" if outcome.upserted else "empty",
             outcome.fetched, outcome.upserted, outcome.blob_path,
@@ -1156,34 +1313,86 @@ def _synth_review_ref(
     return f"{product_code}|{fridge_name or ''}|{reviewed_at.isoformat()}|{rating}|{purchase_id or ''}"
 
 
-def _upsert_reviews(session: Session, rows: list[dict]) -> int:
-    if not rows:
-        return 0
-    upserted = 0
-    for start in range(0, len(rows), 1000):
-        chunk = rows[start : start + 1000]
-        stmt = pg_insert(ProductReview).values(chunk)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["husky_ref"],
-            set_={
-                "product_id": stmt.excluded.product_id,
-                "fridge_id": stmt.excluded.fridge_id,
-                "rating": stmt.excluded.rating,
-                "reviewed_at": stmt.excluded.reviewed_at,
-                "review_text": stmt.excluded.review_text,
-                "reviewer_email": stmt.excluded.reviewer_email,
-                "purchase_id": stmt.excluded.purchase_id,
-                "purchased_at": stmt.excluded.purchased_at,
-                "review_category": stmt.excluded.review_category,
-                "tag_id": stmt.excluded.tag_id,
-                "epc": stmt.excluded.epc,
-                "product_reference": stmt.excluded.product_reference,
-                "synced_at": utcnow(),
-            },
+def _build_review_rows(
+    reviews: list[ProductReviewItem],
+    fridge_index: dict[str, int],
+    products: ProductResolver,
+    outcome: JobOutcome,
+) -> dict[str, dict]:
+    rows: dict[str, dict] = {}
+    for review in reviews:
+        product = review.product
+        product_code = effective_product_code(
+            product.productCode if product else None,
+            product.tagId if product else None,
+            product.epc if product else None,
         )
-        session.execute(stmt)
-        upserted += len(chunk)
-    return upserted
+        product_id = products.resolve(
+            product_code,
+            name=product.name if product else None,
+        )
+        reviewed_at = review.reviewDate
+        if product_id is None or reviewed_at is None or review.rating is None:
+            outcome.skipped += 1
+            continue
+        fridge_name = review.fridge.name if review.fridge else None
+        fridge_id = resolve_fridge(
+            fridge_index,
+            fridge_name,
+            review.fridge.friendlyName if review.fridge else None,
+        )
+        ref = _synth_review_ref(
+            product_code,
+            fridge_name,
+            reviewed_at,
+            review.rating,
+            review.purchaseId,
+        )
+        rows[ref] = {
+            "husky_ref": ref,
+            "product_id": product_id,
+            "fridge_id": fridge_id,
+            "rating": review.rating,
+            "reviewed_at": reviewed_at,
+            # Extra Husky fields retained store-only (see migration 0010).
+            "review_text": review.review or None,
+            "reviewer_email": review.userEmailAddress or None,
+            "purchase_id": review.purchaseId or None,
+            "purchased_at": review.purchaseDate,
+            "review_category": review.category or None,
+            "tag_id": product.tagId if product else None,
+            "epc": product.epc if product else None,
+            "product_reference": product.reference if product else None,
+        }
+    return rows
+
+
+def _upsert_reviews(session: Session, rows: list[dict]) -> int:
+    return copy_upsert(
+        session,
+        target=ProductReview.__table__,
+        rows=rows,
+        conflict_columns=["husky_ref"],
+        build_update_set=_review_update_set,
+    )
+
+
+def _review_update_set(upsert: Insert) -> dict:
+    return {
+        "product_id": upsert.excluded.product_id,
+        "fridge_id": upsert.excluded.fridge_id,
+        "rating": upsert.excluded.rating,
+        "reviewed_at": upsert.excluded.reviewed_at,
+        "review_text": upsert.excluded.review_text,
+        "reviewer_email": upsert.excluded.reviewer_email,
+        "purchase_id": upsert.excluded.purchase_id,
+        "purchased_at": upsert.excluded.purchased_at,
+        "review_category": upsert.excluded.review_category,
+        "tag_id": upsert.excluded.tag_id,
+        "epc": upsert.excluded.epc,
+        "product_reference": upsert.excluded.product_reference,
+        "synced_at": utcnow(),
+    }
 
 
 def sync_reviews_window(
@@ -1196,64 +1405,24 @@ def sync_reviews_window(
     window_from = window_from or (window_to - REVIEW_WINDOW)
     outcome = JobOutcome()
     with SyncRunRecorder("reviews_sync", "productreview", window_from, window_to, run_id=run_id) as recorder:
-        session = SessionLocal()
-        try:
-            with HuskyClient() as client:
-                fetch = client.get_product_reviews(window_from, window_to)
-            blob = archive_raw("productreview", _window_label(window_from, window_to), fetch.raw)
+        with HuskyClient() as client:
+            fetch = client.get_product_reviews(window_from, window_to)
+        blob = archive_raw("productreview", _window_label(window_from, window_to), fetch.raw)
+        with write_transaction("reviews_sync") as session:
             fridge_index = load_fridge_index(session)
             products = ProductResolver(session)
-            rows: dict[str, dict] = {}
-            for review in fetch.data.productReviews:
-                product_code = effective_product_code(
-                    review.product.productCode if review.product else None,
-                    review.product.tagId if review.product else None,
-                    review.product.epc if review.product else None,
-                )
-                product_id = products.resolve(
-                    product_code,
-                    name=review.product.name if review.product else None,
-                )
-                reviewed_at = review.reviewDate
-                if product_id is None or reviewed_at is None or review.rating is None:
-                    outcome.skipped += 1
-                    continue
-                fridge_name = review.fridge.name if review.fridge else None
-                fridge_id = resolve_fridge(
-                    fridge_index,
-                    fridge_name,
-                    review.fridge.friendlyName if review.fridge else None,
-                )
-                ref = _synth_review_ref(product_code, fridge_name, reviewed_at, review.rating, review.purchaseId)
-                product = review.product
-                rows[ref] = {
-                    "husky_ref": ref,
-                    "product_id": product_id,
-                    "fridge_id": fridge_id,
-                    "rating": review.rating,
-                    "reviewed_at": reviewed_at,
-                    # Extra Husky fields retained store-only (see migration 0010).
-                    "review_text": review.review or None,
-                    "reviewer_email": review.userEmailAddress or None,
-                    "purchase_id": review.purchaseId or None,
-                    "purchased_at": review.purchaseDate,
-                    "review_category": review.category or None,
-                    "tag_id": product.tagId if product else None,
-                    "epc": product.epc if product else None,
-                    "product_reference": product.reference if product else None,
-                }
+            rows_map = _build_review_rows(
+                fetch.data.productReviews,
+                fridge_index,
+                products,
+                outcome,
+            )
             if products.stubs_created:
                 outcome.notes.append(f"stub_products_created={products.stubs_created}")
-            row_list = list(rows.values())
-            outcome.fetched = len(row_list) + outcome.skipped
-            outcome.upserted = _upsert_reviews(session, row_list)
-            outcome.blob_path = str(blob)
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
+            rows = list(rows_map.values())
+            outcome.fetched = len(rows) + outcome.skipped
+            outcome.upserted = _upsert_reviews(session, rows)
+        outcome.blob_path = str(blob)
         recorder.finish(
             "success" if outcome.upserted else "empty",
             outcome.fetched, outcome.upserted, outcome.blob_path,
@@ -1282,25 +1451,73 @@ def sync_reviews_window(
 # half-swept table.
 
 
+@dataclass
+class StockSnapshotRows:
+    """The fridge_stock rows of one payload and every known fridge it reported on."""
+
+    rows: dict[tuple[int, str], dict] = field(default_factory=dict)
+    # Includes fridges reported with no products: all their old rows must be swept.
+    reported_fridge_ids: set[int] = field(default_factory=set)
+
+
+def _build_stock_rows(
+    stock_entries: list[CurrentStock],
+    fridge_index: dict[str, int],
+    product_index: dict[str, int],
+    taken_at: datetime.datetime,
+    outcome: JobOutcome,
+) -> StockSnapshotRows:
+    snapshot = StockSnapshotRows()
+    for entry in stock_entries:
+        fridge = entry.fridge
+        fridge_id = None
+        if fridge is not None:
+            fridge_id = resolve_fridge(fridge_index, fridge.name, fridge.friendlyName)
+        if fridge_id is None:
+            outcome.skipped += 1
+            continue
+        snapshot.reported_fridge_ids.add(fridge_id)
+        for product in entry.products:
+            if not product.productCode:
+                outcome.skipped += 1
+                continue
+            snapshot.rows[(fridge_id, product.productCode)] = {
+                "taken_at": taken_at,
+                "fridge_id": fridge_id,
+                "product_id": product_index.get(product.productCode),
+                "product_code": product.productCode,
+                "units": len(product.current),
+                # Per-tag expiry dates (Husky sets them from the product
+                # shelf life at restock); tags without one are omitted, so
+                # `units` stays the authoritative count. Feeds the forecast
+                # residual-stock deduction + the withdrawal list. getattr
+                # keeps it safe if a tag is a bare id rather than a StockTag.
+                "expiry_dates": [
+                    expiry
+                    for tag in product.current
+                    if (expiry := getattr(tag, "expiryDate", None)) is not None
+                ],
+            }
+    return snapshot
+
+
 def _upsert_fridge_stock(session: Session, rows: list[dict]) -> int:
-    if not rows:
-        return 0
-    upserted = 0
-    for start in range(0, len(rows), 1000):
-        chunk = rows[start : start + 1000]
-        stmt = pg_insert(FridgeStock).values(chunk)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["fridge_id", "product_code"],
-            set_={
-                "product_id": stmt.excluded.product_id,
-                "units": stmt.excluded.units,
-                "expiry_dates": stmt.excluded.expiry_dates,
-                "taken_at": stmt.excluded.taken_at,
-            },
-        )
-        session.execute(stmt)
-        upserted += len(chunk)
-    return upserted
+    return copy_upsert(
+        session,
+        target=FridgeStock.__table__,
+        rows=rows,
+        conflict_columns=["fridge_id", "product_code"],
+        build_update_set=_fridge_stock_update_set,
+    )
+
+
+def _fridge_stock_update_set(upsert: Insert) -> dict:
+    return {
+        "product_id": upsert.excluded.product_id,
+        "units": upsert.excluded.units,
+        "expiry_dates": upsert.excluded.expiry_dates,
+        "taken_at": upsert.excluded.taken_at,
+    }
 
 
 def _sweep_fridge_stock(
@@ -1330,58 +1547,33 @@ def snapshot_stock(
     taken_at = taken_at or utcnow()
     outcome = JobOutcome()
     with SyncRunRecorder("snapshot_stock", "stock_current", taken_at, taken_at, run_id=run_id) as recorder:
-        session = SessionLocal()
-        try:
-            with HuskyClient() as client:
-                fetch = client.get_stock_current()
-            blob = archive_raw("stock_current", taken_at.strftime("%Y%m%dT%H%M%SZ"), fetch.raw)
+        with HuskyClient() as client:
+            fetch = client.get_stock_current()
+        blob = archive_raw("stock_current", taken_at.strftime(ARCHIVE_STAMP_FORMAT), fetch.raw)
+        with write_transaction("snapshot_stock") as session:
             fridge_index = load_fridge_index(session)
             product_index = load_product_index(session)
-            rows: dict[tuple[int, str], dict] = {}
-            for entry in fetch.data.current:
-                fridge = entry.fridge
-                fridge_id = None
-                if fridge is not None:
-                    fridge_id = resolve_fridge(fridge_index, fridge.name, fridge.friendlyName)
-                if fridge_id is None:
-                    outcome.skipped += 1
-                    continue
-                for product in entry.products:
-                    if not product.productCode:
-                        outcome.skipped += 1
-                        continue
-                    rows[(fridge_id, product.productCode)] = {
-                        "taken_at": taken_at,
-                        "fridge_id": fridge_id,
-                        "product_id": product_index.get(product.productCode),
-                        "product_code": product.productCode,
-                        "units": len(product.current),
-                        # Per-tag expiry dates (Husky sets them from the product
-                        # shelf life at restock); tags without one are omitted, so
-                        # `units` stays the authoritative count. Feeds the forecast
-                        # residual-stock deduction + the withdrawal list. getattr
-                        # keeps it safe if a tag is a bare id rather than a StockTag.
-                        "expiry_dates": [
-                            expiry
-                            for tag in product.current
-                            if (expiry := getattr(tag, "expiryDate", None)) is not None
-                        ],
-                    }
-            row_list = list(rows.values())
+            snapshot = _build_stock_rows(
+                fetch.data.current,
+                fridge_index,
+                product_index,
+                taken_at,
+                outcome,
+            )
+            row_list = list(snapshot.rows.values())
             outcome.fetched = len(row_list) + outcome.skipped
             outcome.upserted = _upsert_fridge_stock(session, row_list)
-            # The sweep only ever touches the fridges THIS payload reported on.
-            reported_fridge_ids = {row["fridge_id"] for row in row_list}
-            # GUARD (belt and braces, same defensive shape as the
-            # _apply_product_types sweep): an empty or fully-skipped payload means
-            # a vendor problem, NOT "every fridge is empty". The scoped sweep
-            # already deletes nothing in that case; say so explicitly.
+            # The sweep only ever touches the fridges THIS payload reported on,
+            # including a reported fridge that is now empty.
+            reported_fridge_ids = snapshot.reported_fridge_ids
+            # A payload with no known fridge means a vendor problem, NOT "every
+            # fridge is empty": nothing is swept.
             if reported_fridge_ids:
                 swept = _sweep_fridge_stock(session, taken_at, reported_fridge_ids)
             else:
                 swept = 0
                 logger.warning(
-                    "stock snapshot @%s produced ZERO rows (skipped=%s) - sweep "
+                    "stock snapshot @%s reported no known fridge (skipped=%s) - sweep "
                     "skipped, fridge_stock left untouched",
                     taken_at, outcome.skipped,
                 )
@@ -1389,13 +1581,7 @@ def snapshot_stock(
                 f"fridge_stock: upserted={outcome.upserted} swept={swept} "
                 f"fridges_reported={len(reported_fridge_ids)}"
             )
-            outcome.blob_path = str(blob)
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
+        outcome.blob_path = str(blob)
         recorder.finish(
             "success" if outcome.upserted else "empty",
             outcome.fetched, outcome.upserted, outcome.blob_path,
@@ -1438,3 +1624,67 @@ def sync_all(run_id: int | None = None) -> JobOutcome:
             aggregate.fetched, aggregate.upserted,
         )
     return aggregate
+
+
+def _copy_rows_into(
+    session: Session,
+    staging_name: str,
+    column_names: list[str],
+    rows: list[dict],
+) -> None:
+    """Stream ``rows`` into the staging table with COPY on the session's own connection."""
+    csv_buffer = io.StringIO()
+    # QUOTE_NOTNULL leaves None as an unquoted empty field, which COPY csv reads as
+    # NULL, and quotes every other value, so an empty string stays an empty string.
+    writer = csv.writer(csv_buffer, quoting=csv.QUOTE_NOTNULL, lineterminator="\n")
+    for row in rows:
+        writer.writerow([_copy_text(row[column_name]) for column_name in column_names])
+    csv_buffer.seek(0)
+    quoted_staging = _quoted_identifier(staging_name)
+    quoted_columns = _quoted_column_list(column_names)
+    copy_sql = f"COPY {quoted_staging} ({quoted_columns}) FROM STDIN WITH (FORMAT csv)"
+    driver_connection = session.connection().connection.driver_connection
+    with driver_connection.cursor() as cursor:
+        cursor.copy_expert(copy_sql, csv_buffer)
+
+
+def _copy_text(value: object) -> str | None:
+    """Render one value as the text Postgres parses for its column type."""
+    if value is None:
+        return None
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+    if isinstance(value, list):
+        return _postgres_array_literal(value)
+    return str(value)
+
+
+def _postgres_array_literal(values: list) -> str:
+    element_texts = []
+    for value in values:
+        if value is None:
+            element_texts.append(ARRAY_NULL_ELEMENT)
+            continue
+        escaped = _copy_text(value).replace("\\", "\\\\").replace('"', '\\"')
+        element_texts.append(f'"{escaped}"')
+    return "{" + ",".join(element_texts) + "}"
+
+
+def _require_same_columns(rows: list[dict], column_names: list[str]) -> None:
+    expected_columns = set(column_names)
+    for row_number, row in enumerate(rows):
+        if set(row) != expected_columns:
+            raise ValueError(
+                f"copy_upsert row {row_number} has columns {sorted(row)}, "
+                f"expected {sorted(expected_columns)}"
+            )
+
+
+def _quoted_identifier(name: str) -> str:
+    escaped_name = name.replace('"', '""')
+    return f'"{escaped_name}"'
+
+
+def _quoted_column_list(column_names: list[str]) -> str:
+    quoted_names = [_quoted_identifier(name) for name in column_names]
+    return ", ".join(quoted_names)

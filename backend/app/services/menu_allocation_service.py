@@ -43,11 +43,11 @@ from app.models.master import (
 from app.models.planning import (
     ForecastResult,
     MenuProduct,
-    ProductScore,
     WeeklyMenu,
 )
 from app.models.sync import FridgeStock
 from app.schemas.masters import api_error
+from app.services import scoring_service
 
 logger = logging.getLogger("services.menu_allocation")
 
@@ -239,17 +239,7 @@ def compute_allocation(
     }
 
     # Latest score per menu product.
-    latest_period = session.execute(
-        select(ProductScore.period_end).order_by(ProductScore.period_end.desc()).limit(1)
-    ).scalar()
-    scores: dict[int, Decimal] = {}
-    if latest_period is not None:
-        for product_id, final_score in session.execute(
-            select(ProductScore.product_id, ProductScore.final_score).where(
-                ProductScore.period_end == latest_period
-            )
-        ).all():
-            scores[product_id] = final_score
+    scores = scoring_service.load_latest_final_scores(session)
 
     fridge_ids = sorted({result.fridge_id for result in results})
     caps = {

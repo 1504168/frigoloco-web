@@ -36,7 +36,10 @@ export function Dialog({
   React.useEffect(() => {
     if (!open) return
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
+      if (event.key !== 'Escape') return
+      // A dialog opened inside this one (confirm, unsaved changes) owns Escape while it is up.
+      const hasNestedDialog = panelRef.current?.querySelector('[role="dialog"]') != null
+      if (!hasNestedDialog) onClose()
     }
     document.addEventListener('keydown', onKeyDown)
     const previousOverflow = document.body.style.overflow

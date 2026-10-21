@@ -24,6 +24,7 @@ from app.models.enums import (
     AlertType,
     DispatchStatus,
     RestockAction,
+    StockMovementType,
     TagStatus,
 )
 from app.models.events import RestockEvent, SalesEvent
@@ -35,11 +36,16 @@ from app.models.master import (
     Product,
     Supplier,
 )
-from app.models.operations import Alert, Dispatch, DispatchLine, StockMovement
+from app.models.operations import (
+    Alert,
+    AuditLog,
+    Dispatch,
+    DispatchLine,
+    StockMovement,
+)
 from app.money import cents_to_euro_str
-from app.schemas.orders import PoLineCreate
-from app.services.orders_service import compute_po_totals
-from tests import ensure_dispatches_week_start
+from app.services.orders_service import PricedPoLine, compute_po_totals
+from tests import TEST_ADMIN_USER, ensure_dispatches_week_start, ensure_test_admin_user
 
 UTC = datetime.timezone.utc
 
@@ -58,9 +64,9 @@ SYNTHETIC_DAY = datetime.date(2027, 1, 6)
 def test_po_totals_parity_order_2026_00360() -> None:
     """Order 2026-00360 shape: 3 lines at 6% VAT → 239.36 / 14.36 / 253.72."""
     lines = [
-        PoLineCreate(product_id=1, qty=4, unit_price=Decimal("25.00"), vat_rate=Decimal("0.06")),
-        PoLineCreate(product_id=2, qty=16, unit_price=Decimal("4.96"), vat_rate=Decimal("0.06")),
-        PoLineCreate(product_id=3, qty=10, unit_price=Decimal("6.00"), vat_rate=Decimal("0.06")),
+        PricedPoLine(product_id=1, qty=4, unit_price_cents=2500, vat_rate=Decimal("0.06")),
+        PricedPoLine(product_id=2, qty=16, unit_price_cents=496, vat_rate=Decimal("0.06")),
+        PricedPoLine(product_id=3, qty=10, unit_price_cents=600, vat_rate=Decimal("0.06")),
     ]
     totals = compute_po_totals(lines)
     # Totals are integer cents; the API-level euro strings must still be the
@@ -83,6 +89,7 @@ def db_session():
     connection = engine.connect()
     outer = connection.begin()
     ensure_dispatches_week_start(connection)
+    ensure_test_admin_user(connection)
     session = Session(
         bind=connection,
         join_transaction_mode="create_savepoint",
@@ -159,14 +166,7 @@ def _po_payload(seed: Seed, qty: int = 5) -> dict:
         "expected_delivery_date": (today + datetime.timedelta(days=7)).isoformat(),
         "delivery_address": "ZZTEST-address",
         "comment": "ZZTEST",
-        "lines": [
-            {
-                "product_id": seed.product_id,
-                "qty": qty,
-                "unit_price": "4.00",
-                "vat_rate": "0.06",
-            }
-        ],
+        "lines": [{"product_id": seed.product_id, "qty": qty}],
     }
 
 
@@ -278,6 +278,88 @@ def test_cancel_received_po_reverses_stock(client, seed, db_session) -> None:
     assert len(body["reversal_movements"]) == 1
     assert body["reversal_movements"][0]["qty"] == -5
     assert _stock_balance(db_session, seed.product_id) == 0
+
+
+def test_create_po_ignores_client_price_and_vat(client, seed) -> None:
+    """Unit price and VAT are copied from the catalogue (EUR 4.00, 6%), never the client."""
+    payload = _po_payload(seed, qty=5)
+    payload["lines"][0]["unit_price"] = "99.99"
+    payload["lines"][0]["vat_rate"] = "0.21"
+    resp = client.post("/api/v1/purchase-orders", json=payload)
+    assert resp.status_code == 201, resp.text
+    line = resp.json()["lines"][0]
+    assert line["unit_price"] == "4.00"
+    assert Decimal(line["vat_rate"]) == Decimal("0.06")
+    assert resp.json()["total_incl_vat"] == "21.20"
+
+
+def test_create_po_rejects_product_of_other_supplier(client, seed, db_session) -> None:
+    other_supplier = Supplier(name="ZZTEST-other-supplier")
+    db_session.add(other_supplier)
+    db_session.flush()
+    payload = _po_payload(seed)
+    payload["supplier_id"] = other_supplier.id
+    resp = client.post("/api/v1/purchase-orders", json=payload)
+    assert resp.status_code == 422
+    assert "not supplied by this supplier" in resp.json()["error"]["message"]
+
+
+def test_cancel_partly_received_po_reverses_stock(client, seed, db_session) -> None:
+    po = client.post("/api/v1/purchase-orders", json=_po_payload(seed, qty=10)).json()
+    line_id = po["lines"][0]["id"]
+    received = client.post(
+        f"/api/v1/purchase-orders/{po['id']}/receive",
+        json={"received": [{"po_line_id": line_id, "qty_received": 4}]},
+    )
+    assert received.json()["order"]["status"] == "pending"
+    assert _stock_balance(db_session, seed.product_id) == 4
+
+    resp = client.post(f"/api/v1/purchase-orders/{po['id']}/cancel")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["previous_status"] == "pending"
+    assert [movement["qty"] for movement in body["reversal_movements"]] == [-4]
+    assert _stock_balance(db_session, seed.product_id) == 0
+
+
+def test_cancel_partly_received_po_blocked_when_stock_used(client, seed, db_session) -> None:
+    po = client.post("/api/v1/purchase-orders", json=_po_payload(seed, qty=10)).json()
+    line_id = po["lines"][0]["id"]
+    client.post(
+        f"/api/v1/purchase-orders/{po['id']}/receive",
+        json={"received": [{"po_line_id": line_id, "qty_received": 4}]},
+    )
+    db_session.add(
+        StockMovement(
+            product_id=seed.product_id,
+            qty=-3,
+            movement_type=StockMovementType.adjustment,
+            reason="ZZTEST stock used",
+        )
+    )
+    db_session.commit()
+
+    resp = client.post(f"/api/v1/purchase-orders/{po['id']}/cancel")
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "cancel_blocked"
+
+
+def test_list_purchase_orders_search_by_order_no_and_supplier(client, seed) -> None:
+    po = client.post("/api/v1/purchase-orders", json=_po_payload(seed)).json()
+
+    by_supplier = client.get(
+        "/api/v1/purchase-orders",
+        params={"search": "zztest-SUPPLIER"},
+    ).json()
+    assert [item["id"] for item in by_supplier["items"]] == [po["id"]]
+    assert by_supplier["total"] == 1
+
+    by_order_no = client.get(
+        "/api/v1/purchase-orders",
+        params={"search": po["order_no"]},
+    ).json()
+    assert by_order_no["total"] == 1
+    assert by_order_no["items"][0]["id"] == po["id"]
 
 
 def _stock_balance(session: Session, product_id: int) -> int:
@@ -473,6 +555,30 @@ def test_alerts_list_and_ack(client, seed, db_session) -> None:
     assert ack.status_code == 200
     assert ack.json()["status"] == "acknowledged"
     assert ack.json()["acknowledged_at"] is not None
+    assert ack.json()["acknowledged_by"] == TEST_ADMIN_USER.id
+
+
+def test_alert_second_ack_is_a_no_op(client, db_session) -> None:
+    alert = Alert(
+        alert_type=AlertType.below_target,
+        payload={"note": "ZZTEST"},
+        status="open",
+    )
+    db_session.add(alert)
+    db_session.flush()
+    alert_id = alert.id
+    alert_audit_rows = (
+        select(func.count())
+        .select_from(AuditLog)
+        .where(AuditLog.entity == "alert", AuditLog.entity_id == str(alert_id))
+    )
+
+    first_ack = client.put(f"/api/v1/alerts/{alert_id}/ack")
+    second_ack = client.put(f"/api/v1/alerts/{alert_id}/ack")
+
+    assert second_ack.status_code == 200
+    assert second_ack.json() == first_ack.json()
+    assert db_session.execute(alert_audit_rows).scalar_one() == 1
 
 
 def test_settings_put_roundtrip(client) -> None:

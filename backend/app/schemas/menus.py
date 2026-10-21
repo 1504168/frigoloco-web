@@ -115,6 +115,12 @@ class MenuGridOut(ApiModel):
     cells: list[MenuGridCellOut]
 
 
+class MenuStockBalanceOut(ApiModel):
+    product_id: int
+    in_stock_qty: int
+    on_order_qty: int
+
+
 class MenuDraftLineOut(ApiModel):
     product_id: int
     code: str

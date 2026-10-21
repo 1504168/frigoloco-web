@@ -21,12 +21,12 @@ from typing import Any, Callable, get_type_hints
 from fastapi import Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
-from app.money import cents_to_euro_decimal, to_cents
-from app.models.master import Product
+from app.money import to_cents
+from app.models.master import Product, Supplier
 from app.models.operations import (
     AuditLog,
     Dispatch,
@@ -177,6 +177,14 @@ class PoTotals:
 
 
 @dataclass(frozen=True)
+class PricedPoLine:
+    product_id: int
+    qty: int
+    unit_price_cents: int
+    vat_rate: Decimal
+
+
+@dataclass(frozen=True)
 class ReceiptLine:
     po_line_id: int
     qty_received: int
@@ -200,7 +208,7 @@ def compute_line_totals(
     return base, vat, base + vat
 
 
-def compute_po_totals(lines: list[PoLineCreate]) -> PoTotals:
+def compute_po_totals(lines: list[PricedPoLine]) -> PoTotals:
     """Accumulate ex-VAT / VAT / incl-VAT separately in cents, then round each (R5).
 
     Parity anchor (order 2026-00360): 239.36 / 14.36 / 253.72 euros, i.e.
@@ -210,7 +218,7 @@ def compute_po_totals(lines: list[PoLineCreate]) -> PoTotals:
     vat_total = Decimal("0")
     incl_total = Decimal("0")
     for line in lines:
-        base, vat, incl = compute_line_totals(line.unit_price, line.qty, line.vat_rate)
+        base, vat, incl = compute_line_totals(line.unit_price_cents, line.qty, line.vat_rate)
         ex_total += base
         vat_total += vat
         incl_total += incl
@@ -290,6 +298,7 @@ def list_purchase_orders(
     supplier_id: int | None = None,
     delivery_from: datetime.date | None = None,
     delivery_to: datetime.date | None = None,
+    search: str | None = None,
 ) -> tuple[list[PurchaseOrderRead], int]:
     conditions = []
     if status is not None:
@@ -301,14 +310,26 @@ def list_purchase_orders(
         conditions.append(PurchaseOrder.expected_delivery_date >= delivery_from)
     if delivery_to is not None:
         conditions.append(PurchaseOrder.expected_delivery_date <= delivery_to)
+    if search:
+        pattern = f"%{search}%"
+        conditions.append(
+            or_(
+                PurchaseOrder.order_no.ilike(pattern),
+                Supplier.name.ilike(pattern),
+            )
+        )
 
     total_count = session.execute(
-        select(func.count()).select_from(PurchaseOrder).where(*conditions)
+        select(func.count())
+        .select_from(PurchaseOrder)
+        .join(Supplier, Supplier.id == PurchaseOrder.supplier_id)
+        .where(*conditions)
     ).scalar_one()
 
     rows = (
         session.execute(
             select(PurchaseOrder)
+            .join(Supplier, Supplier.id == PurchaseOrder.supplier_id)
             .where(*conditions)
             .order_by(PurchaseOrder.id.desc())
             .limit(page.limit)
@@ -339,8 +360,9 @@ def create_purchase_order(
             "expected_delivery_date cannot precede order_date",
         )
 
+    priced_lines = _price_lines_from_catalogue(session, payload)
     order_no = session.execute(select(func.next_order_no())).scalar_one()
-    totals = compute_po_totals(payload.lines)
+    totals = compute_po_totals(priced_lines)
 
     po = PurchaseOrder(
         order_no=order_no,
@@ -357,14 +379,14 @@ def create_purchase_order(
     session.add(po)
     session.flush()
 
-    for line in payload.lines:
+    for line in priced_lines:
         session.add(
             PurchaseOrderLine(
                 po_id=po.id,
                 product_id=line.product_id,
                 qty_ordered=line.qty,
                 qty_received=0,
-                unit_price=line.unit_price,
+                unit_price=line.unit_price_cents,
                 vat_rate=line.vat_rate,
             )
         )
@@ -426,6 +448,7 @@ def receive_purchase_order(
     po_id: int,
     receipts: list[ReceiptLine],
     acknowledge_over_receipt: bool,
+    user_id: int | None,
 ) -> tuple[PurchaseOrderRead, list[StockMovementRead]]:
     po = _get_po_or_404(session, po_id)
     if po.status != PoStatus.pending:
@@ -475,6 +498,7 @@ def receive_purchase_order(
             qty=receipt.qty_received,
             movement_type=StockMovementType.po_receipt,
             po_line_id=line.id,
+            created_by=user_id,
         )
         session.add(movement)
         movements.append(movement)
@@ -497,47 +521,49 @@ def receive_purchase_order(
 
 
 def cancel_purchase_order(
-    session: Session, po_id: int
+    session: Session,
+    po_id: int,
+    user_id: int | None,
 ) -> tuple[PurchaseOrderRead, PoStatus, list[StockMovementRead]]:
     po = _get_po_or_404(session, po_id)
     previous = po.status
     if po.status == PoStatus.cancelled:
         raise ApiError(409, "conflict", "purchase order is already cancelled")
 
-    reversal_reads: list[StockMovementRead] = []
-    if po.status == PoStatus.received:
-        lines = (
-            session.execute(
-                select(PurchaseOrderLine).where(
-                    PurchaseOrderLine.po_id == po.id,
-                    PurchaseOrderLine.qty_received > 0,
-                )
+    # A partly received PO is still pending, so reversal keys on received qty, not status.
+    received_lines = (
+        session.execute(
+            select(PurchaseOrderLine).where(
+                PurchaseOrderLine.po_id == po.id,
+                PurchaseOrderLine.qty_received > 0,
             )
-            .scalars()
-            .all()
         )
-        reversals: list[StockMovement] = []
-        for line in lines:
-            movement = StockMovement(
-                product_id=line.product_id,
-                qty=-line.qty_received,
-                movement_type=StockMovementType.cancellation_reversal,
-                po_line_id=line.id,
-            )
-            session.add(movement)
-            reversals.append(movement)
-        try:
-            session.flush()
-        except (IntegrityError, DBAPIError) as exc:
-            session.rollback()
-            if is_stock_non_negative_violation(exc):
-                raise ApiError(
-                    409,
-                    "cancel_blocked",
-                    "received stock has already been dispatched; cancellation refused",
-                ) from exc
-            raise
-        reversal_reads = [StockMovementRead.model_validate(m) for m in reversals]
+        .scalars()
+        .all()
+    )
+    reversals: list[StockMovement] = []
+    for line in received_lines:
+        movement = StockMovement(
+            product_id=line.product_id,
+            qty=-line.qty_received,
+            movement_type=StockMovementType.cancellation_reversal,
+            po_line_id=line.id,
+            created_by=user_id,
+        )
+        session.add(movement)
+        reversals.append(movement)
+    try:
+        session.flush()
+    except (IntegrityError, DBAPIError) as exc:
+        session.rollback()
+        if is_stock_non_negative_violation(exc):
+            raise ApiError(
+                409,
+                "cancel_blocked",
+                "received stock has already been dispatched; cancellation refused",
+            ) from exc
+        raise
+    reversal_reads = [StockMovementRead.model_validate(m) for m in reversals]
 
     po.status = PoStatus.cancelled
     write_audit(
@@ -569,43 +595,25 @@ def draft_purchase_orders_from_dispatch(
         select(
             Product.supplier_id,
             DispatchLine.product_id,
-            Product.purchase_price,
-            Product.vat_rate,
             DispatchLine.qty,
         )
         .join(Product, Product.id == DispatchLine.product_id)
         .where(DispatchLine.dispatch_id == dispatch_id)
     ).all()
 
-    per_supplier: dict[int, dict[int, dict]] = defaultdict(dict)
-    for supplier_id, product_id, purchase_price, vat_rate, qty in rows:
+    per_supplier: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    for supplier_id, product_id, qty in rows:
         if supplier_id is None or qty <= 0:
             continue
-        bucket = per_supplier[supplier_id]
-        if product_id in bucket:
-            bucket[product_id]["qty"] += qty
-        else:
-            bucket[product_id] = {
-                "qty": qty,
-                "unit_price": purchase_price,
-                "vat_rate": vat_rate,
-            }
+        per_supplier[supplier_id][product_id] += qty
 
     today = datetime.date.today()
     expected = max(today, dispatch.delivery_date)
     created: list[PurchaseOrderRead] = []
-    for supplier_id, products in per_supplier.items():
+    for supplier_id, product_quantities in per_supplier.items():
         line_payloads = [
-            PoLineCreate(
-                product_id=product_id,
-                qty=info["qty"],
-                # info["unit_price"] is the product's purchase price in cents;
-                # PoLineCreate.unit_price (MoneyIn) parses a euro amount back to
-                # cents, so pass euros to avoid a double conversion.
-                unit_price=cents_to_euro_decimal(info["unit_price"]),
-                vat_rate=info["vat_rate"],
-            )
-            for product_id, info in products.items()
+            PoLineCreate(product_id=product_id, qty=qty)
+            for product_id, qty in product_quantities.items()
         ]
         draft = PurchaseOrderCreate(
             supplier_id=supplier_id,
@@ -625,9 +633,7 @@ def draft_purchase_orders_from_dispatch(
 # APPEND-ONLY (WORKORDER D2 ownership contract): the menus router owns the
 # (iso_year, week_no, day_name) menu key and passes the already-aggregated
 # per-product quantities in; this function only turns them into a supplier PO,
-# reusing create_purchase_order. It touches no menu tables, so it needs nothing
-# beyond the symbols already imported at module top (Product, select,
-# PoLineCreate, PurchaseOrderCreate, cents_to_euro_decimal).
+# reusing create_purchase_order. It touches no menu tables.
 
 
 def draft_from_menu(
@@ -641,9 +647,9 @@ def draft_from_menu(
     """Create one pending PO for ``supplier_id`` from menu product quantities (R4/D2).
 
     Mirrors the Excel "Order details (va chercher dans le menu)" button: line
-    quantities come from the saved menu; unit price and VAT come from each
-    product's current catalogue values. Raises 422 when the quantity set is empty
-    (no menu lines for this supplier).
+    quantities come from the saved menu; create_purchase_order prices them from
+    the catalogue. Raises 422 when the quantity set is empty (no menu lines for
+    this supplier).
     """
     ordered = {pid: qty for pid, qty in product_quantities.items() if qty > 0}
     if not ordered:
@@ -653,26 +659,9 @@ def draft_from_menu(
             "No menu quantities for this supplier",
         )
 
-    products = {
-        product.id: product
-        for product in session.execute(
-            select(Product).where(Product.id.in_(list(ordered)))
-        )
-        .scalars()
-        .all()
-    }
     line_payloads = [
-        PoLineCreate(
-            product_id=product_id,
-            qty=qty,
-            # products.purchase_price is cents; PoLineCreate.unit_price (MoneyIn)
-            # re-parses a euro amount to cents, so hand it euros to avoid a
-            # double conversion.
-            unit_price=cents_to_euro_decimal(products[product_id].purchase_price),
-            vat_rate=products[product_id].vat_rate,
-        )
+        PoLineCreate(product_id=product_id, qty=qty)
         for product_id, qty in ordered.items()
-        if product_id in products
     ]
     today = datetime.date.today()
     draft = PurchaseOrderCreate(
@@ -684,3 +673,41 @@ def draft_from_menu(
         lines=line_payloads,
     )
     return create_purchase_order(session, draft)
+
+
+def _price_lines_from_catalogue(
+    session: Session,
+    payload: PurchaseOrderCreate,
+) -> list[PricedPoLine]:
+    """Price each line from the product catalogue; the client never sets price or VAT."""
+    product_ids = [line.product_id for line in payload.lines]
+    products_by_id = {
+        product.id: product
+        for product in session.execute(select(Product).where(Product.id.in_(product_ids)))
+        .scalars()
+        .all()
+    }
+    priced_lines: list[PricedPoLine] = []
+    for line in payload.lines:
+        product = products_by_id.get(line.product_id)
+        if product is None:
+            raise ApiError(
+                422,
+                "unprocessable_entity",
+                f"product {line.product_id} does not exist",
+            )
+        if product.supplier_id != payload.supplier_id:
+            raise ApiError(
+                422,
+                "unprocessable_entity",
+                f"product {product.code} is not supplied by this supplier",
+            )
+        priced_lines.append(
+            PricedPoLine(
+                product_id=product.id,
+                qty=line.qty,
+                unit_price_cents=product.purchase_price,
+                vat_rate=product.vat_rate,
+            )
+        )
+    return priced_lines

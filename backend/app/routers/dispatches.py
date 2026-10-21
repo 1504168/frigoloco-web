@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from fastapi import Depends, Query, status
+from fastapi import Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models.enums import DispatchStatus
+from app.models.master import User
 from app.schemas.dispatches import (
     ConfirmRequest,
     ConfirmResult,
-    DispatchCloneRequest,
     DispatchCreate,
     DispatchLinesReplace,
     DispatchMatrix,
@@ -20,7 +20,8 @@ from app.schemas.dispatches import (
     WithdrawalListOut,
 )
 from app.schemas.masters import Page, PaginationParams, api_error, make_router, pagination
-from app.services import dispatch_service
+from app.security import get_current_user
+from app.services import dispatch_export_service, dispatch_service
 from app.services.dispatch_service import LineInput
 
 router = make_router(prefix="/api/v1/dispatches", tags=["dispatches"])
@@ -146,25 +147,6 @@ def get_withdrawal_list(
     )
 
 
-@router.post("/clone", response_model=DispatchRead)
-def clone_dispatch(
-    body: DispatchCloneRequest, session: Session = Depends(get_db)
-) -> DispatchRead:
-    """Clone a saved dispatch day's planned lines onto another day (no stock effect)."""
-    dispatch = dispatch_service.clone_dispatch(
-        source_year=body.source_year,
-        source_week=body.source_week,
-        source_day_name=body.source_day_name,
-        target_year=body.target_year,
-        target_week=body.target_week,
-        target_day_name=body.target_day_name,
-        overwrite=body.overwrite,
-        user_id=None,
-        session=session,
-    )
-    return DispatchRead.model_validate(dispatch)
-
-
 @router.post("/create-individual", response_model=ConfirmResult)
 def create_individual_dispatch(
     year: int = Query(..., ge=2020, le=2100),
@@ -172,11 +154,17 @@ def create_individual_dispatch(
     day_name: str = Query(...),
     force: bool = Query(default=False),
     session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> ConfirmResult:
     """Create the individual dispatch for the key: flip to dispatched, snapshot
     prices, write the negative stock movements (the ONLY stock-writing path)."""
     dispatch, movements = dispatch_service.create_individual_by_key(
-        year=year, week=week, day_name=day_name, force=force, user_id=None, session=session
+        year=year,
+        week=week,
+        day_name=day_name,
+        force=force,
+        user_id=current_user.id,
+        session=session,
     )
     return ConfirmResult(
         dispatch_id=dispatch.id,
@@ -196,6 +184,18 @@ def get_dispatch(dispatch_id: int, session: Session = Depends(get_db)) -> Dispat
 def get_matrix(dispatch_id: int, session: Session = Depends(get_db)) -> DispatchMatrix:
     return DispatchMatrix.model_validate(
         dispatch_service.get_matrix(dispatch_id, session)
+    )
+
+
+@router.get("/{dispatch_id}/export.xlsx")
+def export_dispatch_xlsx(dispatch_id: int, session: Session = Depends(get_db)) -> Response:
+    """Download the dispatch day as an Excel file (lines sheet + fridge x product grid)."""
+    dispatch = dispatch_service.get_dispatch(dispatch_id, session)
+    document = dispatch_export_service.build_dispatch_xlsx(dispatch, session)
+    return Response(
+        content=document.content,
+        media_type=document.media_type,
+        headers={"Content-Disposition": f'attachment; filename="{document.filename}"'},
     )
 
 
@@ -243,10 +243,11 @@ def confirm_dispatch(
     dispatch_id: int,
     body: ConfirmRequest | None = None,
     session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> ConfirmResult:
     force = body.force if body is not None else False
     dispatch, movements = dispatch_service.confirm_dispatch(
-        dispatch_id=dispatch_id, force=force, user_id=None, session=session
+        dispatch_id=dispatch_id, force=force, user_id=current_user.id, session=session
     )
     return ConfirmResult(
         dispatch_id=dispatch.id,

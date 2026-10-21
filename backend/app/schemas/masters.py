@@ -20,7 +20,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.money import MoneyIn, MoneyStr
@@ -224,8 +224,6 @@ class CategoryRead(ApiModel):
 class ClientCreate(ApiModel):
     name: str = Field(min_length=1)
     location: str | None = None
-    workers_count: int | None = Field(default=None, ge=0)
-    worker_type: str | None = None
     preferences: str | None = None
     notes: str | None = None
 
@@ -233,8 +231,6 @@ class ClientCreate(ApiModel):
 class ClientUpdate(ApiModel):
     name: str | None = Field(default=None, min_length=1)
     location: str | None = None
-    workers_count: int | None = Field(default=None, ge=0)
-    worker_type: str | None = None
     preferences: str | None = None
     notes: str | None = None
 
@@ -243,8 +239,6 @@ class ClientRead(ApiModel):
     id: int
     name: str
     location: str | None
-    workers_count: int | None
-    worker_type: str | None
     preferences: str | None
     notes: str | None
     created_at: datetime.datetime

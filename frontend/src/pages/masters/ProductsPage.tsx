@@ -1,15 +1,18 @@
 import * as React from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { Search } from 'lucide-react'
+import { CategoryFilter } from '@/components/filters/CategoryFilter'
+import { FilterBar } from '@/components/filters/FilterBar'
+import { ProductSearchInput } from '@/components/filters/ProductSearchInput'
+import { SupplierFilter } from '@/components/filters/SupplierFilter'
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { MoneyCell } from '@/components/shared/MoneyCell'
-import { Input } from '@/components/ui/input'
+import { Toolbar } from '@/components/shared/Toolbar'
 import { api, type Page } from '@/lib/api'
 import { EMPTY_PLACEHOLDER } from '@/lib/format'
 import { REFERENCE_CATEGORIES_KEY } from '@/lib/query-keys'
 import type { Category, Product } from '@/lib/types'
-import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { useCategorySupplierFilter } from '@/hooks/useCategorySupplierFilter'
 import {
   EffectiveStatusBadge,
   HuskySyncControl,
@@ -29,37 +32,48 @@ function formatVat(fraction: string): string {
   return `${(numeric * 100).toFixed(numeric * 100 % 1 === 0 ? 0 : 2)}%`
 }
 
-/**
- * FILTERS (backend reality, verified live against the API):
- *  - `search` is a real server-side query param and drives pagination totals.
- *  - `status` (active|inactive|cancelled|all) is now honored server-side and
- *    reflects the effective status (local override, else Husky-derived).
- */
 export function ProductsPage() {
-  const [searchInput, setSearchInput] = React.useState('')
+  const {
+    categoryId,
+    supplierId,
+    isSupplierSettled,
+    setCategoryId,
+    setSupplierId,
+  } = useCategorySupplierFilter()
+  const [search, setSearch] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('active')
   const [offset, setOffset] = React.useState(0)
 
-  const search = useDebouncedValue(searchInput.trim(), 300)
-
-  // Reset to the first page whenever the search term or status filter changes.
   React.useEffect(() => {
     setOffset(0)
-  }, [search, statusFilter])
+  }, [search, statusFilter, categoryId, supplierId])
 
   const productsQuery = useQuery({
-    queryKey: ['products', { search, status: statusFilter, limit: PAGE_SIZE, offset }],
+    queryKey: [
+      ...PRODUCTS_QUERY_KEY,
+      {
+        search,
+        status: statusFilter,
+        categoryId,
+        supplierId,
+        limit: PAGE_SIZE,
+        offset,
+      },
+    ],
     queryFn: ({ signal }) =>
       api.get<Page<Product>>('/api/v1/products', {
         params: {
           search: search || undefined,
           status: statusFilter,
+          category_id: categoryId,
+          supplier_id: supplierId,
           limit: PAGE_SIZE,
           offset,
         },
         signal,
       }),
     placeholderData: keepPreviousData,
+    enabled: isSupplierSettled,
   })
 
   // Note: GET /api/v1/categories returns a bare array (not a Page<T>).
@@ -98,6 +112,14 @@ export function ProductsPage() {
         sortValue: (row) => categoryName(row.category_id),
       },
       {
+        id: 'supplier',
+        header: 'Supplier',
+        cell: (row) => (
+          <span className="text-muted-foreground">{row.supplier_name ?? EMPTY_PLACEHOLDER}</span>
+        ),
+        sortValue: (row) => row.supplier_name,
+      },
+      {
         id: 'purchase_price',
         header: 'Purchase',
         align: 'right',
@@ -130,26 +152,34 @@ export function ProductsPage() {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-            placeholder="Search code or name…"
-            className="w-64 pl-8"
-          />
-        </div>
-        <StatusFilterSelect value={statusFilter} onChange={setStatusFilter} />
-        <div className="ml-auto">
+      <Toolbar
+        left={
+          <FilterBar>
+            <CategoryFilter
+              value={categoryId}
+              onChange={setCategoryId}
+            />
+            <SupplierFilter
+              value={supplierId}
+              onChange={setSupplierId}
+              categoryId={categoryId}
+            />
+            <ProductSearchInput onSearchChange={setSearch} />
+            <StatusFilterSelect
+              value={statusFilter}
+              onChange={setStatusFilter}
+            />
+          </FilterBar>
+        }
+        right={
           <HuskySyncControl
             feed="catalogue"
             endpoint="catalogue"
             invalidateKeys={[PRODUCTS_QUERY_KEY]}
             itemLabel="product"
           />
-        </div>
-      </div>
+        }
+      />
 
       <DataTable
         columns={columns}
@@ -165,11 +195,7 @@ export function ProductsPage() {
         emptyState={
           <EmptyState
             title="No products found"
-            description={
-              search
-                ? `No products match “${search}”. Try a different term.`
-                : 'No products match the current filters.'
-            }
+            description="No products match the current filters."
           />
         }
       />

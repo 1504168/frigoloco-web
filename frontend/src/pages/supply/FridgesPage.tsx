@@ -1,9 +1,12 @@
 import * as React from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarClock, Pencil, Search } from 'lucide-react'
+import { FilterBar } from '@/components/filters/FilterBar'
+import { ALL_OPTION_VALUE } from '@/components/filters/filterValues'
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
+import { Toolbar } from '@/components/shared/Toolbar'
 import {
   EffectiveStatusBadge,
   HuskySyncControl,
@@ -23,6 +26,7 @@ import { toast } from '@/components/ui/sonner'
 import { api, ApiError, type Page } from '@/lib/api'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { EMPTY_PLACEHOLDER } from '@/lib/format'
+import { compareNatural } from '@/lib/naturalSort'
 import { Dialog } from './components/Dialog'
 import { Field, Textarea, fieldErrorsFromApiError, generalErrorMessage } from './components/form'
 import type {
@@ -32,6 +36,15 @@ import type {
 } from './types'
 
 const PAGE_SIZE = 25
+const ALL_FRIDGES_LIMIT = 500
+const ALL_CLIENTS_LIMIT = 500
+const SEARCH_DEBOUNCE_MS = 500
+/** Select value for fridges that have no client yet. */
+const NO_CLIENT_VALUE = 'none'
+const NOWRAP_HEADER = 'whitespace-nowrap'
+const DEFAULT_STATUS_FILTER: StatusFilter = 'active'
+const NO_MATCH_DESCRIPTION =
+  'No fridge matches these filters. Try a different client, status, day or search.'
 
 /**
  * Weekday labels by row index. The API uses ISO weekday numbers (Mon=1 … Sun=7),
@@ -39,14 +52,17 @@ const PAGE_SIZE = 25
  */
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
-/** Shared clients lookup (id -> name) used for the client column and the edit dialog. */
+/** All clients sorted naturally by name, for the client column, filter and edit dialog. */
 function useClientsLookup() {
   return useQuery({
     queryKey: ['supply', 'clients', 'all'],
     queryFn: ({ signal }) =>
-      api.get<Page<Client>>('/api/v1/clients', { params: { limit: 200, offset: 0 }, signal }),
+      api.get<Page<Client>>('/api/v1/clients', {
+        params: { limit: ALL_CLIENTS_LIMIT, offset: 0 },
+        signal,
+      }),
     staleTime: 60_000,
-    select: (page) => page.items,
+    select: (page) => [...page.items].sort((a, b) => compareNatural(a.name, b.name)),
   })
 }
 
@@ -55,38 +71,34 @@ const FRIDGES_QUERY_KEY = ['supply', 'fridges']
 export function FridgesPage() {
   const queryClient = useQueryClient()
   const [offset, setOffset] = React.useState(0)
-  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('active')
-  const [dayFilter, setDayFilter] = React.useState<'all' | string>('all')
+  const [clientFilter, setClientFilter] = React.useState<string>(ALL_OPTION_VALUE)
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>(DEFAULT_STATUS_FILTER)
+  const [dayFilter, setDayFilter] = React.useState<string>(ALL_OPTION_VALUE)
   const [searchInput, setSearchInput] = React.useState('')
   const [editing, setEditing] = React.useState<Fridge | null>(null)
   const [configuring, setConfiguring] = React.useState<Fridge | null>(null)
 
-  // Client-side search over the fridge name + client name (both are the visible
-  // text columns). Debounced so typing stays smooth.
-  const search = useDebouncedValue(searchInput.trim().toLowerCase(), 500)
+  const search = useDebouncedValue(searchInput.trim().toLowerCase(), SEARCH_DEBOUNCE_MS)
 
   const clientsQuery = useClientsLookup()
+  const clients = React.useMemo(() => clientsQuery.data ?? [], [clientsQuery.data])
   const clientName = React.useCallback(
     (id: number | null) =>
-      id === null
-        ? EMPTY_PLACEHOLDER
-        : clientsQuery.data?.find((c) => c.id === id)?.name ?? `#${id}`,
-    [clientsQuery.data],
+      id === null ? EMPTY_PLACEHOLDER : clients.find((c) => c.id === id)?.name ?? `#${id}`,
+    [clients],
   )
 
-  // Reset to first page whenever the status filter, day filter or search term changes.
   React.useEffect(() => {
     setOffset(0)
-  }, [statusFilter, dayFilter, search])
+  }, [clientFilter, statusFilter, dayFilter, search])
 
-  // Fetch the full (status-filtered) set once; search + pagination are applied
-  // client-side. The fleet is small (~50 fridges), so this stays cheap and lets
-  // us search the client name, which the list endpoint does not expose.
+  // The fleet is small, so the status-filtered set is fetched once and the
+  // client, day and search filters plus pagination run here in the browser.
   const fridgesQuery = useQuery({
     queryKey: ['supply', 'fridges', { status: statusFilter }],
     queryFn: ({ signal }) =>
       api.get<Page<Fridge>>('/api/v1/fridges', {
-        params: { limit: 500, offset: 0, status: statusFilter },
+        params: { limit: ALL_FRIDGES_LIMIT, offset: 0, status: statusFilter },
         signal,
       }),
     placeholderData: keepPreviousData,
@@ -99,30 +111,35 @@ export function FridgesPage() {
       {
         id: 'friendly_name',
         header: 'Fridge',
+        headerClassName: NOWRAP_HEADER,
         cell: (row) => <span className="font-medium">{row.friendly_name}</span>,
         sortValue: (row) => row.friendly_name,
       },
       {
         id: 'husky_id',
         header: 'Husky ID',
+        headerClassName: NOWRAP_HEADER,
         cell: (row) => <span className="font-mono text-xs">{row.husky_id}</span>,
         sortValue: (row) => row.husky_id,
       },
       {
         id: 'client',
         header: 'Client',
+        headerClassName: NOWRAP_HEADER,
         cell: (row) => <span className="text-muted-foreground">{clientName(row.client_id)}</span>,
         sortValue: (row) => clientName(row.client_id),
       },
       {
         id: 'status',
         header: 'Status',
+        headerClassName: NOWRAP_HEADER,
         cell: (row) => <EffectiveStatusBadge status={row.effective_status} />,
         sortValue: (row) => row.effective_status,
       },
       {
         id: 'delivery_days',
         header: 'Delivery days',
+        headerClassName: NOWRAP_HEADER,
         cell: (row) =>
           row.delivery_weekdays.length ? (
             <span>{row.delivery_weekdays.map((w) => WEEKDAYS[w - 1].slice(0, 3)).join(', ')}</span>
@@ -161,16 +178,12 @@ export function FridgesPage() {
     [clientName],
   )
 
-  // Search matches the Fridge column (friendly_name), the Client column
-  // (resolved client name) or the Husky ID; then paginate the result locally.
   const allFridges = fridgesQuery.data?.items ?? []
   const filteredFridges = allFridges.filter(
     (fridge) =>
-      (dayFilter === 'all' || fridge.delivery_weekdays.includes(Number(dayFilter))) &&
-      (!search ||
-        fridge.friendly_name.toLowerCase().includes(search) ||
-        fridge.husky_id.toLowerCase().includes(search) ||
-        clientName(fridge.client_id).toLowerCase().includes(search)),
+      matchesClientFilter(fridge, clientFilter) &&
+      matchesDayFilter(fridge, dayFilter) &&
+      matchesFridgeSearch(fridge, search),
   )
   const pageData: Page<Fridge> | undefined = fridgesQuery.data
     ? {
@@ -180,40 +193,88 @@ export function FridgesPage() {
         offset,
       }
     : undefined
+  const isFiltered =
+    search !== '' ||
+    clientFilter !== ALL_OPTION_VALUE ||
+    statusFilter !== DEFAULT_STATUS_FILTER ||
+    dayFilter !== ALL_OPTION_VALUE
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-2">
-        <StatusFilterSelect value={statusFilter} onChange={setStatusFilter} />
-        <Select value={dayFilter} onValueChange={setDayFilter}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="All days" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All days</SelectItem>
-            {WEEKDAYS.map((name, i) => (
-              <SelectItem key={name} value={String(i + 1)}>
-                {name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <HuskySyncControl
-          feed="catalogue"
-          endpoint="catalogue"
-          invalidateKeys={[FRIDGES_QUERY_KEY]}
-          itemLabel="fridge"
-        />
-        <div className="relative ml-auto w-full max-w-xs">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-            placeholder="Search by fridge or client…"
-            className="pl-8"
+      <Toolbar
+        left={
+          <FilterBar>
+            <Select
+              value={clientFilter}
+              onValueChange={setClientFilter}
+            >
+              <SelectTrigger
+                className="w-48"
+                aria-label="Client"
+              >
+                <SelectValue placeholder="All clients" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_OPTION_VALUE}>All clients</SelectItem>
+                <SelectItem value={NO_CLIENT_VALUE}>No client</SelectItem>
+                {clients.map((client) => (
+                  <SelectItem
+                    key={client.id}
+                    value={String(client.id)}
+                  >
+                    {client.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <StatusFilterSelect
+              value={statusFilter}
+              onChange={setStatusFilter}
+              className="w-32"
+            />
+            <Select
+              value={dayFilter}
+              onValueChange={setDayFilter}
+            >
+              <SelectTrigger
+                className="w-36"
+                aria-label="Delivery day"
+              >
+                <SelectValue placeholder="All days" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_OPTION_VALUE}>All days</SelectItem>
+                {WEEKDAYS.map((name, i) => (
+                  <SelectItem
+                    key={name}
+                    value={String(i + 1)}
+                  >
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="relative w-56">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                placeholder="Fridge name or if-ID"
+                aria-label="Search fridge name or Husky fridge ID"
+                className="h-9 pl-8"
+              />
+            </div>
+          </FilterBar>
+        }
+        right={
+          <HuskySyncControl
+            feed="catalogue"
+            endpoint="catalogue"
+            invalidateKeys={[FRIDGES_QUERY_KEY]}
+            itemLabel="fridge"
           />
-        </div>
-      </div>
+        }
+      />
 
       <DataTable
         columns={columns}
@@ -228,21 +289,24 @@ export function FridgesPage() {
         onOffsetChange={setOffset}
         getRowId={(row) => row.id}
         emptyState={
-          <EmptyState
-            title={search ? 'No matching fridges' : 'No fridges yet'}
-            description={
-              search
-                ? `No fridge or client matches “${searchInput.trim()}”. Try a different term.`
-                : 'Fridges are synced in from Husky. Run Sync from Husky to load them.'
-            }
-          />
+          isFiltered ? (
+            <EmptyState
+              title="No matching fridges"
+              description={NO_MATCH_DESCRIPTION}
+            />
+          ) : (
+            <EmptyState
+              title="No fridges yet"
+              description="Fridges are synced in from Husky. Run Sync from Husky to load them."
+            />
+          )
         }
       />
 
       {editing ? (
         <EditFridgeDialog
           fridge={editing}
-          clientName={clientName}
+          clients={clients}
           onClose={() => setEditing(null)}
           onSuccess={(updated) => {
             toast.success(`Fridge “${updated.friendly_name}” updated`)
@@ -259,9 +323,27 @@ export function FridgesPage() {
   )
 }
 
+function matchesClientFilter(fridge: Fridge, clientFilter: string): boolean {
+  if (clientFilter === ALL_OPTION_VALUE) return true
+  if (clientFilter === NO_CLIENT_VALUE) return fridge.client_id === null
+  return fridge.client_id === Number(clientFilter)
+}
+
+function matchesDayFilter(fridge: Fridge, dayFilter: string): boolean {
+  if (dayFilter === ALL_OPTION_VALUE) return true
+  return fridge.delivery_weekdays.includes(Number(dayFilter))
+}
+
+/** `search` is already lower-cased; matches the fridge name, Husky name or Husky id. */
+function matchesFridgeSearch(fridge: Fridge, search: string): boolean {
+  if (!search) return true
+  const searchableTexts = [fridge.friendly_name, fridge.husky_name ?? '', fridge.husky_id]
+  return searchableTexts.some((text) => text.toLowerCase().includes(search))
+}
+
 interface EditFridgeDialogProps {
   fridge: Fridge
-  clientName: (id: number | null) => string
+  clients: Client[]
   onClose: () => void
   onSuccess: (fridge: Fridge) => void
 }
@@ -282,10 +364,13 @@ function ReadOnlyField({ label, value, mono }: { label: string; value: string; m
 }
 
 /**
- * Edit a fridge's local-only delivery details. Identity, client and status are
- * Husky-owned (overwritten on every sync) and shown read-only here.
+ * Edit a fridge's client and local delivery details. Identity and status are
+ * Husky-owned and shown read-only; Husky sync only fills a client that is empty.
  */
-function EditFridgeDialog({ fridge, clientName, onClose, onSuccess }: EditFridgeDialogProps) {
+function EditFridgeDialog({ fridge, clients, onClose, onSuccess }: EditFridgeDialogProps) {
+  const [clientValue, setClientValue] = React.useState(
+    fridge.client_id === null ? NO_CLIENT_VALUE : String(fridge.client_id),
+  )
   const [deliveryAddress, setDeliveryAddress] = React.useState(fridge.delivery_address ?? '')
   const [deliveryInstructions, setDeliveryInstructions] = React.useState(
     fridge.delivery_instructions ?? '',
@@ -294,11 +379,11 @@ function EditFridgeDialog({ fridge, clientName, onClose, onSuccess }: EditFridge
   const mutation = useMutation({
     mutationFn: () =>
       api.put<Fridge>(`/api/v1/fridges/${fridge.id}`, {
-        // Husky-owned fields are echoed back unchanged; only delivery details change.
+        // Husky-owned fields are echoed back unchanged.
         husky_id: fridge.husky_id,
         husky_name: fridge.husky_name,
         friendly_name: fridge.friendly_name,
-        client_id: fridge.client_id,
+        client_id: clientValue === NO_CLIENT_VALUE ? null : Number(clientValue),
         is_active: fridge.is_active,
         delivery_address: deliveryAddress.trim() || null,
         delivery_instructions: deliveryInstructions.trim() || null,
@@ -342,16 +427,36 @@ function EditFridgeDialog({ fridge, clientName, onClose, onSuccess }: EditFridge
           <ReadOnlyField label="Husky ID" value={fridge.husky_id} mono />
           <ReadOnlyField label="Husky name" value={fridge.husky_name || EMPTY_PLACEHOLDER} />
           <ReadOnlyField label="Friendly name" value={fridge.friendly_name} />
-          <ReadOnlyField label="Client" value={clientName(fridge.client_id)} />
           <ReadOnlyField label="Status" value={fridge.is_active ? 'Active' : 'Inactive'} />
         </div>
+        <Field label="Client" error={fieldErrors.client_id}>
+          <Select
+            value={clientValue}
+            onValueChange={setClientValue}
+          >
+            <SelectTrigger aria-label="Client">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_CLIENT_VALUE}>No client</SelectItem>
+              {clients.map((client) => (
+                <SelectItem
+                  key={client.id}
+                  value={String(client.id)}
+                >
+                  {client.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
         <p className="text-xs text-muted-foreground">
-          Identity, client and status come from Husky and are not editable here.
+          Identity and status come from Husky. Husky sync fills the client only when it is
+          empty, so a client chosen here is kept.
         </p>
         <Field label="Delivery address" error={fieldErrors.delivery_address}>
           <Textarea
             value={deliveryAddress}
-            autoFocus
             onChange={(event) => setDeliveryAddress(event.target.value)}
           />
         </Field>

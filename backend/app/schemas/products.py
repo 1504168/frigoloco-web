@@ -12,6 +12,8 @@ from app.schemas.masters import ApiModel, Money
 
 # Manual status override (D5): NULL follows Husky, else user-forced.
 LocalStatus = Literal["inactive", "cancelled"]
+# ?status= filter on effective status; "all" means no filter.
+EffectiveStatusFilter = Literal["active", "inactive", "cancelled", "all"]
 
 
 class ProductCreate(ApiModel):
@@ -48,6 +50,7 @@ class ProductRead(ApiModel):
     name: str
     category_id: int
     supplier_id: int | None
+    supplier_name: str | None = None
     purchase_price: MoneyStr
     sales_price: MoneyStr
     vat_rate: Money

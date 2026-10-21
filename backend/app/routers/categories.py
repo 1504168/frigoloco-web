@@ -15,7 +15,6 @@ router = make_router(prefix="/api/v1/categories", tags=["categories"])
 
 @router.get("", response_model=list[CategoryRead])
 def list_categories(session: Session = Depends(get_db)) -> list[CategoryRead]:
-    rows = list(
-        session.execute(select(Category).order_by(Category.display_order)).scalars().all()
-    )
+    ordered_categories = select(Category).order_by(Category.display_order, Category.name)
+    rows = list(session.execute(ordered_categories).scalars().all())
     return [CategoryRead.model_validate(row) for row in rows]

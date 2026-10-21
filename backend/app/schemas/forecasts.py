@@ -3,34 +3,49 @@
 from __future__ import annotations
 
 import datetime
+from decimal import Decimal
 from typing import Any
 
 from pydantic import Field
 
 from app.schemas.masters import ApiModel, Money
+from app.services.forecast.strategies import DEFAULT_STRATEGY_CODE
+from app.services.scoring_service import YEARLY_SCORE_WINDOW_DAYS, ScoreWindowDays
+
+# forecast_results.forecast_qty is NUMERIC(10,2).
+MAX_FORECAST_QTY = Decimal("99999999.99")
 
 
 class ForecastRunRequest(ApiModel):
     delivery_date: datetime.date
     # None = every fridge that has a delivery config for the target weekday.
     fridge_ids: list[int] | None = None
-    # Extensible model selector (only "moving_average_3w" today).
-    model: str = "moving_average_3w"
+    # Forecast method code, one of GET /forecasts/models.
+    model: str = DEFAULT_STRATEGY_CODE
     # Optional per-run parameter overrides merged into the run's params JSONB.
     params: dict[str, Any] | None = None
 
 
-class ForecastSaveRequest(ApiModel):
-    """Persist the ONE saved forecast for the (year, week, day_name) key."""
+class ForecastCellEdit(ApiModel):
+    """One fridge x category quantity exactly as shown (and possibly edited) on screen."""
 
-    year: int = Field(ge=2020, le=2100)
-    week: int = Field(ge=1, le=53)
-    day_name: str
-    fridge_ids: list[int] | None = None
-    model: str = "moving_average_3w"
-    params: dict[str, Any] | None = None
+    fridge_id: int
+    category_id: int
+    forecast_qty: Decimal = Field(ge=0, le=MAX_FORECAST_QTY)
+
+
+class ForecastSaveRequest(ApiModel):
+    """Save a computed run as the ONE saved forecast for its delivery date."""
+
+    run_id: int
+    cells: list[ForecastCellEdit]
     # Confirm-overwrite: false -> 409 {code:"exists"} when a saved run exists.
     overwrite: bool = False
+
+
+class ForecastModelOut(ApiModel):
+    code: str
+    label: str
 
 
 class ForecastResultOut(ApiModel):
@@ -52,10 +67,18 @@ class ForecastRunOut(ApiModel):
     is_saved: bool
     params: dict[str, Any]
     results: list[ForecastResultOut]
+    window_start: datetime.date
+    window_end: datetime.date  # exclusive
+    # Units sold in the window by the run's fridges; 0 means the window has no data.
+    window_sales_units: int
+    # Categories with no active product and no sales in the window.
+    hidden_category_ids: list[int]
+    # False when the delivery date is not the next one, so current fridge stock was not deducted.
+    residual_applied: bool
 
 
 class ForecastActualCell(ApiModel):
-    """One fridge×category actual over the forecast's 3-week lookback window."""
+    """One fridge x category actual over the forecast method's sales window."""
 
     fridge_id: int
     category_id: int
@@ -73,17 +96,19 @@ class ForecastActualsOut(ApiModel):
     day_name: str
     delivery_date: datetime.date
     window_start: datetime.date
-    window_end: datetime.date  # exclusive (the delivery date itself)
+    window_end: datetime.date  # exclusive
     cells: list[ForecastActualCell]
 
 
 class ScoreRecomputeRequest(ApiModel):
-    # Defaults to today when omitted (trailing-365-day window ends here).
+    # Defaults to today when omitted (the trailing window ends here).
     as_of: datetime.date | None = None
+    window_days: ScoreWindowDays = YEARLY_SCORE_WINDOW_DAYS
 
 
 class ScoreRecomputeResult(ApiModel):
     period_end: datetime.date
+    window_days: int
     products_scored: int
 
 
@@ -95,4 +120,9 @@ class ProductScoreOut(ApiModel):
     margin_score: Money | None
     final_score: Money
     sample_size: int
+    window_days: int
+    sold_qty: int | None
+    positive_reviews: int | None
+    negative_reviews: int | None
+    uses_new_product_baseline: bool
     computed_at: datetime.datetime

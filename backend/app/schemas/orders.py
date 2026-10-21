@@ -62,11 +62,11 @@ class ErrorEnvelope(BaseModel):
 
 
 class PoLineCreate(BaseModel):
+    """Unit price and VAT are copied from the product catalogue at creation; any
+    client-sent ``unit_price`` / ``vat_rate`` is ignored (extra fields are dropped)."""
+
     product_id: int
     qty: int = Field(gt=0)
-    # Euro string on the wire -> integer cents (MoneyIn). ge=0 checks the cents.
-    unit_price: MoneyIn = Field(ge=0)
-    vat_rate: Decimal = Field(ge=0, lt=1)
 
 
 class PurchaseOrderCreate(BaseModel):

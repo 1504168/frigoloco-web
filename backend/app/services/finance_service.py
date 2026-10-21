@@ -10,15 +10,14 @@ monthly food margin uses the DISPATCHED basis.
 from __future__ import annotations
 
 import datetime
-from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import and_, func, select, text
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models.enums import PoStatus, RestockAction, TagStatus
-from app.models.events import ProductReview, RestockEvent, SalesEvent
+from app.models.enums import RestockAction, TagStatus
+from app.models.events import RestockEvent, SalesEvent
 from app.models.master import (
     Category,
     Client,
@@ -31,6 +30,7 @@ from app.models.master import (
     Supplier,
 )
 from app.models.operations import Dispatch, DispatchLine, WeeklyFinancial
+from app.models.planning import ProductScore
 from app.schemas.finance import (
     FridgeReportRead,
     FridgeReportRow,
@@ -684,35 +684,38 @@ def get_fridge_gsv_report(
     )
 
 
-# ===========================================================================
-# Product rating scorecard - full Excel-equivalent columns from raw facts
-# ===========================================================================
+_DEFAULT_SCORECARD_SORT_FIELD = "final_score"
 
-_SCORECARD_WINDOW_DAYS = 365
+
+@dataclass(frozen=True)
+class ScorecardFilters:
+    category_id: int | None
+    supplier_id: int | None
+    search: str | None
 
 
 @dataclass(frozen=True)
 class ScorecardRowData:
-    """Fully computed scorecard line for one product (money fields = cents)."""
+    """One stored product score plus the product's current catalogue facts (money = cents)."""
 
     product_id: int
     name: str
     code: str
     category: str | None
-    brand: str | None
-    supplier_id: int | None
+    supplier_name: str | None
     shelf_life_days: int | None
     buying_price: int
     sold_price: int
     vat_rate: Decimal
     profit_margin: Decimal | None
-    total_sold_qty: int
+    total_sold_qty: int | None
     total_added_qty: int
     pct_sold: Decimal | None
-    positive_reviews: int
-    negative_reviews: int
+    positive_reviews: int | None
+    negative_reviews: int | None
     pct_positive_review: Decimal | None
     final_score: Decimal
+    uses_new_product_baseline: bool
 
 
 @dataclass(frozen=True)
@@ -721,7 +724,8 @@ class ScorecardResult:
     total: int
     weights: scoring_service.ScoringWeights
     window_days: int
-    period_end: datetime.date
+    period_end: datetime.date | None
+    computed_at: datetime.datetime | None
 
 
 _SCORECARD_SORT_KEYS: dict[str, callable] = {
@@ -729,7 +733,7 @@ _SCORECARD_SORT_KEYS: dict[str, callable] = {
     "name": lambda row: row.name.lower(),
     "code": lambda row: row.code.lower(),
     "category": lambda row: (row.category or "").lower(),
-    "brand": lambda row: (row.brand or "").lower(),
+    "supplier": lambda row: (row.supplier_name or "").lower(),
     "buying_price": lambda row: row.buying_price,
     "sold_price": lambda row: row.sold_price,
     "vat_rate": lambda row: row.vat_rate,
@@ -750,13 +754,59 @@ class _SortSpec:
     descending: bool
 
 
+def build_scorecard(
+    session: Session,
+    *,
+    window_days: int,
+    filters: ScorecardFilters,
+    limit: int,
+    offset: int,
+    sort: str | None,
+) -> ScorecardResult:
+    """Stored ``product_scores`` of the newest period for ``window_days``, filtered,
+    sorted server-side, then paginated. Empty with ``period_end=None`` when that
+    window was never computed."""
+    sort_spec = _parse_scorecard_sort(sort)
+    weights = scoring_service.load_weights(session)
+    period_end = scoring_service.latest_score_period(session, window_days)
+    if period_end is None:
+        return ScorecardResult(
+            rows=[],
+            total=0,
+            weights=weights,
+            window_days=window_days,
+            period_end=None,
+            computed_at=None,
+        )
+
+    computed_at = session.execute(
+        select(func.max(ProductScore.computed_at)).where(
+            ProductScore.window_days == window_days,
+            ProductScore.period_end == period_end,
+        )
+    ).scalar_one()
+    score_records = session.execute(
+        _stored_scores_query(window_days, period_end, filters)
+    ).all()
+    rows = [_build_scorecard_row(record) for record in score_records]
+    sorted_rows = _sort_scorecard_rows(rows, sort_spec)
+    return ScorecardResult(
+        rows=sorted_rows[offset : offset + limit],
+        total=len(sorted_rows),
+        weights=weights,
+        window_days=window_days,
+        period_end=period_end,
+        computed_at=computed_at,
+    )
+
+
 def _parse_scorecard_sort(sort: str | None) -> _SortSpec:
-    """Parse ``?sort=<field> [asc|desc]`` → a validated sort spec.
+    """Parse ``?sort=<field> [asc|desc]`` into a validated sort spec.
 
     Default: ``final_score desc``. Unknown fields raise a 422.
     """
     if not sort or not sort.strip():
-        return _SortSpec(field="final_score", descending=True)
+        return _SortSpec(field=_DEFAULT_SCORECARD_SORT_FIELD, descending=True)
     parts = sort.replace(":", " ").split()
     field = parts[0]
     if field not in _SCORECARD_SORT_KEYS:
@@ -773,192 +823,97 @@ def _parse_scorecard_sort(sort: str | None) -> _SortSpec:
             )
         descending = direction == "desc"
     else:
-        descending = field == "final_score"
+        descending = field == _DEFAULT_SCORECARD_SORT_FIELD
     return _SortSpec(field=field, descending=descending)
 
 
-@dataclass(frozen=True)
-class _ProductFacts:
-    """The minimal product fields the scorecard needs (no full ORM entity load,
-    so the query is independent of not-yet-migrated columns)."""
-
-    product_id: int
-    code: str
-    name: str
-    supplier_id: int | None
-    purchase_price: int
-    sales_price: int
-    vat_rate: Decimal
-    shelf_life_days: int | None
-    category_name: str | None
-    supplier_name: str | None
-
-
-def _compute_scorecard_row(
-    facts: _ProductFacts,
-    sold: int,
-    added: int,
-    positive: int,
-    negative: int,
-    weights: "scoring_service.ScoringWeights",
-) -> ScorecardRowData:
-    sell_ex_vat = (
-        Decimal(facts.sales_price) / (Decimal("1") + facts.vat_rate)
-        if facts.vat_rate is not None
-        else Decimal(facts.sales_price)
-    )
-    margin = (
-        (sell_ex_vat - Decimal(facts.purchase_price)) / sell_ex_vat
-        if sell_ex_vat and sell_ex_vat > 0
-        else None
-    )
-    pct_sold = Decimal(sold) / Decimal(added) if added > 0 else None
-    total_reviews = positive + negative
-    review_component = (
-        Decimal(positive - negative) / Decimal(total_reviews)
-        if total_reviews > 0
-        else None
-    )
-    pct_positive = (
-        Decimal(positive) / Decimal(total_reviews) if total_reviews > 0 else None
-    )
-    final_score = (
-        weights.pct_sold * (pct_sold or Decimal("0"))
-        + weights.margin * (margin or Decimal("0"))
-        + weights.review * (review_component or Decimal("0"))
-    )
-    return ScorecardRowData(
-        product_id=facts.product_id,
-        name=facts.name,
-        code=facts.code,
-        category=facts.category_name,
-        brand=facts.supplier_name,
-        supplier_id=facts.supplier_id,
-        shelf_life_days=facts.shelf_life_days,
-        buying_price=int(facts.purchase_price),
-        sold_price=int(facts.sales_price),
-        vat_rate=facts.vat_rate,
-        profit_margin=None if margin is None else margin.quantize(_FOUR_PLACES),
-        total_sold_qty=sold,
-        total_added_qty=added,
-        pct_sold=None if pct_sold is None else pct_sold.quantize(_FOUR_PLACES),
-        positive_reviews=positive,
-        negative_reviews=negative,
-        pct_positive_review=(
-            None if pct_positive is None else pct_positive.quantize(_FOUR_PLACES)
-        ),
-        final_score=final_score.quantize(_FOUR_PLACES),
-    )
-
-
-def _scorecard_fact_map(query: str, params: dict, session) -> dict[int, tuple]:
-    rows = session.execute(text(query), params).all()
-    return {row[0]: tuple(row[1:]) for row in rows}
-
-
-def build_scorecard(
-    session: Session,
-    *,
+def _stored_scores_query(
     window_days: int,
-    limit: int,
-    offset: int,
-    sort: str | None,
-    as_of: datetime.date | None = None,
-) -> ScorecardResult:
-    """Build the product rating scorecard live from the raw facts.
-
-    Aggregates the trailing ``window_days`` of ``sales_events`` (sold),
-    ``restock_events`` (added, excluding unrecognised tags - same denominator as
-    the nightly scoring job), and ``product_reviews`` (positive vs negative), then
-    computes every Excel-equivalent column per product. The final score reuses the
-    live ``scoring_weights`` and the legacy scoring formula so a UI recompute and
-    this view stay consistent. Sorted server-side then paginated.
-    """
-    if window_days <= 0:
-        raise ApiError(422, "unprocessable_entity", "window_days must be positive")
-
-    period_end = as_of or datetime.date.today()
-    window_start = period_end - datetime.timedelta(days=window_days)
-    weights = scoring_service._load_weights(session)
-    params = {"start": window_start, "end": period_end}
-
-    sold_map = _scorecard_fact_map(
-        "SELECT product_id, count(*) FROM sales_events "
-        "WHERE is_refunded = false AND sold_at >= :start AND sold_at < :end "
-        "GROUP BY product_id",
-        params,
-        session,
-    )
-    added_map = _scorecard_fact_map(
-        "SELECT product_id, count(*) FROM restock_events "
-        "WHERE action = 'added' AND tag_status <> 'unrecognised' "
-        "AND occurred_at >= :start AND occurred_at < :end GROUP BY product_id",
-        params,
-        session,
-    )
-    review_map = _scorecard_fact_map(
-        "SELECT product_id, count(*) FILTER (WHERE rating = 1), "
-        "count(*) FILTER (WHERE rating <> 1) FROM product_reviews "
-        "WHERE reviewed_at >= :start AND reviewed_at < :end GROUP BY product_id",
-        params,
-        session,
-    )
-
-    catalogue = session.execute(
+    period_end: datetime.date,
+    filters: ScorecardFilters,
+):
+    conditions = [
+        ProductScore.window_days == window_days,
+        ProductScore.period_end == period_end,
+    ]
+    if filters.category_id is not None:
+        conditions.append(Product.category_id == filters.category_id)
+    if filters.supplier_id is not None:
+        conditions.append(Product.supplier_id == filters.supplier_id)
+    if filters.search:
+        search_pattern = f"%{filters.search}%"
+        conditions.append(
+            or_(
+                Product.code.ilike(search_pattern),
+                Product.name.ilike(search_pattern),
+            )
+        )
+    return (
         select(
-            Product.id,
+            ProductScore,
             Product.code,
             Product.name,
-            Product.supplier_id,
+            Product.shelf_life_days,
             Product.purchase_price,
             Product.sales_price,
             Product.vat_rate,
-            Product.shelf_life_days,
-            Category.name,
-            Supplier.name,
+            Category.name.label("category_name"),
+            Supplier.name.label("supplier_name"),
         )
-        .select_from(Product)
-        .join(Category, Category.id == Product.category_id)
+        .join(Product, Product.id == ProductScore.product_id)
+        .outerjoin(Category, Category.id == Product.category_id)
         .outerjoin(Supplier, Supplier.id == Product.supplier_id)
-    ).all()
-
-    rows: list[ScorecardRowData] = []
-    for record in catalogue:
-        facts = _ProductFacts(
-            product_id=record[0],
-            code=record[1],
-            name=record[2],
-            supplier_id=record[3],
-            purchase_price=int(record[4]),
-            sales_price=int(record[5]),
-            vat_rate=record[6],
-            shelf_life_days=record[7],
-            category_name=record[8],
-            supplier_name=record[9],
-        )
-        sold = int(sold_map.get(facts.product_id, (0,))[0])
-        added = int(added_map.get(facts.product_id, (0,))[0])
-        positive, negative = review_map.get(facts.product_id, (0, 0))
-        rows.append(
-            _compute_scorecard_row(
-                facts, sold, added, int(positive), int(negative), weights
-            )
-        )
-
-    spec = _parse_scorecard_sort(sort)
-    key_func = _SCORECARD_SORT_KEYS[spec.field]
-    # Missing (None) values always sort last, independent of direction.
-    present = [row for row in rows if key_func(row) is not None]
-    missing = [row for row in rows if key_func(row) is None]
-    present.sort(key=key_func, reverse=spec.descending)
-    rows = present + missing
-
-    total = len(rows)
-    page = rows[offset : offset + limit]
-    return ScorecardResult(
-        rows=page,
-        total=total,
-        weights=weights,
-        window_days=window_days,
-        period_end=period_end,
+        .where(*conditions)
+        .order_by(Product.name)
     )
+
+
+def _build_scorecard_row(record) -> ScorecardRowData:
+    score: ProductScore = record.ProductScore
+    pct_positive = _positive_review_share(score.positive_reviews, score.negative_reviews)
+    return ScorecardRowData(
+        product_id=score.product_id,
+        name=record.name,
+        code=record.code,
+        category=record.category_name,
+        supplier_name=record.supplier_name,
+        shelf_life_days=record.shelf_life_days,
+        buying_price=int(record.purchase_price),
+        sold_price=int(record.sales_price),
+        vat_rate=record.vat_rate,
+        profit_margin=score.margin_score,
+        total_sold_qty=score.sold_qty,
+        total_added_qty=score.sample_size,
+        pct_sold=score.pct_sold,
+        positive_reviews=score.positive_reviews,
+        negative_reviews=score.negative_reviews,
+        pct_positive_review=pct_positive,
+        final_score=score.final_score,
+        uses_new_product_baseline=score.uses_new_product_baseline,
+    )
+
+
+def _positive_review_share(
+    positive_reviews: int | None,
+    negative_reviews: int | None,
+) -> Decimal | None:
+    """Positive / all reviews; None for rows stored before review counts were kept."""
+    if positive_reviews is None or negative_reviews is None:
+        return None
+    total_reviews = positive_reviews + negative_reviews
+    if total_reviews == 0:
+        return None
+    share = Decimal(positive_reviews) / Decimal(total_reviews)
+    return share.quantize(_FOUR_PLACES)
+
+
+def _sort_scorecard_rows(
+    rows: list[ScorecardRowData],
+    sort_spec: _SortSpec,
+) -> list[ScorecardRowData]:
+    sort_key = _SCORECARD_SORT_KEYS[sort_spec.field]
+    # Missing (None) values always sort last, independent of direction.
+    rows_with_value = [row for row in rows if sort_key(row) is not None]
+    rows_without_value = [row for row in rows if sort_key(row) is None]
+    rows_with_value.sort(key=sort_key, reverse=sort_spec.descending)
+    return rows_with_value + rows_without_value

@@ -1,17 +1,22 @@
 import * as React from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search, SlidersHorizontal } from 'lucide-react'
+import { SlidersHorizontal } from 'lucide-react'
+import { CategoryFilter } from '@/components/filters/CategoryFilter'
+import { FilterBar } from '@/components/filters/FilterBar'
+import { ProductSearchInput } from '@/components/filters/ProductSearchInput'
+import { SupplierFilter } from '@/components/filters/SupplierFilter'
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { StatusChip } from '@/components/shared/StatusChip'
+import { Toolbar } from '@/components/shared/Toolbar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { toast } from '@/components/ui/sonner'
+import { useCategorySupplierFilter } from '@/hooks/useCategorySupplierFilter'
 import { api, ApiError, type Page } from '@/lib/api'
 import { EMPTY_PLACEHOLDER, formatDateTime } from '@/lib/format'
-import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { cn } from '@/lib/utils'
 import { Dialog } from './components/Dialog'
 import { Field, Textarea, fieldErrorsFromApiError } from './components/form'
@@ -41,101 +46,133 @@ function QtyCell({ value }: { value: number }) {
   )
 }
 
+function StockStatusChip({ availableQty }: { availableQty: number }) {
+  if (availableQty < 0) return <StatusChip status="critical" label="Negative" />
+  if (availableQty === 0) return <StatusChip status="warning" label="Empty" />
+  return <StatusChip status="active" label="In stock" />
+}
+
+const STOCK_COLUMNS: DataTableColumn<StockBalance>[] = [
+  {
+    id: 'code',
+    header: 'Code',
+    cell: (row) => <span className="font-mono text-xs">{row.product_code}</span>,
+    sortValue: (row) => row.product_code,
+  },
+  {
+    id: 'name',
+    header: 'Product',
+    cell: (row) => <span className="font-medium">{row.product_name}</span>,
+    sortValue: (row) => row.product_name,
+  },
+  {
+    id: 'category',
+    header: 'Category',
+    cell: (row) => <span className="text-muted-foreground">{row.category_name}</span>,
+    sortValue: (row) => row.category_name,
+  },
+  {
+    id: 'supplier',
+    header: 'Supplier',
+    cell: (row) => (
+      <span className="text-muted-foreground">{row.supplier_name ?? EMPTY_PLACEHOLDER}</span>
+    ),
+    sortValue: (row) => row.supplier_name,
+  },
+  {
+    id: 'on_order',
+    header: 'On order',
+    align: 'right',
+    cell: (row) => <QtyCell value={row.on_order_qty} />,
+    sortValue: (row) => row.on_order_qty,
+  },
+  {
+    id: 'physical',
+    header: 'In warehouse',
+    align: 'right',
+    cell: (row) => <QtyCell value={row.physical_qty} />,
+    sortValue: (row) => row.physical_qty,
+  },
+  {
+    id: 'available',
+    header: 'Available',
+    align: 'right',
+    cell: (row) => <QtyCell value={row.available_qty} />,
+    sortValue: (row) => row.available_qty,
+  },
+  {
+    id: 'status',
+    header: 'Status',
+    cell: (row) => <StockStatusChip availableQty={row.available_qty} />,
+    sortValue: (row) => row.available_qty,
+  },
+]
+
 export function StockPage() {
-  const [searchInput, setSearchInput] = React.useState('')
+  const {
+    categoryId,
+    supplierId,
+    isSupplierSettled,
+    setCategoryId,
+    setSupplierId,
+  } = useCategorySupplierFilter()
+  const [search, setSearch] = React.useState('')
   const [offset, setOffset] = React.useState(0)
   const [selected, setSelected] = React.useState<StockBalance | null>(null)
   const [adjusting, setAdjusting] = React.useState(false)
 
-  const search = useDebouncedValue(searchInput.trim(), 300)
-
   React.useEffect(() => {
     setOffset(0)
-  }, [search])
+  }, [search, categoryId, supplierId])
 
   const balancesQuery = useQuery({
-    queryKey: ['supply', 'stock-balances', { search, offset }],
+    queryKey: ['supply', 'stock-balances', { search, categoryId, supplierId, offset }],
     queryFn: ({ signal }) =>
       api.get<Page<StockBalance>>('/api/v1/stock/balances', {
-        params: { search: search || undefined, limit: PAGE_SIZE, offset },
+        params: {
+          search: search || undefined,
+          category_id: categoryId,
+          supplier_id: supplierId,
+          limit: PAGE_SIZE,
+          offset,
+        },
         signal,
       }),
     placeholderData: keepPreviousData,
+    enabled: isSupplierSettled,
   })
-
-  const columns = React.useMemo<DataTableColumn<StockBalance>[]>(
-    () => [
-      {
-        id: 'code',
-        header: 'Code',
-        cell: (row) => <span className="font-mono text-xs">{row.product_code}</span>,
-        sortValue: (row) => row.product_code,
-      },
-      {
-        id: 'name',
-        header: 'Product',
-        cell: (row) => <span className="font-medium">{row.product_name}</span>,
-        sortValue: (row) => row.product_name,
-      },
-      {
-        id: 'on_order',
-        header: 'On order',
-        align: 'right',
-        cell: (row) => <QtyCell value={row.on_order_qty} />,
-        sortValue: (row) => row.on_order_qty,
-      },
-      {
-        id: 'physical',
-        header: 'In warehouse',
-        align: 'right',
-        cell: (row) => <QtyCell value={row.physical_qty} />,
-        sortValue: (row) => row.physical_qty,
-      },
-      {
-        id: 'available',
-        header: 'Available',
-        align: 'right',
-        cell: (row) => <QtyCell value={row.available_qty} />,
-        sortValue: (row) => row.available_qty,
-      },
-      {
-        id: 'status',
-        header: 'Status',
-        cell: (row) =>
-          row.available_qty < 0 ? (
-            <StatusChip status="critical" label="Negative" />
-          ) : row.available_qty === 0 ? (
-            <StatusChip status="warning" label="Empty" />
-          ) : (
-            <StatusChip status="active" label="In stock" />
-          ),
-        sortValue: (row) => row.available_qty,
-      },
-    ],
-    [],
-  )
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchInput}
-            onChange={(event) => setSearchInput(event.target.value)}
-            placeholder="Search code or name…"
-            className="w-64 pl-8"
-          />
-        </div>
-        <Button variant="outline" onClick={() => setAdjusting(true)}>
-          <SlidersHorizontal className="h-4 w-4" /> Manual adjustment
-        </Button>
-      </div>
+      <Toolbar
+        left={
+          <FilterBar>
+            <CategoryFilter
+              value={categoryId}
+              onChange={setCategoryId}
+            />
+            <SupplierFilter
+              value={supplierId}
+              onChange={setSupplierId}
+              categoryId={categoryId}
+            />
+            <ProductSearchInput onSearchChange={setSearch} />
+          </FilterBar>
+        }
+        right={
+          <Button
+            variant="outline"
+            onClick={() => setAdjusting(true)}
+          >
+            <SlidersHorizontal className="h-4 w-4" /> Manual adjustment
+          </Button>
+        }
+      />
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.4fr_1fr]">
-        <div className="space-y-2">
+      <div className="grid flex-1 grid-cols-1 gap-6 xl:grid-cols-[1.4fr_1fr]">
+        <div className="flex flex-col">
           <DataTable
-            columns={columns}
+            columns={STOCK_COLUMNS}
             page={balancesQuery.data}
             isLoading={balancesQuery.isLoading}
             isError={balancesQuery.isError}
@@ -149,9 +186,7 @@ export function StockPage() {
             emptyState={
               <EmptyState
                 title="No stock rows"
-                description={
-                  search ? `No products match “${search}”.` : 'No stock balances available.'
-                }
+                description="No products match the current filters."
               />
             }
           />

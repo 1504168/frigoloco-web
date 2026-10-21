@@ -25,15 +25,24 @@ export interface ForecastRunRequest {
   params?: Record<string, unknown> | null
 }
 
+/** One on-screen forecast quantity sent on save (schema: ForecastCellEdit). */
+export interface ForecastCellEdit {
+  fridge_id: number
+  category_id: number
+  forecast_qty: number
+}
+
 /** POST /api/v1/forecasts/save body (schema: ForecastSaveRequest). */
 export interface ForecastSaveRequest {
-  year: number
-  week: number
-  day_name: string
-  fridge_ids?: number[] | null
-  model?: string
-  params?: Record<string, unknown> | null
+  run_id: number
+  cells: ForecastCellEdit[]
   overwrite?: boolean
+}
+
+/** GET /api/v1/forecasts/models item (schema: ForecastModelOut). */
+export interface ForecastModel {
+  code: string
+  label: string
 }
 
 /** One fridge×category forecast cell (schema: ForecastResultOut). */
@@ -88,6 +97,12 @@ export interface ForecastRun {
     [key: string]: unknown
   }
   results: ForecastResult[]
+  window_start: string
+  /** Exclusive: the day after the last sales day in the window. */
+  window_end: string
+  window_sales_units: number
+  hidden_category_ids: number[]
+  residual_applied: boolean
 }
 
 // ── Shared grid shape (MenuGridOut and DispatchMatrix are structurally equal) ─

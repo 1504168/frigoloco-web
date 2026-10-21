@@ -109,28 +109,66 @@ class StockBalancesQuery:
     """Filters for the balances listing."""
 
     search: str | None = None
+    category_id: int | None = None
+    supplier_id: int | None = None
+
+
+_BALANCES_FROM = """
+    FROM v_stock_balances balance
+    JOIN products product ON product.id = balance.product_id
+    JOIN categories category ON category.id = product.category_id
+    LEFT JOIN suppliers supplier ON supplier.id = product.supplier_id
+"""
+
+# Category screen order (Uncategorised carries the highest display_order), then supplier
+# name with no-supplier rows last, then product name.
+_BALANCES_ORDER_BY = """
+    ORDER BY category.display_order,
+             category.name,
+             lower(supplier.name) NULLS LAST,
+             balance.product_name,
+             balance.product_code
+"""
 
 
 def list_balances(
-    query: StockBalancesQuery, page: PaginationParams, session: Session
+    query: StockBalancesQuery,
+    page: PaginationParams,
+    session: Session,
 ) -> tuple[list[Row], int]:
-    """Return one page of ``v_stock_balances`` rows plus the total count."""
-    where = ""
+    """Return one page of ``v_stock_balances`` rows with category and supplier, plus the total."""
+    conditions: list[str] = []
     params: dict[str, object] = {}
     if query.search:
-        where = " WHERE product_code ILIKE :q OR product_name ILIKE :q"
-        params["q"] = f"%{query.search}%"
+        conditions.append(
+            "(balance.product_code ILIKE :search OR balance.product_name ILIKE :search)"
+        )
+        params["search"] = f"%{query.search}%"
+    if query.category_id is not None:
+        conditions.append("product.category_id = :category_id")
+        params["category_id"] = query.category_id
+    if query.supplier_id is not None:
+        conditions.append("product.supplier_id = :supplier_id")
+        params["supplier_id"] = query.supplier_id
+    where = ""
+    if conditions:
+        where = " WHERE " + " AND ".join(conditions)
 
     total = session.execute(
-        text(f"SELECT count(*) FROM v_stock_balances{where}"), params
+        text(f"SELECT count(*) {_BALANCES_FROM}{where}"),
+        params,
     ).scalar_one()
 
+    balances_page = text(
+        "SELECT balance.product_id, balance.product_code, balance.product_name, "
+        "balance.physical_qty, balance.on_order_qty, balance.available_qty, "
+        "category.id AS category_id, category.name AS category_name, "
+        "supplier.id AS supplier_id, supplier.name AS supplier_name"
+        f"{_BALANCES_FROM}{where}{_BALANCES_ORDER_BY}"
+        "LIMIT :limit OFFSET :offset"
+    )
     rows = session.execute(
-        text(
-            "SELECT product_id, product_code, product_name, physical_qty, "
-            "on_order_qty, available_qty FROM v_stock_balances"
-            f"{where} ORDER BY product_code LIMIT :limit OFFSET :offset"
-        ),
+        balances_page,
         {**params, "limit": page.limit, "offset": page.offset},
     ).all()
     return list(rows), int(total)
@@ -156,6 +194,7 @@ def record_adjustment(
         qty=qty,
         movement_type=StockMovementType.adjustment,
         reason=reason,
+        created_by=user_id,
     )
     session.add(movement)
     record_audit(

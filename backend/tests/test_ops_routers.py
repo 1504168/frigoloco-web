@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.db import engine, get_db
 from app.main import app
 from app.models import FridgeStock
-from tests import ensure_dispatches_week_start
+from tests import ensure_dispatches_week_start, ensure_test_admin_user
 
 PREFIX = "/api/v1"
 TAG = "ZZTEST-"
@@ -42,6 +42,7 @@ def ctx():
     )
     _ensure_fridge_stock_table(connection)
     ensure_dispatches_week_start(connection)
+    ensure_test_admin_user(connection)
 
     def _override_get_db():
         yield session
@@ -420,12 +421,22 @@ def test_forecast_scoring_allocation_end_to_end(ctx):
                 "ts": datetime.datetime(2026, 6, 2, 10, tzinfo=datetime.timezone.utc),
             },
         )
+    # Real sales in the shared DB can put this product under the new-product
+    # baseline; a zero threshold keeps its own score regardless of other data.
+    ctx.session.execute(
+        text(
+            "INSERT INTO settings (key, value) VALUES ('new_product_sales_threshold', '0') "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value"
+        )
+    )
     ctx.session.flush()
 
     rec = ctx.client.post(
-        f"{PREFIX}/forecasts/scores/recompute", json={"as_of": DELIVERY_DATE.isoformat()}
+        f"{PREFIX}/forecasts/scores/recompute",
+        json={"as_of": DELIVERY_DATE.isoformat(), "window_days": 365},
     )
     assert rec.status_code == 200 and rec.json()["products_scored"] >= 1
+    assert rec.json()["window_days"] == 365
 
     scores = ctx.client.get(
         f"{PREFIX}/forecasts/scores",
@@ -436,6 +447,9 @@ def test_forecast_scoring_allocation_end_to_end(ctx):
     assert score["final_score"] == "1.4970"
     assert score["pct_sold"] == "2.1000"
     assert score["margin_score"] == "0.5000"
+    assert score["window_days"] == 365
+    assert score["sold_qty"] == 21
+    assert score["uses_new_product_baseline"] is False
 
     # --- Allocation: menu with both products; normal -> 3, drink -> target 5 ---
     menu = ctx.client.post(f"{PREFIX}/menus", params={"year": 2026, "week": 25}).json()

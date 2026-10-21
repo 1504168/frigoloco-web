@@ -21,7 +21,7 @@ import argparse
 import datetime
 import logging
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -29,13 +29,13 @@ from sqlalchemy import select
 from app.db import SessionLocal
 from app.models import SyncRun
 
+from cron.event_windows import split_into_windows
 from cron.jobs import reviews_sync, sync_purchases, sync_restock
 from cron.jobs._base import JobOutcome
 
 logger = logging.getLogger("cron.jobs.backfill")
 
 JOB_NAME = "backfill"
-_CHUNK = datetime.timedelta(days=7)
 _MIN_CHUNK = datetime.timedelta(days=1)
 _RESUMABLE_STATUSES = ("success", "empty")
 
@@ -57,14 +57,6 @@ _ENDPOINTS: dict[str, EndpointSpec] = {
     "reviews": EndpointSpec(reviews_sync.run, "reviews_sync", "productreview"),
     "productreview": EndpointSpec(reviews_sync.run, "reviews_sync", "productreview"),
 }
-
-
-def _chunks(window_from: datetime.datetime, window_to: datetime.datetime) -> Iterator[tuple[datetime.datetime, datetime.datetime]]:
-    start = window_from
-    while start < window_to:
-        end = min(start + _CHUNK, window_to)
-        yield start, end
-        start = end
 
 
 def _already_done(spec: EndpointSpec, cfrom: datetime.datetime, cto: datetime.datetime) -> bool:
@@ -117,7 +109,10 @@ def run(
 
     total = JobOutcome()
     planned = skipped = executed = 0
-    for cfrom, cto in _chunks(window_from, window_to):
+    chunk_windows = split_into_windows(window_from, window_to)
+    for chunk_window in chunk_windows:
+        cfrom = chunk_window.start
+        cto = chunk_window.end
         planned += 1
         done = _already_done(spec, cfrom, cto)
         if dry_run:

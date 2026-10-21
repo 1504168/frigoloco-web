@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import Depends, status
+from fastapi import Depends, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models.master import Supplier
+from app.models.master import Product, Supplier
 from app.schemas.masters import (
     Page,
     PaginationParams,
@@ -33,16 +33,32 @@ def _get_or_404(supplier_id: int, session: Session) -> Supplier:
 @router.get("", response_model=Page[SupplierRead])
 def list_suppliers(
     page: PaginationParams = Depends(pagination),
+    category_id: int | None = Query(
+        default=None,
+        description="Only suppliers with at least one product in this category.",
+    ),
     session: Session = Depends(get_db),
 ) -> Page[SupplierRead]:
-    total = session.execute(select(func.count()).select_from(Supplier)).scalar_one()
-    rows = list(
-        session.execute(
-            select(Supplier).order_by(Supplier.name).limit(page.limit).offset(page.offset)
+    filters = []
+    if category_id is not None:
+        supplies_category = (
+            select(Product.id)
+            .where(Product.supplier_id == Supplier.id)
+            .where(Product.category_id == category_id)
+            .exists()
         )
-        .scalars()
-        .all()
+        filters.append(supplies_category)
+
+    count_stmt = select(func.count()).select_from(Supplier).where(*filters)
+    total = session.execute(count_stmt).scalar_one()
+    suppliers_by_name = (
+        select(Supplier)
+        .where(*filters)
+        .order_by(func.lower(Supplier.name), Supplier.id)
+        .limit(page.limit)
+        .offset(page.offset)
     )
+    rows = session.execute(suppliers_by_name).scalars().all()
     return Page(
         items=[SupplierRead.model_validate(row) for row in rows],
         total=int(total),

@@ -1,9 +1,12 @@
 import { Navigate, type RouteObject } from 'react-router-dom'
+import { RequireAuth } from '@/components/auth/RequireAuth'
 import { AppLayout } from '@/components/layout/AppLayout'
+import Login from '@/pages/Login'
 import { PlaceholderPage } from '@/pages/_shared/PlaceholderPage'
 import { ProductsPage } from '@/pages/masters/ProductsPage'
 import { SyncPage } from '@/pages/masters/SyncPage'
 import { AlertsPage } from '@/pages/alerts/AlertsPage'
+import { UsersPage } from '@/pages/Users'
 import { opsRoutes } from '@/pages/ops/routes'
 import { supplyRoutes } from '@/pages/supply/routes'
 import { financeRoutes } from '@/pages/finance/routes'
@@ -16,6 +19,7 @@ const foundationRoutes: RouteObject[] = [
   { path: '/masters/products', element: <ProductsPage /> },
   { path: '/masters/sync', element: <SyncPage /> },
   { path: '/alerts', element: <AlertsPage /> },
+  { path: '/users', element: <UsersPage /> },
 ]
 
 /**
@@ -32,18 +36,24 @@ const placeholderRoutes: RouteObject[] = []
  * page-agents only ever touch their own pages/<domain>/routes.tsx.
  */
 export const routes: RouteObject[] = [
+  { path: '/login', element: <Login /> },
   {
-    path: '/',
-    element: <AppLayout />,
+    element: <RequireAuth />,
     children: [
-      { index: true, element: <Navigate to="/masters/products" replace /> },
-      ...foundationRoutes,
-      ...opsRoutes,
-      ...supplyRoutes,
-      ...financeRoutes,
-      ...ratingRoutes,
-      ...placeholderRoutes,
-      { path: '*', element: <PlaceholderPage title="Page not found" description="The page you are looking for does not exist." /> },
+      {
+        path: '/',
+        element: <AppLayout />,
+        children: [
+          { index: true, element: <Navigate to="/masters/products" replace /> },
+          ...foundationRoutes,
+          ...opsRoutes,
+          ...supplyRoutes,
+          ...financeRoutes,
+          ...ratingRoutes,
+          ...placeholderRoutes,
+          { path: '*', element: <PlaceholderPage title="Page not found" description="The page you are looking for does not exist." /> },
+        ],
+      },
     ],
   },
 ]

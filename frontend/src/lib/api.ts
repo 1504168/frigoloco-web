@@ -9,9 +9,20 @@
  *
  * Use the exported get/post/put/patch/del helpers. They throw ApiError on
  * non-2xx responses so react-query surfaces failures to ErrorState.
+ *
+ * Auth: when a bearer token is stored (see lib/auth), it is attached as
+ * `Authorization: Bearer <token>` on every request. Any 401 (except the login
+ * call itself) clears the token and redirects to /login.
  */
 
+import { clearToken, getToken } from '@/lib/auth'
+
 const RAW_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8100'
+
+/** Login endpoint path; a 401 here means bad credentials, not an expired session. */
+const LOGIN_PATH = '/api/v1/auth/login'
+/** Route the browser is sent to when a session expires. */
+const LOGIN_ROUTE = '/login'
 /** Base URL with any trailing slash stripped so path joins are predictable. */
 export const API_BASE_URL = RAW_BASE.replace(/\/+$/, '')
 
@@ -94,6 +105,9 @@ async function request<T>(
   const hasBody = body !== undefined
   if (hasBody) headers['Content-Type'] = 'application/json'
 
+  const token = getToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
   const response = await fetch(url, {
     method,
     headers,
@@ -102,6 +116,15 @@ async function request<T>(
   })
 
   if (!response.ok) {
+    // An expired/invalid session on any endpoint (other than the login call
+    // itself) clears the token and bounces to the login page. Guard against a
+    // redirect loop if we are already sitting on /login.
+    if (response.status === 401 && path !== LOGIN_PATH) {
+      clearToken()
+      if (window.location.pathname !== LOGIN_ROUTE) {
+        window.location.href = LOGIN_ROUTE
+      }
+    }
     throw await toApiError(response)
   }
 

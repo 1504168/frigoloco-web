@@ -59,6 +59,12 @@ interface SupplierBand {
   isPlaceholder: boolean
 }
 
+/** An extra per-product header row a page adds below the standard detail rows. */
+export interface PlanningGridDetailRow {
+  label: string
+  render: (productId: number) => React.ReactNode
+}
+
 function cellKey(fridgeId: number, productId: number): string {
   return `${fridgeId}:${productId}`
 }
@@ -80,6 +86,8 @@ export interface PlanningGridProps {
   draftPoPendingSupplierId?: number | null
   /** Disable every qty cell (e.g. a dispatched, read-only key). */
   readOnly?: boolean
+  /** Page-specific header rows shown after Shelf life (Menu: In stock, On order). */
+  extraDetailRows?: PlanningGridDetailRow[]
 }
 
 /**
@@ -99,6 +107,7 @@ export function PlanningGrid({
   onDraftPo,
   draftPoPendingSupplierId,
   readOnly = false,
+  extraDetailRows = [],
 }: PlanningGridProps) {
   const { columns, categoryBands, supplierBands } = React.useMemo(() => {
     const flat: FlatColumn[] = []
@@ -321,6 +330,11 @@ export function PlanningGrid({
             const days = productMeta(column.productId!)?.shelfLifeDays
             return days === null || days === undefined ? EMPTY_PLACEHOLDER : `${days}d`
           })}
+          {extraDetailRows.map((row) => (
+            <React.Fragment key={row.label}>
+              {detailRow(row.label, (column) => row.render(column.productId!))}
+            </React.Fragment>
+          ))}
           {/* Total qty per product column */}
           <tr>
             <th scope="row" className={cn(detailLabel, 'font-semibold text-foreground')}>

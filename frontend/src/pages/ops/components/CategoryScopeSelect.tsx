@@ -5,6 +5,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { sortCategories } from '@/lib/naturalSort'
 import { useCategories } from '@/pages/ops/lib/reference'
 
 const ALL = '__all__'
@@ -22,7 +23,7 @@ export interface CategoryScopeSelectProps {
  */
 export function CategoryScopeSelect({ value, onChange }: CategoryScopeSelectProps) {
   const categoriesQuery = useCategories()
-  const ordered = categoriesQuery.data?.ordered ?? []
+  const sortedCategories = sortCategories(categoriesQuery.data?.ordered ?? [])
 
   return (
     <Select
@@ -34,7 +35,7 @@ export function CategoryScopeSelect({ value, onChange }: CategoryScopeSelectProp
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={ALL}>All categories</SelectItem>
-        {ordered.map((category) => (
+        {sortedCategories.map((category) => (
           <SelectItem key={category.id} value={String(category.id)}>
             {category.name}
           </SelectItem>

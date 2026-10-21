@@ -24,19 +24,22 @@ so day-keyed rows are inserted via SQL here too).
 
 from __future__ import annotations
 
+import datetime
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import select, text
+from sqlalchemy import insert, select, text
 from sqlalchemy.orm import Session
 
-from app.models.master import Category, Fridge, Product
-from app.models.planning import ProductScore
-from app.schemas.masters import api_error
-from app.services import forecast_service
-from app.services.stock_service import record_audit
+from app.husky.sync import effective_status_clause
+from app.models.master import Category, Fridge, FridgeDeliveryConfig, Product
+from app.models.planning import MenuLine
+from app.schemas.masters import ApiException, api_error
+from app.services import forecast_service, scoring_service
+from app.services.stock_service import record_audit, resolve_delivery_date
 
 MENU_STATUS_SAVED = "active"
+ACTIVE_STATUS = "active"
 
 
 @dataclass(frozen=True)
@@ -86,6 +89,13 @@ class MenuLineInput:
 
 
 @dataclass(frozen=True)
+class MenuStockBalance:
+    product_id: int
+    in_stock_qty: int
+    on_order_qty: int
+
+
+@dataclass(frozen=True)
 class MenuDraftLine:
     product_id: int
     code: str
@@ -124,27 +134,20 @@ def _grid_from_cells(
     year: int,
     week: int,
     day_name: str,
-    raw_cells: list[tuple[int, int, int]],
+    cells: list[MenuGridCell],
     session: Session,
 ) -> MenuGrid:
-    """Assemble a :class:`MenuGrid` from ``(fridge_id, product_id, qty)`` tuples."""
-    fridge_ids = sorted({fridge_id for fridge_id, _pid, _qty in raw_cells})
-    product_ids = sorted({product_id for _fid, product_id, _qty in raw_cells})
-
-    fridges = [
-        MenuGridFridge(fridge_id=fridge.id, friendly_name=fridge.friendly_name)
-        for fridge in session.execute(
-            select(Fridge).where(Fridge.id.in_(fridge_ids)).order_by(Fridge.friendly_name)
-        )
-        .scalars()
-        .all()
-    ]
+    """Assemble a :class:`MenuGrid` from its cells."""
+    fridges = list_delivery_day_fridges(
+        delivery_date=resolve_delivery_date(year, week, day_name),
+        fridge_ids_with_lines={cell.fridge_id for cell in cells},
+        session=session,
+    )
+    product_ids = {cell.product_id for cell in cells}
     product_rows = list(
         session.execute(
             select(Product).where(Product.id.in_(product_ids)).order_by(Product.name)
-        )
-        .scalars()
-        .all()
+        ).scalars()
     )
     products = [
         MenuGridProduct(
@@ -154,25 +157,6 @@ def _grid_from_cells(
         )
         for product in product_rows
     ]
-    category_names = {
-        category.id: category.name
-        for category in session.execute(select(Category)).scalars().all()
-    }
-    products_by_category: dict[int, list[int]] = {}
-    for product in product_rows:
-        products_by_category.setdefault(product.category_id, []).append(product.id)
-    categories = [
-        MenuGridCategory(
-            category_id=category_id,
-            category_name=category_names.get(category_id, ""),
-            product_ids=pids,
-        )
-        for category_id, pids in sorted(products_by_category.items())
-    ]
-    cells = [
-        MenuGridCell(fridge_id=fridge_id, product_id=product_id, qty=qty)
-        for fridge_id, product_id, qty in raw_cells
-    ]
     return MenuGrid(
         menu_id=menu_id,
         year=year,
@@ -180,9 +164,67 @@ def _grid_from_cells(
         day_name=day_name,
         fridges=fridges,
         products=products,
-        categories=categories,
+        categories=_categories_in_display_order(product_rows, session),
         cells=cells,
     )
+
+
+def list_delivery_day_fridges(
+    *,
+    delivery_date: datetime.date,
+    fridge_ids_with_lines: set[int],
+    session: Session,
+) -> list[MenuGridFridge]:
+    """Grid fridge rows for a delivery day, ordered by name.
+
+    Every active fridge delivered on the date's weekday gets a row, so a plan can be
+    built from scratch, plus any fridge that already has lines (kept even if its
+    delivery config changed since).
+    """
+    delivery_fridge_ids = _delivery_fridge_ids(delivery_date.isoweekday(), session)
+    fridge_ids = fridge_ids_with_lines | delivery_fridge_ids
+    fridge_rows = session.execute(
+        select(Fridge).where(Fridge.id.in_(fridge_ids)).order_by(Fridge.friendly_name)
+    ).scalars()
+    return [
+        MenuGridFridge(fridge_id=fridge.id, friendly_name=fridge.friendly_name)
+        for fridge in fridge_rows
+    ]
+
+
+def _delivery_fridge_ids(delivery_weekday: int, session: Session) -> set[int]:
+    """Active fridges with a delivery configured on this ISO weekday."""
+    fridge_ids = session.execute(
+        select(Fridge.id)
+        .join(FridgeDeliveryConfig, FridgeDeliveryConfig.fridge_id == Fridge.id)
+        .where(
+            FridgeDeliveryConfig.weekday == delivery_weekday,
+            effective_status_clause(Fridge, ACTIVE_STATUS),
+        )
+    ).scalars()
+    return set(fridge_ids)
+
+
+def _categories_in_display_order(
+    product_rows: list[Product],
+    session: Session,
+) -> list[MenuGridCategory]:
+    products_by_category: dict[int, list[int]] = {}
+    for product in product_rows:
+        products_by_category.setdefault(product.category_id, []).append(product.id)
+    ordered_categories = session.execute(
+        select(Category)
+        .where(Category.id.in_(products_by_category))
+        .order_by(Category.display_order, Category.name)
+    ).scalars()
+    return [
+        MenuGridCategory(
+            category_id=category.id,
+            category_name=category.name,
+            product_ids=products_by_category[category.id],
+        )
+        for category in ordered_categories
+    ]
 
 
 def _category_products_by_score(
@@ -194,22 +236,15 @@ def _category_products_by_score(
     allocates evenly rather than dropping to zero.
     """
     products_by_category: dict[int, list[int]] = {}
-    for product in session.execute(
-        select(Product).where(Product.is_active.is_(True)).order_by(Product.name)
-    ).scalars().all():
+    active_products = session.execute(
+        select(Product)
+        .where(effective_status_clause(Product, ACTIVE_STATUS))
+        .order_by(Product.name)
+    ).scalars()
+    for product in active_products:
         products_by_category.setdefault(product.category_id, []).append(product.id)
 
-    latest_period = session.execute(
-        select(ProductScore.period_end).order_by(ProductScore.period_end.desc()).limit(1)
-    ).scalar()
-    scores: dict[int, Decimal] = {}
-    if latest_period is not None:
-        for product_id, final_score in session.execute(
-            select(ProductScore.product_id, ProductScore.final_score).where(
-                ProductScore.period_end == latest_period
-            )
-        ).all():
-            scores[product_id] = final_score
+    scores = scoring_service.load_latest_final_scores(session)
     return products_by_category, scores
 
 
@@ -240,7 +275,7 @@ def import_from_forecast(
     results = forecast_service.get_results(run.id, session)
     products_by_category, scores = _category_products_by_score(session)
 
-    raw_cells: list[tuple[int, int, int]] = []
+    cells: list[MenuGridCell] = []
     for result in results:
         if category_id is not None and result.category_id != category_id:
             continue
@@ -256,14 +291,16 @@ def import_from_forecast(
         allocations = _largest_remainder(target, weights)
         for product_id, qty in zip(product_ids, allocations):
             if qty > 0:
-                raw_cells.append((result.fridge_id, product_id, qty))
+                cells.append(
+                    MenuGridCell(fridge_id=result.fridge_id, product_id=product_id, qty=qty)
+                )
 
     return _grid_from_cells(
         menu_id=None,
         year=year,
         week=week,
         day_name=day_name,
-        raw_cells=raw_cells,
+        cells=cells,
         session=session,
     )
 
@@ -309,6 +346,7 @@ def save_menu(
     intact, and the ``exists`` conflict fires only if THAT category already has
     saved lines. When ``category_id`` is None the whole menu is replaced.
     """
+    resolve_delivery_date(year, week, day_name)  # 422 before anything is written
     scoped = category_id is not None
     existing_id = _find_menu_id(year, week, day_name, session)
     if existing_id is not None and not overwrite:
@@ -318,21 +356,16 @@ def save_menu(
             else True
         )
         if conflict:
-            raise api_error(
-                409,
-                "exists",
-                "A saved menu already exists for this key; resend with overwrite=true",
-                {
-                    "year": year,
-                    "week": week,
-                    "day_name": day_name,
-                    "menu_id": int(existing_id),
-                    "category_id": category_id,
-                },
+            raise _menu_exists_error(
+                year=year,
+                week=week,
+                day_name=day_name,
+                menu_id=int(existing_id),
+                category_id=category_id,
             )
 
-    positive = [line for line in lines if line.qty > 0]
-    product_ids = {line.product_id for line in positive}
+    lines_to_store = _lines_to_store(lines)
+    product_ids = {line.product_id for line in lines_to_store}
     category_of = {
         product.id: product.category_id
         for product in session.execute(
@@ -362,15 +395,25 @@ def save_menu(
             )
 
     if existing_id is None:
-        menu_id = int(
-            session.execute(
-                text(
-                    "INSERT INTO weekly_menus (year, iso_week, day_name, status) "
-                    "VALUES (:y, :w, :d, :status) RETURNING id"
-                ),
-                {"y": year, "w": week, "d": day_name, "status": MENU_STATUS_SAVED},
-            ).scalar_one()
-        )
+        created_menu_id = session.execute(
+            text(
+                "INSERT INTO weekly_menus (year, iso_week, day_name, status) "
+                "VALUES (:y, :w, :d, :status) "
+                "ON CONFLICT ON CONSTRAINT uq_weekly_menus_year_week_day DO NOTHING "
+                "RETURNING id"
+            ),
+            {"y": year, "w": week, "d": day_name, "status": MENU_STATUS_SAVED},
+        ).scalar_one_or_none()
+        if created_menu_id is None:
+            # A concurrent save of the same key (e.g. a double click) created it first.
+            raise _menu_exists_error(
+                year=year,
+                week=week,
+                day_name=day_name,
+                menu_id=None,
+                category_id=category_id,
+            )
+        menu_id = int(created_menu_id)
     else:
         menu_id = int(existing_id)
         if scoped:
@@ -392,19 +435,21 @@ def save_menu(
             {"status": MENU_STATUS_SAVED, "id": menu_id},
         )
 
-    for line in positive:
+    if lines_to_store:
+        # A Core insert() batches the rows into multi-row VALUES statements; a text()
+        # executemany sends one round trip per row (about a minute for a full menu).
         session.execute(
-            text(
-                "INSERT INTO menu_lines (menu_id, fridge_id, product_id, category_id, qty) "
-                "VALUES (:menu_id, :fridge_id, :product_id, :category_id, :qty)"
-            ),
-            {
-                "menu_id": menu_id,
-                "fridge_id": line.fridge_id,
-                "product_id": line.product_id,
-                "category_id": category_of[line.product_id],
-                "qty": line.qty,
-            },
+            insert(MenuLine),
+            [
+                {
+                    "menu_id": menu_id,
+                    "fridge_id": line.fridge_id,
+                    "product_id": line.product_id,
+                    "category_id": category_of[line.product_id],
+                    "qty": line.qty,
+                }
+                for line in lines_to_store
+            ],
         )
 
     if scoped:
@@ -424,12 +469,64 @@ def save_menu(
             "week": week,
             "day_name": day_name,
             "category_id": category_id,
-            "lines": len(positive),
+            "lines": len(lines_to_store),
         },
         user_id=user_id,
     )
     session.commit()
     return _load_grid(menu_id, year, week, day_name, session)
+
+
+def _menu_exists_error(
+    *,
+    year: int,
+    week: int,
+    day_name: str,
+    menu_id: int | None,
+    category_id: int | None,
+) -> ApiException:
+    return api_error(
+        409,
+        "exists",
+        "A saved menu already exists for this key; resend with overwrite=true",
+        {
+            "year": year,
+            "week": week,
+            "day_name": day_name,
+            "menu_id": menu_id,
+            "category_id": category_id,
+        },
+    )
+
+
+def _lines_to_store(lines: list[MenuLineInput]) -> list[MenuLineInput]:
+    """Positive lines, plus the qty-0 lines of products that have no positive line.
+
+    A product kept on the menu with no quantity yet is stored as qty-0 lines so
+    its column survives a reload; zero cells of products with quantities are
+    dropped to keep ``menu_lines`` small.
+    """
+    products_with_quantity = {line.product_id for line in lines if line.qty > 0}
+    return [
+        line
+        for line in lines
+        if line.qty > 0 or line.product_id not in products_with_quantity
+    ]
+
+
+def list_stock_balances(session: Session) -> list[MenuStockBalance]:
+    """Warehouse in-stock and on-order units for every product (``v_stock_balances``)."""
+    rows = session.execute(
+        text("SELECT product_id, physical_qty, on_order_qty FROM v_stock_balances")
+    ).all()
+    return [
+        MenuStockBalance(
+            product_id=row.product_id,
+            in_stock_qty=row.physical_qty,
+            on_order_qty=row.on_order_qty,
+        )
+        for row in rows
+    ]
 
 
 def _load_grid(
@@ -441,13 +538,16 @@ def _load_grid(
         ),
         {"id": menu_id},
     ).all()
-    raw_cells = [(row.fridge_id, row.product_id, int(row.qty)) for row in rows]
+    cells = [
+        MenuGridCell(fridge_id=row.fridge_id, product_id=row.product_id, qty=row.qty)
+        for row in rows
+    ]
     return _grid_from_cells(
         menu_id=menu_id,
         year=year,
         week=week,
         day_name=day_name,
-        raw_cells=raw_cells,
+        cells=cells,
         session=session,
     )
 
@@ -460,6 +560,18 @@ def get_saved_menu(
     if menu_id is None:
         return None
     return _load_grid(int(menu_id), year, week, day_name, session)
+
+
+def build_blank_menu(*, year: int, week: int, day_name: str, session: Session) -> MenuGrid:
+    """An unsaved menu with only the fridge rows delivered on this weekday."""
+    return _grid_from_cells(
+        menu_id=None,
+        year=year,
+        week=week,
+        day_name=day_name,
+        cells=[],
+        session=session,
+    )
 
 
 def aggregate_supplier_quantities(

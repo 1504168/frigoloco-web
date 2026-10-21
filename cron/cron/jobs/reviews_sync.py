@@ -2,7 +2,8 @@
 
 Thin scheduler/CLI wrapper. The Husky ``/productreview`` -> ``product_reviews``
 sync logic lives in :func:`app.husky.sync.sync_reviews_window` (shared with the
-FastAPI sync API and the backfill driver).
+FastAPI sync API and the backfill driver). The default window is gap-free and
+chunked: see :mod:`cron.event_windows`.
 """
 
 from __future__ import annotations
@@ -12,7 +13,9 @@ import datetime
 import logging
 import sys
 
-from app.husky.sync import JobOutcome, sync_reviews_window
+from app.husky.sync import REVIEW_WINDOW, JobOutcome, sync_reviews_window
+
+from cron.event_windows import run_event_sync
 
 logger = logging.getLogger("cron.jobs.reviews_sync")
 
@@ -23,7 +26,13 @@ def run(
     window_from: datetime.datetime | None = None,
     window_to: datetime.datetime | None = None,
 ) -> JobOutcome:
-    return sync_reviews_window(window_from, window_to)
+    return run_event_sync(
+        job=JOB_NAME,
+        sync_window=sync_reviews_window,
+        trailing_span=REVIEW_WINDOW,
+        window_from=window_from,
+        window_to=window_to,
+    )
 
 
 def _parse_dt(value: str) -> datetime.datetime:

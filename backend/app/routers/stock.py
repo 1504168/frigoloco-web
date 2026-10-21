@@ -6,6 +6,7 @@ from fastapi import Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.models.master import User
 from app.schemas.masters import Page, PaginationParams, make_router, pagination
 from app.schemas.stock import (
     AdjustmentRequest,
@@ -14,6 +15,7 @@ from app.schemas.stock import (
     OpeningStockRequest,
     StockBalanceOut,
 )
+from app.security import get_current_user
 from app.services import stock_service
 from app.services.stock_service import StockBalancesQuery
 
@@ -23,12 +25,20 @@ router = make_router(prefix="/api/v1/stock", tags=["stock"])
 @router.get("/balances", response_model=Page[StockBalanceOut])
 def list_balances(
     page: PaginationParams = Depends(pagination),
-    search: str | None = Query(default=None),
+    search: str | None = Query(
+        default=None,
+        description="Case-insensitive contains match on product code or name.",
+    ),
+    category_id: int | None = Query(default=None),
+    supplier_id: int | None = Query(default=None),
     session: Session = Depends(get_db),
 ) -> Page[StockBalanceOut]:
-    rows, total = stock_service.list_balances(
-        StockBalancesQuery(search=search), page, session
+    balances_query = StockBalancesQuery(
+        search=search,
+        category_id=category_id,
+        supplier_id=supplier_id,
     )
+    rows, total = stock_service.list_balances(balances_query, page, session)
     return Page(
         items=[
             StockBalanceOut(
@@ -38,6 +48,10 @@ def list_balances(
                 physical_qty=int(row.physical_qty),
                 on_order_qty=int(row.on_order_qty),
                 available_qty=int(row.available_qty),
+                category_id=row.category_id,
+                category_name=row.category_name,
+                supplier_id=row.supplier_id,
+                supplier_name=row.supplier_name,
             )
             for row in rows
         ],
@@ -51,13 +65,15 @@ def list_balances(
     "/adjustments", response_model=MovementOut, status_code=status.HTTP_201_CREATED
 )
 def create_adjustment(
-    body: AdjustmentRequest, session: Session = Depends(get_db)
+    body: AdjustmentRequest,
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> MovementOut:
     movement = stock_service.record_adjustment(
         product_id=body.product_id,
         qty=body.qty,
         reason=body.reason,
-        user_id=None,
+        user_id=current_user.id,
         session=session,
     )
     return MovementOut.model_validate(movement)
@@ -67,14 +83,16 @@ def create_adjustment(
     "/opening-stock", response_model=MovementOut, status_code=status.HTTP_201_CREATED
 )
 def record_opening_stock(
-    body: OpeningStockRequest, session: Session = Depends(get_db)
+    body: OpeningStockRequest,
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> MovementOut:
     """Seed a product's opening stock (positive adjustment, reason mandatory)."""
     movement = stock_service.record_opening_stock(
         product_id=body.product_id,
         qty=body.qty,
         reason=body.reason,
-        user_id=None,
+        user_id=current_user.id,
         session=session,
     )
     return MovementOut.model_validate(movement)

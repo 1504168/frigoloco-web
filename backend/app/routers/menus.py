@@ -10,13 +10,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models.master import Fridge, MenuProductCap, ProductTarget
+from app.models.master import Fridge, MenuProductCap, ProductTarget, User
 from app.models.planning import ForecastRun, MenuProduct, WeeklyMenu
 from app.schemas.masters import Page, PaginationParams, api_error, make_router, pagination
 from app.schemas.menus import (
     AllocateResponse,
     AllocationLineOut,
-    CapItem,
     CapRead,
     CapsReplace,
     MenuDraftLineOut,
@@ -24,11 +23,12 @@ from app.schemas.menus import (
     MenuProductsReplace,
     MenuRead,
     MenuSaveRequest,
-    TargetItem,
+    MenuStockBalanceOut,
     TargetRead,
     TargetsReplace,
 )
 from app.schemas.orders import PurchaseOrderRead
+from app.security import get_current_user
 from app.services import menu_service, orders_service
 from app.services.menu_allocation_service import compute_allocation
 from app.services.menu_service import MenuLineInput
@@ -135,7 +135,11 @@ def import_menu_from_forecast(
 
 
 @router.post("/save", response_model=MenuGridOut)
-def save_menu(body: MenuSaveRequest, session: Session = Depends(get_db)) -> MenuGridOut:
+def save_menu(
+    body: MenuSaveRequest,
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MenuGridOut:
     """Persist the menu grid keyed on (year, week, day_name); overwrite-confirm.
 
     When ``category_id`` is set, only that category's lines are replaced.
@@ -150,7 +154,7 @@ def save_menu(body: MenuSaveRequest, session: Session = Depends(get_db)) -> Menu
         ],
         overwrite=body.overwrite,
         category_id=body.category_id,
-        user_id=None,
+        user_id=current_user.id,
         session=session,
     )
     return MenuGridOut.model_validate(grid)
@@ -175,6 +179,30 @@ def load_saved_menu(
             {"year": year, "week": week, "day_name": day_name},
         )
     return MenuGridOut.model_validate(grid)
+
+
+@router.get("/blank", response_model=MenuGridOut)
+def load_blank_menu(
+    year: int = Query(..., ge=2020, le=2100),
+    week: int = Query(..., ge=1, le=53),
+    day_name: str = Query(...),
+    session: Session = Depends(get_db),
+) -> MenuGridOut:
+    """An unsaved menu for the key: delivery-day fridge rows, no products yet."""
+    grid = menu_service.build_blank_menu(
+        year=year,
+        week=week,
+        day_name=day_name,
+        session=session,
+    )
+    return MenuGridOut.model_validate(grid)
+
+
+@router.get("/stock-balances", response_model=list[MenuStockBalanceOut])
+def list_menu_stock_balances(session: Session = Depends(get_db)) -> list[MenuStockBalanceOut]:
+    """Warehouse in-stock and on-order units per product, for the menu grid."""
+    balances = menu_service.list_stock_balances(session)
+    return [MenuStockBalanceOut.model_validate(balance) for balance in balances]
 
 
 @router.post("/draft-purchase-orders", response_model=PurchaseOrderRead)

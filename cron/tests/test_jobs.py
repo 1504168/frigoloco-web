@@ -231,14 +231,15 @@ def test_resolve_fridge_by_both_name_and_friendly_name():
 
 
 def test_backfill_chunks_are_seven_day_windows():
-    from cron.jobs.backfill import _chunks
+    from cron.event_windows import split_into_windows
 
     start = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
     end = datetime.datetime(2024, 2, 1, tzinfo=datetime.timezone.utc)
-    windows = list(_chunks(start, end))
-    assert windows[0] == (start, start + datetime.timedelta(days=7))
-    assert windows[-1][1] == end  # last window clamps to `to`
-    assert all((b - a) <= datetime.timedelta(days=7) for a, b in windows)
+    windows = split_into_windows(start, end)
+    assert windows[0].start == start
+    assert windows[0].end == start + datetime.timedelta(days=7)
+    assert windows[-1].end == end  # last window clamps to `to`
+    assert all((w.end - w.start) <= datetime.timedelta(days=7) for w in windows)
     assert len(windows) == 5
 
 

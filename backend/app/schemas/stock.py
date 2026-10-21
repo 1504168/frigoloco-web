@@ -17,6 +17,10 @@ class StockBalanceOut(ApiModel):
     physical_qty: int
     on_order_qty: int
     available_qty: int
+    category_id: int
+    category_name: str
+    supplier_id: int | None
+    supplier_name: str | None
 
 
 class AdjustmentRequest(ApiModel):

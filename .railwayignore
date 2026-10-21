@@ -1,0 +1,6 @@
+# Kept out of `railway up` uploads: no service image needs them, and they make the upload time out.
+cron/raw_archive/
+Excel Files/
+Office Scripts/
+mockups/
+specs/

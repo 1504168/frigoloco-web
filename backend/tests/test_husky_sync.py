@@ -16,6 +16,8 @@ monkeypatched, so no live vendor call or out-of-transaction write happens.
 from __future__ import annotations
 
 import datetime
+from contextlib import contextmanager
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -32,15 +34,25 @@ from app.husky.sync import (
     PRODUCT_HUSKY_OWNED,
     JobOutcome,
     SyncContractError,
+    _apply_fridge_product_prices,
+    _apply_fridges,
     _apply_product_types,
+    _copy_text,
+    _get_or_create_category,
     _guarded_update_set,
     _upsert_reviews,
+    category_display_order,
     effective_status,
     effective_status_clause,
     snapshot_stock,
+    sync_catalogue,
+    sync_prices,
+    sync_purchases_window,
+    sync_restock_window,
+    sync_reviews_window,
 )
 from app.main import app
-from app.models import Fridge, FridgeStock, Product
+from app.models import Category, Client, Fridge, FridgeProductPrice, FridgeStock, Product
 from app.services.menu_allocation_service import _fridge_stock_readings
 
 PREFIX = "/api/v1"
@@ -627,3 +639,430 @@ def test_snapshot_stock_empty_payload_never_wipes_fridge_stock(ctx, monkeypatch)
     assert outcome.upserted == 0
     assert any("swept=0" in note for note in outcome.notes), outcome.notes
     assert _fridge_stock_rows(session, fridge.id)[code_a][0] == 4
+
+
+# ===========================================================================
+# Category display order + fridge client assignment
+# ===========================================================================
+
+
+@pytest.mark.parametrize(
+    "category_name, expected_order",
+    [
+        ("1. Cold Dishes", 1),
+        ("10. Frozen Warm Dishes", 10),
+        ("11. Baguettes", 11),
+        ("Uncategorised", 999),
+        ("Seasonal", 999),
+    ],
+)
+def test_category_display_order_uses_number_prefix(category_name, expected_order) -> None:
+    assert category_display_order(category_name) == expected_order
+
+
+def test_new_category_lands_at_its_number_prefix(ctx) -> None:
+    category_id, created = _get_or_create_category(ctx.session, f"42. {TAG}Soups", {})
+
+    assert created
+    assert ctx.session.get(Category, category_id).display_order == 42
+
+
+def _sync_fake_fridges(session: Session, fridges: list[SimpleNamespace]) -> None:
+    _apply_fridges(session, fridges, JobOutcome())
+    session.expire_all()
+
+
+def _husky_fridge(husky_id: str, facility: str | None) -> SimpleNamespace:
+    return SimpleNamespace(
+        name=husky_id,
+        description=None,
+        friendlyName=f"{husky_id}-name",
+        facility=facility,
+    )
+
+
+def test_fridge_sync_keeps_manual_client_and_fills_empty_one(ctx) -> None:
+    session = ctx.session
+    facility_client = Client(name=f"{TAG}Facility client")
+    manual_client = Client(name=f"{TAG}Manual client")
+    session.add_all([facility_client, manual_client])
+    session.flush()
+    manually_assigned = Fridge(
+        husky_id=f"{TAG}if-manual",
+        friendly_name=f"{TAG}if-manual-name",
+        client_id=manual_client.id,
+        is_active=True,
+    )
+    unassigned = Fridge(
+        husky_id=f"{TAG}if-empty",
+        friendly_name=f"{TAG}if-empty-name",
+        is_active=True,
+    )
+    no_facility_match = Fridge(
+        husky_id=f"{TAG}if-nomatch",
+        friendly_name=f"{TAG}if-nomatch-name",
+        client_id=manual_client.id,
+        is_active=True,
+    )
+    session.add_all([manually_assigned, unassigned, no_facility_match])
+    session.flush()
+
+    _sync_fake_fridges(
+        session,
+        [
+            _husky_fridge(manually_assigned.husky_id, facility_client.name),
+            _husky_fridge(unassigned.husky_id, facility_client.name),
+            _husky_fridge(no_facility_match.husky_id, f"{TAG}Unknown facility"),
+        ],
+    )
+
+    assert session.get(Fridge, manually_assigned.id).client_id == manual_client.id
+    assert session.get(Fridge, unassigned.id).client_id == facility_client.id
+    assert session.get(Fridge, no_facility_match.id).client_id == manual_client.id
+
+
+# ===========================================================================
+# fridge_product_prices: the feed only overwrites the extras it carried
+# ===========================================================================
+
+
+def _fridge_price_entry(husky_id: str, prices: list[SimpleNamespace]) -> SimpleNamespace:
+    return SimpleNamespace(name=husky_id, friendlyName=None, prices=prices)
+
+
+def _price_item(
+    code: str,
+    price: int,
+    price_ex_surcharges: int | None = None,
+    vat: float | None = None,
+    currency_code: str | None = None,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        productCode=code,
+        price=price,
+        priceExSurcharges=price_ex_surcharges,
+        vat=vat,
+        currencyCode=currency_code,
+    )
+
+
+def _stored_fridge_price(session: Session, fridge_id: int, product_id: int) -> FridgeProductPrice:
+    session.expire_all()
+    return session.get(FridgeProductPrice, (fridge_id, product_id))
+
+
+def test_fridge_price_sync_keeps_extras_the_feed_left_out(ctx) -> None:
+    session = ctx.session
+    code = f"{TAG}FPP-001"
+    _seed_stock_products(session, [code])
+    product_id = _product_id(session, code)
+    fridge = _seed_stock_fridge(session, "prices")
+
+    first_payload = [
+        _fridge_price_entry(
+            fridge.husky_id,
+            [_price_item(code, 500, price_ex_surcharges=450, vat=6.0, currency_code="EUR")],
+        )
+    ]
+    outcome = JobOutcome()
+    _apply_fridge_product_prices(session, first_payload, outcome)
+    stored = _stored_fridge_price(session, fridge.id, product_id)
+    stored_values = (stored.sales_price, stored.price_ex_surcharges, stored.currency_code)
+    assert stored_values == (500, 450, "EUR")
+    assert float(stored.vat_rate) == 0.06
+    assert outcome.upserted == 1
+
+    price_only_payload = [_fridge_price_entry(fridge.husky_id, [_price_item(code, 650)])]
+    _apply_fridge_product_prices(session, price_only_payload, JobOutcome())
+    stored = _stored_fridge_price(session, fridge.id, product_id)
+    assert stored.sales_price == 650
+    assert (stored.price_ex_surcharges, stored.currency_code) == (450, "EUR")
+    assert float(stored.vat_rate) == 0.06
+
+    refreshed_payload = [
+        _fridge_price_entry(
+            fridge.husky_id,
+            [_price_item(code, 700, price_ex_surcharges=600, vat=21.0, currency_code="USD")],
+        )
+    ]
+    _apply_fridge_product_prices(session, refreshed_payload, JobOutcome())
+    stored = _stored_fridge_price(session, fridge.id, product_id)
+    stored_values = (stored.sales_price, stored.price_ex_surcharges, stored.currency_code)
+    assert stored_values == (700, 600, "USD")
+    assert float(stored.vat_rate) == 0.21
+
+
+def test_fridge_price_listed_twice_merges_like_two_upserts(ctx) -> None:
+    session = ctx.session
+    code = f"{TAG}FPP-DUP"
+    _seed_stock_products(session, [code])
+    fridge = _seed_stock_fridge(session, "prices-dup")
+    payload = [
+        _fridge_price_entry(
+            fridge.husky_id,
+            [
+                _price_item(code, 500, price_ex_surcharges=450, currency_code="EUR"),
+                _price_item(code, 520),
+            ],
+        )
+    ]
+    outcome = JobOutcome()
+    _apply_fridge_product_prices(session, payload, outcome)
+
+    stored = _stored_fridge_price(session, fridge.id, _product_id(session, code))
+    stored_values = (stored.sales_price, stored.price_ex_surcharges, stored.currency_code)
+    assert stored_values == (520, 450, "EUR")
+    assert outcome.upserted == 2
+
+
+def test_product_sync_keeps_price_the_feed_left_out(ctx) -> None:
+    session = ctx.session
+    code = f"{TAG}PRICE-KEEP"
+    priced_item = ProductTypeItem(productCode=code, name="Priced", productCategory=None, price=960)
+    unpriced_item = ProductTypeItem(productCode=code, name="Renamed", productCategory=None)
+    _apply_product_types(session, [priced_item], JobOutcome())
+    _apply_product_types(session, [unpriced_item], JobOutcome())
+
+    row = session.execute(
+        text("SELECT name, sales_price FROM products WHERE code = :c"),
+        {"c": code},
+    ).one()
+    assert row.name == "Renamed"
+    assert row.sales_price == 960
+
+
+# ===========================================================================
+# Every sync fetches from Husky before it opens a DB transaction
+# ===========================================================================
+
+
+class _EmptyHuskyClient:
+    """Returns an empty payload per endpoint and fails if a DB transaction is open."""
+
+    open_sessions: list[Session] = []
+    endpoints_called: list[str] = []
+
+    def __enter__(self) -> "_EmptyHuskyClient":
+        return self
+
+    def __exit__(self, *exc: object) -> bool:
+        return False
+
+    def _empty(self, endpoint: str, **payload: object) -> SimpleNamespace:
+        busy_sessions = [session for session in self.open_sessions if session.in_transaction()]
+        assert busy_sessions == [], f"{endpoint} fetched while a DB transaction was open"
+        self.endpoints_called.append(endpoint)
+        return SimpleNamespace(raw=b"{}", data=SimpleNamespace(**payload))
+
+    def get_facilities(self) -> SimpleNamespace:
+        return self._empty("facility", facilities=[])
+
+    def get_fridges(self) -> SimpleNamespace:
+        return self._empty("fridge", fridges=[])
+
+    def get_product_types(self) -> SimpleNamespace:
+        return self._empty("producttype", productTypes=[])
+
+    def get_fridge_product_prices(self) -> SimpleNamespace:
+        return self._empty("fridgeproductprice", fridges=[])
+
+    def get_purchases(self, *window: object) -> SimpleNamespace:
+        return self._empty("purchases", fridges={})
+
+    def get_restock(self, *window: object) -> SimpleNamespace:
+        return self._empty("restock", sessions={})
+
+    def get_product_reviews(self, *window: object) -> SimpleNamespace:
+        return self._empty("productreview", productReviews=[])
+
+    def get_stock_current(self) -> SimpleNamespace:
+        return self._empty("stock_current", current=[])
+
+
+@pytest.mark.parametrize(
+    "sync_job, expected_endpoints",
+    [
+        (sync_catalogue, ["facility", "fridge", "producttype", "fridgeproductprice"]),
+        (sync_prices, ["fridgeproductprice"]),
+        (sync_purchases_window, ["purchases"]),
+        (sync_restock_window, ["restock"]),
+        (sync_reviews_window, ["productreview"]),
+        (snapshot_stock, ["stock_current"]),
+    ],
+)
+def test_sync_fetches_before_opening_a_db_transaction(
+    ctx,
+    monkeypatch,
+    sync_job,
+    expected_endpoints,
+) -> None:
+    connection = ctx.session.get_bind()
+    open_sessions: list[Session] = []
+
+    def _tracked_session() -> Session:
+        session = Session(
+            bind=connection,
+            join_transaction_mode="create_savepoint",
+            expire_on_commit=False,
+        )
+        open_sessions.append(session)
+        return session
+
+    job_steps: list[str] = []
+    real_write_transaction = husky_sync.write_transaction
+
+    def _record_archive(endpoint: str, *args: object) -> str:
+        job_steps.append(f"archive {endpoint}")
+        return "raw/husky/test.json.gz"
+
+    @contextmanager
+    def _record_write_transaction(job: str):
+        job_steps.append("write transaction")
+        with real_write_transaction(job) as session:
+            yield session
+
+    monkeypatch.setattr(husky_sync, "SessionLocal", _tracked_session)
+    monkeypatch.setattr(husky_sync, "HuskyClient", _EmptyHuskyClient)
+    monkeypatch.setattr(husky_sync, "archive_raw", _record_archive)
+    monkeypatch.setattr(husky_sync, "write_transaction", _record_write_transaction)
+    monkeypatch.setattr(_EmptyHuskyClient, "open_sessions", open_sessions)
+    monkeypatch.setattr(_EmptyHuskyClient, "endpoints_called", [])
+
+    sync_job()
+
+    assert _EmptyHuskyClient.endpoints_called == expected_endpoints
+    archive_steps = [f"archive {endpoint}" for endpoint in expected_endpoints]
+    assert job_steps == [*archive_steps, "write transaction"]
+
+
+# ===========================================================================
+# COPY round trip keeps awkward text, NULLs and timestamp arrays intact
+# ===========================================================================
+
+
+def test_copy_upsert_round_trips_quotes_newlines_empty_strings_and_nulls(ctx) -> None:
+    session = ctx.session
+    code = f"{TAG}COPY-001"
+    _seed_stock_products(session, [code])
+    ref = f"{TAG}copy-ref"
+    awkward_text = 'He said "great", then\nleft; back\\slash'
+    _upsert_reviews(
+        session,
+        [
+            {
+                "husky_ref": ref,
+                "product_id": _product_id(session, code),
+                "fridge_id": None,
+                "rating": 1,
+                "reviewed_at": datetime.datetime(2026, 6, 1, 12, tzinfo=datetime.timezone.utc),
+                "review_text": awkward_text,
+                "reviewer_email": "",
+                "purchase_id": None,
+                "purchased_at": None,
+                "review_category": None,
+                "tag_id": None,
+                "epc": None,
+                "product_reference": None,
+            }
+        ],
+    )
+    row = session.execute(
+        text(
+            "SELECT review_text, reviewer_email, purchase_id, reviewed_at "
+            "FROM product_reviews WHERE husky_ref = :r"
+        ),
+        {"r": ref},
+    ).one()
+    assert row.review_text == awkward_text
+    assert row.reviewer_email == ""
+    assert row.purchase_id is None
+    assert row.reviewed_at == datetime.datetime(2026, 6, 1, 12, tzinfo=datetime.timezone.utc)
+
+
+def test_snapshot_stock_stores_tag_expiry_dates(ctx, monkeypatch) -> None:
+    session = ctx.session
+    code = f"{TAG}SC-EXP"
+    _seed_stock_products(session, [code])
+    fridge = _seed_stock_fridge(session, "expiry")
+    first_expiry = datetime.datetime(2026, 11, 2, 23, 0, tzinfo=datetime.timezone.utc)
+    second_expiry = datetime.datetime(2026, 11, 4, 23, 0, tzinfo=datetime.timezone.utc)
+    stocked_product = SimpleNamespace(
+        productCode=code,
+        current=[
+            SimpleNamespace(expiryDate=first_expiry),
+            SimpleNamespace(expiryDate=None),
+            SimpleNamespace(expiryDate=second_expiry),
+        ],
+    )
+    payload = SimpleNamespace(
+        raw=b"{}",
+        data=SimpleNamespace(
+            current=[
+                SimpleNamespace(
+                    fridge=SimpleNamespace(name=fridge.husky_id, friendlyName=None),
+                    products=[stocked_product],
+                )
+            ]
+        ),
+    )
+    _stock_snapshot_env(ctx, monkeypatch, payload)
+    snapshot_stock()
+
+    row = session.execute(
+        text("SELECT units, expiry_dates FROM fridge_stock WHERE fridge_id = :f"),
+        {"f": fridge.id},
+    ).one()
+    assert row.units == 3
+    assert row.expiry_dates == [first_expiry, second_expiry]
+
+
+def test_snapshot_stock_sweeps_a_reported_fridge_that_is_now_empty(ctx, monkeypatch) -> None:
+    session = ctx.session
+    code_a = f"{TAG}SC-EMPTY"
+    _seed_stock_products(session, [code_a])
+    fridge = _seed_stock_fridge(session, "emptied")
+
+    _stock_snapshot_env(
+        ctx, monkeypatch, _fake_stock_payload({fridge.husky_id: {code_a: 2}})
+    )
+    snapshot_stock()
+    assert _fridge_stock_rows(session, fridge.id)[code_a][0] == 2
+
+    # Husky reports the fridge with no products at all: it was emptied, so its
+    # old rows must go, or allocation would keep reading 2 units that are gone.
+    _stock_snapshot_env(ctx, monkeypatch, _fake_stock_payload({fridge.husky_id: {}}))
+    outcome = snapshot_stock()
+
+    assert outcome.upserted == 0
+    assert _fridge_stock_rows(session, fridge.id) == {}
+    assert any("swept=1 fridges_reported=1" in note for note in outcome.notes), outcome.notes
+
+
+# ===========================================================================
+# Pure: COPY text rendering
+# ===========================================================================
+
+
+@pytest.mark.parametrize(
+    "value, expected_text",
+    [
+        (None, None),
+        (True, "True"),
+        (False, "False"),
+        (Decimal("0.0600"), "0.0600"),
+        (42, "42"),
+        ("", ""),
+        (
+            datetime.datetime(2026, 6, 1, 12, tzinfo=datetime.timezone.utc),
+            "2026-06-01T12:00:00+00:00",
+        ),
+        ([], "{}"),
+        (
+            [datetime.datetime(2026, 6, 1, 12, tzinfo=datetime.timezone.utc), None],
+            '{"2026-06-01T12:00:00+00:00",NULL}',
+        ),
+        (['say "hi"', "back\\slash"], '{"say \\"hi\\"","back\\\\slash"}'),
+    ],
+)
+def test_copy_text_renders_postgres_input(value, expected_text) -> None:
+    assert _copy_text(value) == expected_text

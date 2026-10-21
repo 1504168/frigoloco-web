@@ -59,6 +59,8 @@ export interface DataTableProps<T> {
   dense?: boolean
 }
 
+const MAX_SKELETON_ROWS = 10
+
 const alignClass: Record<'left' | 'right' | 'center', string> = {
   left: 'text-left',
   right: 'text-right',
@@ -114,6 +116,149 @@ export function DataTable<T>({
     })
   }
 
+  if (isError) {
+    return <ErrorState error={error} onRetry={onRetry} className={className} />
+  }
+
+  return (
+    <div
+      data-fills-page=""
+      className={cn('flex flex-1 flex-col gap-3', className)}
+    >
+      <DataTableContent
+        columns={columns}
+        rows={sortedItems}
+        isLoading={isLoading}
+        skeletonRows={Math.min(limit, MAX_SKELETON_ROWS)}
+        emptyState={emptyState}
+        sort={sort}
+        onToggleSort={toggleSort}
+        getRowId={getRowId}
+        onRowClick={onRowClick}
+        dense={dense}
+      />
+      <PaginationBar
+        total={total}
+        limit={limit}
+        offset={offset}
+        onOffsetChange={onOffsetChange}
+      />
+    </div>
+  )
+}
+
+interface DataTableContentProps<T> {
+  columns: DataTableColumn<T>[]
+  rows: T[]
+  isLoading?: boolean
+  skeletonRows: number
+  emptyState?: React.ReactNode
+  sort: SortState | null
+  onToggleSort: (columnId: string) => void
+  getRowId: (row: T) => string | number
+  onRowClick?: (row: T) => void
+  dense: boolean
+}
+
+function DataTableContent<T>({
+  columns,
+  rows,
+  isLoading,
+  skeletonRows,
+  emptyState,
+  sort,
+  onToggleSort,
+  getRowId,
+  onRowClick,
+  dense,
+}: DataTableContentProps<T>) {
+  if (isLoading) {
+    return <LoadingSkeleton rows={skeletonRows} columns={columns.length} />
+  }
+
+  if (rows.length === 0) {
+    return <>{emptyState ?? <EmptyState />}</>
+  }
+
+  return (
+    <div
+      className={cn(
+        'overflow-hidden rounded-xl border border-border bg-card',
+        dense && '[&_td]:py-1',
+      )}
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            {columns.map((column) => {
+              const isSorted = sort?.columnId === column.id
+              const align = column.align ?? 'left'
+              return (
+                <TableHead
+                  key={column.id}
+                  className={cn(alignClass[align], column.headerClassName)}
+                >
+                  {column.sortValue ? (
+                    <button
+                      type="button"
+                      onClick={() => onToggleSort(column.id)}
+                      className={cn(
+                        'inline-flex items-center gap-1 select-none hover:text-foreground transition-colors',
+                        align === 'right' && 'flex-row-reverse',
+                        isSorted && 'text-foreground',
+                      )}
+                    >
+                      {column.header}
+                      {isSorted ? (
+                        sort?.direction === 'asc' ? (
+                          <ArrowUp className="h-3 w-3" />
+                        ) : (
+                          <ArrowDown className="h-3 w-3" />
+                        )
+                      ) : (
+                        <ChevronsUpDown className="h-3 w-3 opacity-40" />
+                      )}
+                    </button>
+                  ) : (
+                    column.header
+                  )}
+                </TableHead>
+              )
+            })}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow
+              key={getRowId(row)}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+              className={cn(onRowClick && 'cursor-pointer')}
+            >
+              {columns.map((column) => (
+                <TableCell
+                  key={column.id}
+                  className={cn(alignClass[column.align ?? 'left'], column.cellClassName)}
+                >
+                  {column.cell(row)}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+interface PaginationBarProps {
+  total: number
+  limit: number
+  offset: number
+  onOffsetChange: (offset: number) => void
+}
+
+/** Pinned to the bottom of the page area (mt-auto), also when there are no rows. */
+function PaginationBar({ total, limit, offset, onOffsetChange }: PaginationBarProps) {
   const currentPage = Math.floor(offset / limit) + 1
   const totalPages = Math.max(1, Math.ceil(total / limit))
   const rangeStart = total === 0 ? 0 : offset + 1
@@ -121,114 +266,33 @@ export function DataTable<T>({
   const canPrev = offset > 0
   const canNext = offset + limit < total
 
-  if (isError) {
-    return <ErrorState error={error} onRetry={onRetry} className={className} />
-  }
-
-  if (isLoading) {
-    return <LoadingSkeleton rows={limit > 10 ? 10 : limit} columns={columns.length} className={className} />
-  }
-
-  if (items.length === 0) {
-    return <>{emptyState ?? <EmptyState className={className} />}</>
-  }
-
   return (
-    <div className={cn('space-y-3', className)}>
-      <div
-        className={cn(
-          'overflow-hidden rounded-xl border border-border bg-card',
-          dense && '[&_td]:py-1',
-        )}
-      >
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {columns.map((column) => {
-                const isSorted = sort?.columnId === column.id
-                const align = column.align ?? 'left'
-                return (
-                  <TableHead
-                    key={column.id}
-                    className={cn(alignClass[align], column.headerClassName)}
-                  >
-                    {column.sortValue ? (
-                      <button
-                        type="button"
-                        onClick={() => toggleSort(column.id)}
-                        className={cn(
-                          'inline-flex items-center gap-1 select-none hover:text-foreground transition-colors',
-                          align === 'right' && 'flex-row-reverse',
-                          isSorted && 'text-foreground',
-                        )}
-                      >
-                        {column.header}
-                        {isSorted ? (
-                          sort?.direction === 'asc' ? (
-                            <ArrowUp className="h-3 w-3" />
-                          ) : (
-                            <ArrowDown className="h-3 w-3" />
-                          )
-                        ) : (
-                          <ChevronsUpDown className="h-3 w-3 opacity-40" />
-                        )}
-                      </button>
-                    ) : (
-                      column.header
-                    )}
-                  </TableHead>
-                )
-              })}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sortedItems.map((row) => (
-              <TableRow
-                key={getRowId(row)}
-                onClick={onRowClick ? () => onRowClick(row) : undefined}
-                className={cn(onRowClick && 'cursor-pointer')}
-              >
-                {columns.map((column) => (
-                  <TableCell
-                    key={column.id}
-                    className={cn(alignClass[column.align ?? 'left'], column.cellClassName)}
-                  >
-                    {column.cell(row)}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
+    <div className="mt-auto flex items-center justify-between text-xs text-muted-foreground">
+      <span>
+        Showing <span className="font-medium text-foreground">{rangeStart}</span>–
+        <span className="font-medium text-foreground">{rangeEnd}</span> of{' '}
+        <span className="font-medium text-foreground">{total}</span>
+      </span>
+      <div className="flex items-center gap-2">
         <span>
-          Showing <span className="font-medium text-foreground">{rangeStart}</span>–
-          <span className="font-medium text-foreground">{rangeEnd}</span> of{' '}
-          <span className="font-medium text-foreground">{total}</span>
+          Page {currentPage} of {totalPages}
         </span>
-        <div className="flex items-center gap-2">
-          <span>
-            Page {currentPage} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!canPrev}
-            onClick={() => onOffsetChange(Math.max(0, offset - limit))}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!canNext}
-            onClick={() => onOffsetChange(offset + limit)}
-          >
-            Next
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!canPrev}
+          onClick={() => onOffsetChange(Math.max(0, offset - limit))}
+        >
+          Previous
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!canNext}
+          onClick={() => onOffsetChange(offset + limit)}
+        >
+          Next
+        </Button>
       </div>
     </div>
   )

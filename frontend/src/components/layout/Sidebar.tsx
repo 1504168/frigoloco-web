@@ -1,9 +1,18 @@
 import * as React from 'react'
 import { NavLink } from 'react-router-dom'
+import { LogOut } from 'lucide-react'
 import { NAV_SECTIONS, type NavItem } from '@/config/nav'
 import { useUnacknowledgedAlertsCount } from '@/hooks/useAlertsCount'
+import { ROLE_LABELS, useCurrentUser } from '@/hooks/useCurrentUser'
 import { ThemeToggle } from '@/components/layout/ThemeToggle'
+import { clearToken } from '@/lib/auth'
 import { cn } from '@/lib/utils'
+
+/** Clear the stored session and hard-navigate to the public login page. */
+function handleLogout() {
+  clearToken()
+  window.location.href = '/login'
+}
 
 /** Renders the count badge on a nav item, if the item declares a badgeKey. */
 function NavBadge({ item }: { item: NavItem }) {
@@ -50,12 +59,22 @@ function BrandBlock() {
  * sections, active-item highlight with a left accent bar, and a footer.
  */
 export function Sidebar() {
+  const currentUser = useCurrentUser()
+  const isAdmin = currentUser.data?.role === 'admin'
+
+  // Admin-only links (e.g. Users) stay hidden until we know the user is an admin;
+  // dropping them can leave a section with no items, so those sections are hidden too.
+  const sections = NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => !item.adminOnly || isAdmin),
+  })).filter((section) => section.items.length > 0)
+
   return (
     <aside className="flex h-full w-48 shrink-0 flex-col bg-sidebar text-sidebar-ink">
       <BrandBlock />
 
       <nav className="flex-1 overflow-y-auto pb-4">
-        {NAV_SECTIONS.map((section) => (
+        {sections.map((section) => (
           <div key={section.title}>
             <div className="px-5 pb-1.5 pt-3 text-[10.5px] font-medium uppercase tracking-wider text-[#647181]">
               {section.title}
@@ -83,14 +102,35 @@ export function Sidebar() {
       </nav>
 
       <div className="mt-auto flex items-center justify-between gap-2 border-t border-white/10 px-5 pb-3 pt-3.5 text-[11px] text-[#647181]">
-        <div>
-          <b className="block text-[#9db0c2]">ismail@alliedchb.com</b>
-          Planner · v0.1
+        <div className="min-w-0">
+          {currentUser.data ? (
+            <>
+              <b className="block truncate text-[#9db0c2]">{currentUser.data.email}</b>
+              <span className="block truncate">
+                {currentUser.data.full_name || ROLE_LABELS[currentUser.data.role]}
+              </span>
+            </>
+          ) : (
+            <b className="block truncate text-[#9db0c2]">
+              {currentUser.isLoading ? 'Loading…' : 'Not signed in'}
+            </b>
+          )}
         </div>
-        <ThemeToggle
-          variant="ghost"
-          className="h-8 w-8 shrink-0 text-sidebar-ink hover:bg-white/10 hover:text-white"
-        />
+        <div className="flex shrink-0 items-center gap-1">
+          <ThemeToggle
+            variant="ghost"
+            className="h-8 w-8 shrink-0 text-sidebar-ink hover:bg-white/10 hover:text-white"
+          />
+          <button
+            type="button"
+            onClick={handleLogout}
+            title="Log out"
+            aria-label="Log out"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sidebar-ink transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <LogOut className="h-[18px] w-[18px]" aria-hidden="true" />
+          </button>
+        </div>
       </div>
     </aside>
   )

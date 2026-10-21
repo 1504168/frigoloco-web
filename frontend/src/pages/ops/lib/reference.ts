@@ -23,6 +23,8 @@ import type {
 
 const REFERENCE_STALE_MS = 5 * 60_000
 const PRODUCTS_PAGE_SIZE = 500
+// Scorecard window for the grid's score row: the stored 365-day scores menu allocation uses.
+const ALLOCATION_SCORE_WINDOW_DAYS = 365
 const MENU_COLUMNS_SETTING_KEY = 'menu_category_columns'
 const DEFAULT_MENU_COLUMNS = 6
 
@@ -52,6 +54,13 @@ export function useCategories() {
       return { ordered, byId }
     },
   })
+}
+
+/** Display name of a category, or null when no category is given. */
+export function useCategoryName(categoryId: number | null): string | null {
+  const categoriesQuery = useCategories()
+  if (categoryId === null) return null
+  return categoriesQuery.data?.byId.get(categoryId) ?? `Category #${categoryId}`
 }
 
 /** Map of supplier id -> name. Loads all suppliers once. */
@@ -97,7 +106,7 @@ export function useProductCatalogue() {
   })
 }
 
-/** Map of product id -> final score (from the rating scorecard, newest window). */
+/** Map of product id -> stored 365-day final score (the same scores menu allocation uses). */
 export function useScoreMap() {
   return useQuery({
     queryKey: ['ops', 'scores', 'map'],
@@ -107,7 +116,7 @@ export function useScoreMap() {
       let offset = 0
       for (let guard = 0; guard < 50; guard += 1) {
         const page = await api.get<Page<ScorecardItem>>('/api/v1/rating/scorecard', {
-          params: { limit: PRODUCTS_PAGE_SIZE, offset },
+          params: { limit: PRODUCTS_PAGE_SIZE, offset, window_days: ALLOCATION_SCORE_WINDOW_DAYS },
           signal,
         })
         all.push(...page.items)

@@ -8,9 +8,12 @@ from fastapi import Depends, Query
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.models.master import User
+from app.models.planning import ForecastRun
 from app.schemas.forecasts import (
     ForecastActualCell,
     ForecastActualsOut,
+    ForecastModelOut,
     ForecastResultOut,
     ForecastRunOut,
     ForecastRunRequest,
@@ -20,40 +23,58 @@ from app.schemas.forecasts import (
     ScoreRecomputeResult,
 )
 from app.schemas.masters import Page, PaginationParams, api_error, make_router, pagination
+from app.security import get_current_user
 from app.services import forecast_service, scoring_service
+from app.services.forecast.strategies import DEFAULT_STRATEGY_CODE, FORECAST_STRATEGIES
+from app.services.scoring_service import ScoreWindowDays
 from app.services.stock_service import day_name_for_date, resolve_delivery_date
 
 router = make_router(prefix="/api/v1/forecasts", tags=["forecasts"])
 
 
-def _run_to_out(run, session: Session) -> ForecastRunOut:
+def _run_to_out(run: ForecastRun, session: Session) -> ForecastRunOut:
     results = forecast_service.get_results(run.id, session)
-    meta = forecast_service.get_run_meta(run.id, session)
+    summary = forecast_service.summarize_run(run, results, session)
     iso_year, week_no, _weekday = run.delivery_date.isocalendar()
     return ForecastRunOut(
         run_id=run.id,
         delivery_date=run.delivery_date,
         iso_year=iso_year,
         week_no=week_no,
-        day_name=meta.day_name or day_name_for_date(run.delivery_date),
+        day_name=day_name_for_date(run.delivery_date),
         run_at=run.run_at,
-        model=meta.model,
-        is_saved=meta.is_saved,
+        model=run.model,
+        is_saved=run.is_saved,
         params=run.params,
         results=[ForecastResultOut.model_validate(row) for row in results],
+        window_start=summary.window.start,
+        window_end=summary.window.end,
+        window_sales_units=summary.window_sales_units,
+        hidden_category_ids=summary.hidden_category_ids,
+        residual_applied=summary.residual_applied,
     )
+
+
+@router.get("/models", response_model=list[ForecastModelOut])
+def list_forecast_models() -> list[ForecastModelOut]:
+    return [
+        ForecastModelOut(code=strategy.code, label=strategy.label)
+        for strategy in FORECAST_STRATEGIES.values()
+    ]
 
 
 @router.post("/run", response_model=ForecastRunOut)
 def run_forecast(
-    body: ForecastRunRequest, session: Session = Depends(get_db)
+    body: ForecastRunRequest,
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> ForecastRunOut:
     run = forecast_service.run_forecast(
         delivery_date=body.delivery_date,
         fridge_ids=body.fridge_ids,
         model=body.model,
         extra_params=body.params,
-        user_id=None,
+        user_id=current_user.id,
         session=session,
     )
     return _run_to_out(run, session)
@@ -61,16 +82,15 @@ def run_forecast(
 
 @router.post("/save", response_model=ForecastRunOut)
 def save_forecast(
-    body: ForecastSaveRequest, session: Session = Depends(get_db)
+    body: ForecastSaveRequest,
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> ForecastRunOut:
-    delivery_date = resolve_delivery_date(body.year, body.week, body.day_name)
     run = forecast_service.save_forecast(
-        delivery_date=delivery_date,
-        fridge_ids=body.fridge_ids,
-        model=body.model,
-        extra_params=body.params,
+        run_id=body.run_id,
+        cells=body.cells,
         overwrite=body.overwrite,
-        user_id=None,
+        user_id=current_user.id,
         session=session,
     )
     return _run_to_out(run, session)
@@ -119,45 +139,59 @@ def forecast_actuals(
     year: int = Query(..., ge=2020, le=2100),
     week: int = Query(..., ge=1, le=53),
     day_name: str = Query(...),
+    model: str = Query(default=DEFAULT_STRATEGY_CODE),
     session: Session = Depends(get_db),
 ) -> ForecastActualsOut:
-    """Added/Sold/% actuals over the same 3-week window the forecast run uses."""
+    """Added/Sold/% actuals over the same sales window the forecast method uses."""
     delivery_date = resolve_delivery_date(year, week, day_name)
-    window_start = delivery_date - datetime.timedelta(days=21)
-    cells = forecast_service.get_actuals(
-        delivery_date=delivery_date, fridge_ids=None, session=session
+    report = forecast_service.get_actuals(
+        delivery_date=delivery_date,
+        model=model,
+        fridge_ids=None,
+        session=session,
     )
     return ForecastActualsOut(
         year=year,
         week=week,
         day_name=day_name_for_date(delivery_date),
         delivery_date=delivery_date,
-        window_start=window_start,
-        window_end=delivery_date,
-        cells=[ForecastActualCell.model_validate(cell) for cell in cells],
+        window_start=report.window.start,
+        window_end=report.window.end,
+        cells=[ForecastActualCell.model_validate(cell) for cell in report.cells],
     )
 
 
 @router.post("/scores/recompute", response_model=ScoreRecomputeResult)
 def recompute_scores(
-    body: ScoreRecomputeRequest, session: Session = Depends(get_db)
+    body: ScoreRecomputeRequest,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_db),
 ) -> ScoreRecomputeResult:
     as_of = body.as_of or datetime.date.today()
     scored = scoring_service.recompute_scores(
-        as_of=as_of, user_id=None, session=session
+        as_of=as_of,
+        window_days=body.window_days,
+        user_id=current_user.id,
+        session=session,
     )
-    return ScoreRecomputeResult(period_end=as_of, products_scored=scored)
+    return ScoreRecomputeResult(
+        period_end=as_of,
+        window_days=body.window_days,
+        products_scored=scored,
+    )
 
 
 @router.get("/scores", response_model=Page[ProductScoreOut])
 def list_scores(
     page: PaginationParams = Depends(pagination),
     period_end: datetime.date | None = Query(default=None),
+    window_days: ScoreWindowDays = Query(default=scoring_service.YEARLY_SCORE_WINDOW_DAYS),
     product_id: int | None = Query(default=None),
     session: Session = Depends(get_db),
 ) -> Page[ProductScoreOut]:
     rows, total = scoring_service.list_scores(
         period_end=period_end,
+        window_days=window_days,
         product_id=product_id,
         limit=page.limit,
         offset=page.offset,

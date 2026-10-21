@@ -17,6 +17,7 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import engine, get_db
@@ -24,12 +25,21 @@ from app.main import app
 from app.models.enums import RestockAction, TagStatus
 from app.models.events import ProductReview, RestockEvent, SalesEvent
 from app.models.master import Category, Client, Fridge, Product, Supplier
+from app.services import scoring_service
 
 UTC = datetime.timezone.utc
 
 # A date inside the trailing-365-day scorecard window (today = 2026-07-03) with a
 # pre-created monthly event partition.
 EVENT_DAY = datetime.datetime(2026, 6, 15, 9, 0, tzinfo=UTC)
+# The scorecard reads the newest stored period, so scores are computed as of today
+# with events inside even the shortest (90-day) window.
+SCORE_PERIOD_END = datetime.date.today()
+SCORE_EVENT_TIME = datetime.datetime.combine(
+    SCORE_PERIOD_END - datetime.timedelta(days=2),
+    datetime.time(9, 0),
+    tzinfo=UTC,
+)
 REPORT_FROM = "2026-06-01"
 REPORT_TO = "2026-06-30"
 
@@ -250,30 +260,33 @@ def test_scorecard_math_spotcheck(client, seed, db_session) -> None:
     # sold=3 (1 refunded excluded), added=5 (1 unrecognised excluded),
     # reviews: 4 positive / 1 negative.
     for hour in (9, 10, 11):
-        _add_sale(db_session, seed, EVENT_DAY.replace(hour=hour))
-    _add_sale(db_session, seed, EVENT_DAY.replace(hour=12), refunded=True)
-    _add_restock(db_session, seed, EVENT_DAY, TagStatus.valid, 5)
-    _add_restock(db_session, seed, EVENT_DAY, TagStatus.unrecognised, 1)
-    _add_reviews(db_session, seed, EVENT_DAY, positive=4, negative=1)
-    db_session.flush()
+        _add_sale(db_session, seed, SCORE_EVENT_TIME.replace(hour=hour))
+    _add_sale(db_session, seed, SCORE_EVENT_TIME.replace(hour=12), refunded=True)
+    _add_restock(db_session, seed, SCORE_EVENT_TIME, TagStatus.valid, 5)
+    _add_restock(db_session, seed, SCORE_EVENT_TIME, TagStatus.unrecognised, 1)
+    _add_reviews(db_session, seed, SCORE_EVENT_TIME, positive=4, negative=1)
+    _recompute_scores(db_session, window_days=365)
 
-    resp = client.get("/api/v1/rating/scorecard?limit=500&window_days=365")
+    resp = client.get(
+        "/api/v1/rating/scorecard",
+        params={"window_days": 365, "search": "zztest-rpt-p1"},
+    )
     assert resp.status_code == 200, resp.text
     body = resp.json()
 
-    # Weights envelope (live scoring_weights).
     assert body["weights"] == {"pct_sold": "0.62", "margin": "0.33", "review": "0.05"}
     assert body["window_days"] == 365
-
-    # Find our product across pages if needed.
-    row = _find_scorecard_row(client, seed.product_id, body)
-    assert row is not None, "seeded product missing from scorecard"
+    assert body["period_end"] == SCORE_PERIOD_END.isoformat()
+    assert body["computed_at"] is not None
+    assert body["total"] == 1
+    row = body["items"][0]
 
     # Hand computation.
     # pct_sold = 3 / 5 = 0.6
     # margin   = (1000 - 400) / 1000 = 0.6   (sell ex-VAT = 1060 / 1.06 = 1000)
     # review   = (4 - 1) / 5 = 0.6 ; pct_positive = 4 / 5 = 0.8
     # final    = 0.62*0.6 + 0.33*0.6 + 0.05*0.6 = 0.6
+    assert row["product_id"] == seed.product_id
     assert row["total_sold_qty"] == 3
     assert row["total_added_qty"] == 5
     assert row["pct_sold"] == "0.6000"
@@ -282,46 +295,71 @@ def test_scorecard_math_spotcheck(client, seed, db_session) -> None:
     assert row["negative_reviews"] == 1
     assert row["pct_positive_review"] == "0.8000"
     assert row["final_score"] == "0.6000"
+    assert row["uses_new_product_baseline"] is False
     assert row["buying_price"] == "4.00"
     assert row["sold_price"] == "10.60"
     assert row["vat_rate"] == "0.0600"
-    assert row["brand"] == "ZZTEST-report-supplier"
+    assert row["supplier_name"] == "ZZTEST-report-supplier"
     assert row["shelf_life_days"] == 5
 
 
-def _find_scorecard_row(client, product_id: int, first_page: dict) -> dict | None:
-    for row in first_page["items"]:
-        if row["product_id"] == product_id:
-            return row
-    total = first_page["total"]
-    limit = first_page["limit"]
-    offset = limit
-    while offset < total:
-        page = client.get(
-            f"/api/v1/rating/scorecard?limit={limit}&offset={offset}"
-        ).json()
-        for row in page["items"]:
-            if row["product_id"] == product_id:
-                return row
-        offset += limit
-    return None
+def test_scorecard_filters_by_category_and_supplier(client, seed, db_session) -> None:
+    _add_sale(db_session, seed, SCORE_EVENT_TIME)
+    _recompute_scores(db_session, window_days=365)
+
+    by_supplier = client.get(
+        "/api/v1/rating/scorecard",
+        params={"supplier_id": seed.supplier_id},
+    ).json()
+    assert [row["product_id"] for row in by_supplier["items"]] == [seed.product_id]
+
+    by_category = client.get(
+        "/api/v1/rating/scorecard",
+        params={"category_id": seed.category_id, "limit": 500},
+    ).json()
+    seed_category_name = db_session.get(Category, seed.category_id).name
+    category_product_ids = [row["product_id"] for row in by_category["items"]]
+    category_names = {row["category"] for row in by_category["items"]}
+    assert seed.product_id in category_product_ids
+    assert category_names == {seed_category_name}
 
 
-def test_scorecard_pagination_and_default_sort(client, seed) -> None:
+def test_scorecard_reads_only_the_selected_window(client, seed, db_session) -> None:
+    db_session.execute(text("DELETE FROM product_scores WHERE window_days = 90"))
+    db_session.flush()
+
+    never_computed = client.get("/api/v1/rating/scorecard", params={"window_days": 90}).json()
+    assert never_computed["total"] == 0
+    assert never_computed["period_end"] is None
+    assert never_computed["computed_at"] is None
+
+    _add_sale(db_session, seed, SCORE_EVENT_TIME)
+    _recompute_scores(db_session, window_days=90)
+    computed = client.get("/api/v1/rating/scorecard", params={"window_days": 90}).json()
+    assert computed["total"] >= 1
+    assert computed["period_end"] == SCORE_PERIOD_END.isoformat()
+
+
+def test_scorecard_unknown_window_422(client) -> None:
+    resp = client.get("/api/v1/rating/scorecard", params={"window_days": 30})
+    assert resp.status_code == 422
+
+
+def test_scorecard_pagination_and_default_sort(client, seed, db_session) -> None:
+    _recompute_scores(db_session, window_days=365)
     resp = client.get("/api/v1/rating/scorecard?limit=100")
     assert resp.status_code == 200, resp.text
     body = resp.json()
 
-    assert body["total"] >= 500  # full catalogue
     assert body["limit"] == 100
-    assert len(body["items"]) == 100
+    assert len(body["items"]) == min(100, body["total"])
 
-    # Default sort is final_score descending.
     scores = [Decimal(row["final_score"]) for row in body["items"]]
     assert scores == sorted(scores, reverse=True)
 
 
-def test_scorecard_sort_ascending(client, seed) -> None:
+def test_scorecard_sort_ascending(client, seed, db_session) -> None:
+    _recompute_scores(db_session, window_days=365)
     resp = client.get("/api/v1/rating/scorecard?limit=50&sort=final_score%20asc")
     assert resp.status_code == 200, resp.text
     scores = [Decimal(row["final_score"]) for row in resp.json()["items"]]
@@ -332,3 +370,20 @@ def test_scorecard_bad_sort_field_422(client) -> None:
     resp = client.get("/api/v1/rating/scorecard?sort=bogus")
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "unprocessable_entity"
+
+
+def _recompute_scores(db_session, window_days: int) -> None:
+    # A zero threshold keeps every product's own score, independent of live data.
+    db_session.execute(
+        text(
+            "INSERT INTO settings (key, value) VALUES ('new_product_sales_threshold', '0') "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value"
+        )
+    )
+    db_session.flush()
+    scoring_service.recompute_scores(
+        as_of=SCORE_PERIOD_END,
+        window_days=window_days,
+        user_id=None,
+        session=db_session,
+    )

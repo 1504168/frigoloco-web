@@ -1,53 +1,79 @@
 import * as React from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Download, LayoutGrid, Plus, Save } from 'lucide-react'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
+import { Modal } from '@/components/shared/Modal'
+import { Toolbar } from '@/components/shared/Toolbar'
+import { UnsavedChangesDialog } from '@/components/shared/UnsavedChangesDialog'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/sonner'
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import { api, ApiError } from '@/lib/api'
-import { WeekDayPicker } from '@/pages/ops/components/WeekDayPicker'
-import { ConfirmDialog } from '@/pages/ops/components/ConfirmDialog'
-import { Modal } from '@/pages/ops/components/Modal'
-import { PlanningGrid } from '@/pages/ops/components/PlanningGrid'
+import { EMPTY_PLACEHOLDER } from '@/lib/format'
 import { AddProductPicker } from '@/pages/ops/components/AddProductPicker'
 import { CategoryScopeSelect } from '@/pages/ops/components/CategoryScopeSelect'
+import { PlanningGrid, type PlanningGridDetailRow } from '@/pages/ops/components/PlanningGrid'
+import { WeekDayPicker } from '@/pages/ops/components/WeekDayPicker'
+import { usePlanningGridState, useProductMeta } from '@/pages/ops/lib/grid'
+import { useWeekDayKey, weekKeyLabel, type WeekDayKey } from '@/pages/ops/lib/pipelineKey'
 import {
-  useCategories,
-  useMenuCategoryColumns,
+  useCategoryName,
   useProductCatalogue,
   useSupplierMap,
 } from '@/pages/ops/lib/reference'
-import { usePlanningGridState, useProductMeta } from '@/pages/ops/lib/grid'
-import { useWeekDayKey, weekKeyLabel } from '@/pages/ops/lib/pipelineKey'
 import type { MenuGrid } from '@/pages/ops/lib/types'
+import { MenuSummary } from '@/pages/ops/menu/MenuSummary'
+import {
+  menuKeyParams,
+  SAVED_MENU_QUERY_KEY,
+  useMenuForKey,
+  useMenuStockBalances,
+} from '@/pages/ops/menu/menuApi'
+import { computeMenuTotals } from '@/pages/ops/menu/menuTotals'
+
+const NOT_FOUND_STATUS = 404
+const EXISTS_ERROR_CODE = 'exists'
+const NO_FRIDGES_HINT =
+  'Set delivery days on the fridges, import from the saved forecast, ' +
+  'or add products to start this menu.'
+
+function keyId(key: WeekDayKey): string {
+  return `${key.year}-${key.week}-${key.dayName}`
+}
 
 export function MenuPage() {
   const { key, setKey } = useWeekDayKey()
   const grid = usePlanningGridState()
+  const guard = useUnsavedChangesGuard(grid.isDirty)
+  const queryClient = useQueryClient()
   const { meta: productMeta, isLoading: metaLoading } = useProductMeta()
 
-  const categoriesQuery = useCategories()
   const supplierMapQuery = useSupplierMap()
   const catalogueQuery = useProductCatalogue()
-  const columnsQuery = useMenuCategoryColumns()
+  const stockQuery = useMenuStockBalances()
+  const keyMenuQuery = useMenuForKey(key)
 
-  const [loaded, setLoaded] = React.useState(false)
+  // The key whose menu the grid currently holds; null while the next key loads.
+  const [loadedKeyId, setLoadedKeyId] = React.useState<string | null>(null)
   const [overwriteOpen, setOverwriteOpen] = React.useState(false)
   const [addOpen, setAddOpen] = React.useState(false)
   // null = whole menu; a category id scopes pull/save to that one category.
   const [scopeCategoryId, setScopeCategoryId] = React.useState<number | null>(null)
 
-  // Any stage change clears the current grid - it belongs to another key.
-  React.useEffect(() => {
-    setLoaded(false)
-  }, [key.year, key.week, key.dayName])
+  const scopeCategoryName = useCategoryName(scopeCategoryId)
+  const currentKeyId = keyId(key)
+  const isKeyLoaded = loadedKeyId === currentKeyId
 
-  const categoryName = React.useCallback(
-    (id: number) => categoriesQuery.data?.byId.get(id) ?? `Category #${id}`,
-    [categoriesQuery.data],
-  )
+  const { loadFromGrid } = grid
+  React.useEffect(() => {
+    if (isKeyLoaded || keyMenuQuery.isFetching || !keyMenuQuery.data) return
+    loadFromGrid(keyMenuQuery.data)
+    setLoadedKeyId(currentKeyId)
+  }, [isKeyLoaded, keyMenuQuery.isFetching, keyMenuQuery.data, currentKeyId, loadFromGrid])
+
   const supplierName = React.useCallback(
     (id: number) => supplierMapQuery.data?.get(id) ?? `Supplier #${id}`,
     [supplierMapQuery.data],
@@ -57,9 +83,7 @@ export function MenuPage() {
     mutationFn: () =>
       api.post<MenuGrid>('/api/v1/menus/import-from-forecast', undefined, {
         params: {
-          year: key.year,
-          week: key.week,
-          day_name: key.dayName,
+          ...menuKeyParams(key),
           ...(scopeCategoryId !== null ? { category_id: scopeCategoryId } : {}),
         },
       }),
@@ -67,9 +91,8 @@ export function MenuPage() {
       if (scopeCategoryId !== null) {
         grid.mergeCategoryFromGrid(result, scopeCategoryId)
       } else {
-        grid.loadFromGrid(result)
+        grid.loadFromGrid(result, { isUnsaved: true })
       }
-      setLoaded(true)
       toast.success(
         result.products.length
           ? `Imported ${result.products.length} products from the saved forecast`
@@ -77,7 +100,7 @@ export function MenuPage() {
       )
     },
     onError: (error) => {
-      if (error instanceof ApiError && error.status === 404) {
+      if (error instanceof ApiError && error.status === NOT_FOUND_STATUS) {
         toast.error('No saved forecast for this key - save a forecast first.')
       } else {
         toast.error(error instanceof ApiError ? error.message : 'Failed to import from forecast')
@@ -87,16 +110,13 @@ export function MenuPage() {
 
   const loadSavedMutation = useMutation({
     mutationFn: () =>
-      api.get<MenuGrid>('/api/v1/menus/saved', {
-        params: { year: key.year, week: key.week, day_name: key.dayName },
-      }),
+      api.get<MenuGrid>('/api/v1/menus/saved', { params: menuKeyParams(key) }),
     onSuccess: (result) => {
       grid.loadFromGrid(result)
-      setLoaded(true)
       toast.success(`Loaded saved menu for ${weekKeyLabel(key)}`)
     },
     onError: (error) => {
-      if (error instanceof ApiError && error.status === 404) {
+      if (error instanceof ApiError && error.status === NOT_FOUND_STATUS) {
         toast.error('No saved menu for this key yet.')
       } else {
         toast.error(error instanceof ApiError ? error.message : 'Failed to load saved menu')
@@ -104,58 +124,33 @@ export function MenuPage() {
     },
   })
 
-  // Auto-load the saved menu for the selected date if one exists (silent when
-  // none). Fires whenever the week/day key changes; never overrides live edits.
-  const savedMenuQuery = useQuery({
-    queryKey: ['ops', 'menu', 'saved', key.year, key.week, key.dayName],
-    queryFn: ({ signal }) =>
-      api.get<MenuGrid>('/api/v1/menus/saved', {
-        params: { year: key.year, week: key.week, day_name: key.dayName },
-        signal,
-      }),
-    retry: false,
-  })
-
-  React.useEffect(() => {
-    const saved = savedMenuQuery.data
-    if (
-      saved &&
-      saved.year === key.year &&
-      saved.week === key.week &&
-      saved.day_name === key.dayName &&
-      !loaded
-    ) {
-      grid.loadFromGrid(saved)
-      setLoaded(true)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedMenuQuery.data, loaded, key.year, key.week, key.dayName])
-
   const saveMutation = useMutation({
     mutationFn: (overwrite: boolean) => {
       const scopedProductIds =
         scopeCategoryId !== null ? grid.categoryProductIds(scopeCategoryId) : null
       const lines = grid
-        .toLines()
+        .toLines({ keepEmptyProducts: true })
         .filter(({ product_id }) => scopedProductIds === null || scopedProductIds.has(product_id))
         .map(({ fridge_id, product_id, qty }) => ({ fridge_id, product_id, qty }))
       return api.post<MenuGrid>('/api/v1/menus/save', {
-        year: key.year,
-        week: key.week,
-        day_name: key.dayName,
+        ...menuKeyParams(key),
         lines,
         overwrite,
         ...(scopeCategoryId !== null ? { category_id: scopeCategoryId } : {}),
       })
     },
     onSuccess: (result) => {
-      grid.loadFromGrid(result)
-      setLoaded(true)
-      setOverwriteOpen(false)
+      // A category-scoped save keeps the other categories' unsaved edits on screen.
+      if (scopeCategoryId !== null) {
+        grid.mergeCategoryFromGrid(result, scopeCategoryId, { isSavedGrid: true })
+      } else {
+        grid.loadFromGrid(result)
+      }
+      void queryClient.invalidateQueries({ queryKey: SAVED_MENU_QUERY_KEY })
       toast.success(`Menu saved for ${weekKeyLabel(key)}`)
     },
     onError: (error) => {
-      if (error instanceof ApiError && error.code === 'exists') {
+      if (error instanceof ApiError && error.code === EXISTS_ERROR_CODE) {
         setOverwriteOpen(true)
         return
       }
@@ -163,57 +158,69 @@ export function MenuPage() {
     },
   })
 
+  function handleConfirmOverwrite() {
+    // Closing first keeps a double click on Overwrite from sending two saves.
+    setOverwriteOpen(false)
+    saveMutation.mutate(true)
+  }
+
+  function handleKeyChange(nextKey: WeekDayKey) {
+    guard.confirmDiscard(() => {
+      grid.reset()
+      setLoadedKeyId(null)
+      setKey(nextKey)
+    })
+  }
+
+  const gridLines = grid.toLines()
+  const menuTotals = computeMenuTotals(gridLines, catalogueQuery.data?.byId ?? new Map())
+  const stockDetailRows: PlanningGridDetailRow[] = [
+    {
+      label: 'In stock',
+      render: (productId) => stockQuery.data?.get(productId)?.in_stock_qty ?? EMPTY_PLACEHOLDER,
+    },
+    {
+      label: 'On order',
+      render: (productId) => stockQuery.data?.get(productId)?.on_order_qty ?? EMPTY_PLACEHOLDER,
+    },
+  ]
+
   const isBusy = importMutation.isPending || loadSavedMutation.isPending
+  const isLoadingGrid = isBusy || !isKeyLoaded || metaLoading
   const canSave = grid.fridges.length > 0 && grid.productIds.size > 0
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <WeekDayPicker value={key} onChange={setKey} />
-        <div className="flex flex-wrap items-center gap-2">
-          <CategoryScopeSelect value={scopeCategoryId} onChange={setScopeCategoryId} />
-          <Button variant="outline" onClick={() => setAddOpen(true)} disabled={!catalogueQuery.data}>
-            <Plus className="h-4 w-4" />
-            Product
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => importMutation.mutate()}
-            disabled={importMutation.isPending}
-          >
-            <Download className="h-4 w-4" />
-            {importMutation.isPending ? 'Importing…' : 'From Forecast'}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => loadSavedMutation.mutate()}
-            disabled={loadSavedMutation.isPending}
-          >
-            <Download className="h-4 w-4" />
-            {loadSavedMutation.isPending ? 'Loading…' : 'Load saved'}
-          </Button>
-          <Button onClick={() => saveMutation.mutate(false)} disabled={saveMutation.isPending || !canSave}>
-            <Save className="h-4 w-4" />
-            {saveMutation.isPending ? 'Saving…' : 'Save'}
-          </Button>
-        </div>
-      </div>
-
-      {catalogueQuery.isError ? (
+  function renderGridArea() {
+    if (catalogueQuery.isError) {
+      return (
         <ErrorState
           title="Failed to load the product catalogue"
           error={catalogueQuery.error}
           onRetry={() => catalogueQuery.refetch()}
         />
-      ) : isBusy || (loaded && metaLoading) ? (
-        <LoadingSkeleton rows={8} columns={8} />
-      ) : !loaded || !grid.hasData ? (
+      )
+    }
+    if (keyMenuQuery.isError) {
+      return (
+        <ErrorState
+          title="Failed to load the menu for this day"
+          error={keyMenuQuery.error}
+          onRetry={() => keyMenuQuery.refetch()}
+        />
+      )
+    }
+    if (isLoadingGrid) return <LoadingSkeleton rows={8} columns={8} />
+    if (!grid.hasData) {
+      return (
         <EmptyState
           icon={<LayoutGrid className="h-8 w-8" />}
-          title="No menu loaded"
-          description="Import from the saved forecast, load a previously saved menu, or add products to start building this week's menu."
+          title="No fridge is delivered on this day"
+          description={NO_FRIDGES_HINT}
         />
-      ) : (
+      )
+    }
+    return (
+      <>
+        <MenuSummary totals={menuTotals} />
         <PlanningGrid
           fridges={grid.fridges}
           categories={grid.orderedCategories}
@@ -221,9 +228,74 @@ export function MenuPage() {
           draft={grid.draft}
           onCellChange={grid.setCell}
           editedKeys={grid.editedKeys}
-          columnsPerCategory={columnsQuery.data ?? 6}
+          extraDetailRows={stockDetailRows}
         />
-      )}
+      </>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <Toolbar
+        left={
+          <>
+            <WeekDayPicker
+              value={key}
+              onChange={handleKeyChange}
+              compact
+            />
+            <CategoryScopeSelect
+              value={scopeCategoryId}
+              onChange={setScopeCategoryId}
+            />
+          </>
+        }
+        right={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => setAddOpen(true)}
+              disabled={!catalogueQuery.data || !isKeyLoaded}
+            >
+              <Plus className="h-4 w-4" />
+              Product
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => guard.confirmDiscard(() => importMutation.mutate())}
+              disabled={importMutation.isPending || !isKeyLoaded}
+            >
+              <Download className="h-4 w-4" />
+              {importMutation.isPending ? 'Importing…' : 'From Forecast'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => guard.confirmDiscard(() => loadSavedMutation.mutate())}
+              disabled={loadSavedMutation.isPending || !isKeyLoaded}
+            >
+              <Download className="h-4 w-4" />
+              {loadSavedMutation.isPending ? 'Loading…' : 'Load saved'}
+            </Button>
+            <Button
+              size="sm"
+              className="h-9"
+              onClick={() => saveMutation.mutate(false)}
+              disabled={saveMutation.isPending || !canSave}
+            >
+              <Save className="h-4 w-4" />
+              {saveMutation.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </>
+        }
+      />
+
+      {renderGridArea()}
 
       <Modal
         open={addOpen}
@@ -231,7 +303,10 @@ export function MenuPage() {
         title="Add a product"
         className="max-w-lg"
         footer={
-          <Button variant="outline" onClick={() => setAddOpen(false)}>
+          <Button
+            variant="outline"
+            onClick={() => setAddOpen(false)}
+          >
             Done
           </Button>
         }
@@ -239,12 +314,10 @@ export function MenuPage() {
         {catalogueQuery.data ? (
           <AddProductPicker
             products={catalogueQuery.data.items}
-            categoryName={categoryName}
             supplierName={supplierName}
             existingProductIds={grid.productIds}
             onAdd={(product) => {
               grid.addProduct(product)
-              setLoaded(true)
               toast.success(`${product.name} added`)
             }}
           />
@@ -256,15 +329,28 @@ export function MenuPage() {
       <ConfirmDialog
         open={overwriteOpen}
         onClose={() => setOverwriteOpen(false)}
-        onConfirm={() => saveMutation.mutate(true)}
+        onConfirm={handleConfirmOverwrite}
         title="Overwrite the saved menu?"
-        description={`A saved menu already exists for ${weekKeyLabel(key)}. Overwriting replaces its lines with the current grid.`}
+        description={describeMenuOverwrite(weekKeyLabel(key), scopeCategoryName)}
         confirmLabel="Overwrite"
         destructive
-        pending={saveMutation.isPending}
       />
+
+      <UnsavedChangesDialog guard={guard} />
     </div>
   )
 }
 
 export default MenuPage
+
+function describeMenuOverwrite(keyLabel: string, scopeCategoryName: string | null): string {
+  const existing = `A saved menu already exists for ${keyLabel}. `
+  if (scopeCategoryName === null) {
+    return existing + 'Overwriting replaces its lines with the current grid.'
+  }
+  return (
+    existing +
+    `Overwriting replaces only its ${scopeCategoryName} lines with the current grid; ` +
+    'the other categories stay as saved.'
+  )
+}

@@ -36,8 +36,6 @@ export interface Client {
   id: number
   name: string
   location: string | null
-  workers_count: number | null
-  worker_type: string | null
   preferences: string | null
   notes: string | null
   created_at: string
@@ -48,8 +46,6 @@ export interface Client {
 export interface ClientCreate {
   name: string
   location?: string | null
-  workers_count?: number | null
-  worker_type?: string | null
   preferences?: string | null
   notes?: string | null
 }
@@ -116,12 +112,10 @@ export interface DeliveryConfigItem {
 
 // ──────────────────────────── Purchase Orders ────────────────────────────
 
-/** POST /api/v1/purchase-orders line (schema: PoLineCreate). */
+/** POST /api/v1/purchase-orders line (schema: PoLineCreate). Price and VAT come from the catalogue. */
 export interface PoLineCreate {
   product_id: number
   qty: number
-  unit_price: number | string
-  vat_rate: number | string
 }
 
 /** POST /api/v1/purchase-orders body (schema: PurchaseOrderCreate). */
@@ -175,6 +169,10 @@ export interface StockBalance {
   physical_qty: number
   on_order_qty: number
   available_qty: number
+  category_id: number
+  category_name: string
+  supplier_id: number | null
+  supplier_name: string | null
 }
 
 export type StockMovementType =

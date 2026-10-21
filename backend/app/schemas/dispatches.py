@@ -7,6 +7,7 @@ import datetime
 from pydantic import Field
 
 from app.models.enums import DispatchStatus, LineSource
+from app.money import MoneyStr
 from app.schemas.masters import ApiModel
 
 
@@ -68,6 +69,8 @@ class DispatchMatrix(ApiModel):
     products: list[MatrixProduct]
     categories: list[MatrixCategory]
     cells: list[MatrixCell]
+    # Cost at the prices snapshot on dispatch; null until the day is dispatched.
+    dispatched_cost_total: MoneyStr | None = None
 
 
 class DispatchSaveRequest(ApiModel):
@@ -80,20 +83,6 @@ class DispatchSaveRequest(ApiModel):
     overwrite: bool = False
     # When set, only this category's lines are replaced; others stay intact.
     category_id: int | None = None
-
-
-class DispatchCloneRequest(ApiModel):
-    """Copy a saved dispatch day's planned lines onto another day (no stock effect)."""
-
-    source_year: int = Field(ge=2020, le=2100)
-    source_week: int = Field(ge=1, le=53)
-    source_day_name: str
-    target_year: int = Field(ge=2020, le=2100)
-    target_week: int = Field(ge=1, le=53)
-    target_day_name: str
-    # Confirm-overwrite: false -> 409 {code:"exists"} when the target already has a
-    # saved dispatch.
-    overwrite: bool = False
 
 
 class WithdrawalItem(ApiModel):

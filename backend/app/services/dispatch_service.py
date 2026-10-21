@@ -13,7 +13,7 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass
 
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, insert, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
@@ -25,9 +25,7 @@ from app.models.enums import (
 )
 from app.models.master import (
     Category,
-    Fridge,
     FridgeDeliveryConfig,
-    FridgeProductPrice,
     Product,
 )
 from app.models.operations import (
@@ -48,6 +46,28 @@ from app.services.stock_service import (
 
 _EDITABLE_STATUSES = (DispatchStatus.draft, DispatchStatus.saved)
 _CONFIRMED_STATUSES = (DispatchStatus.dispatched, DispatchStatus.reconciled)
+
+# The per-fridge sales price override wins over the catalogue sales price.
+_SNAPSHOT_LINE_PRICES_SQL = text(
+    """
+    UPDATE dispatch_lines dl
+    SET unit_purchase_price = p.purchase_price,
+        unit_sales_price = COALESCE(
+            (
+                SELECT fpp.sales_price
+                FROM fridge_product_prices fpp
+                WHERE fpp.fridge_id = dl.fridge_id
+                  AND fpp.product_id = dl.product_id
+            ),
+            p.sales_price
+        ),
+        vat_rate = p.vat_rate
+    FROM products p
+    WHERE p.id = dl.product_id
+      AND dl.dispatch_id = :dispatch_id
+      AND dl.delivery_date = :delivery_date
+    """
+)
 
 
 @dataclass(frozen=True)
@@ -84,6 +104,8 @@ class MatrixData:
     products: list[_MatrixProduct]
     categories: list[_MatrixCategory]
     cells: list[_MatrixCell]
+    # Cost of the lines at their snapshot prices; only set once dispatched.
+    dispatched_cost_total: int | None = None
 
 
 def create_dispatch(
@@ -149,7 +171,7 @@ def get_dispatch(dispatch_id: int, session: Session) -> Dispatch:
 
 
 def get_matrix(dispatch_id: int, session: Session) -> MatrixData:
-    get_dispatch(dispatch_id, session)
+    dispatch = get_dispatch(dispatch_id, session)
     lines = list(
         session.execute(
             select(DispatchLine).where(DispatchLine.dispatch_id == dispatch_id)
@@ -158,16 +180,15 @@ def get_matrix(dispatch_id: int, session: Session) -> MatrixData:
         .all()
     )
 
-    fridge_ids = sorted({line.fridge_id for line in lines})
     product_ids = sorted({line.product_id for line in lines})
-
+    delivery_day_fridges = menu_service.list_delivery_day_fridges(
+        delivery_date=dispatch.delivery_date,
+        fridge_ids_with_lines={line.fridge_id for line in lines},
+        session=session,
+    )
     fridges = [
-        _MatrixFridge(fridge_id=fridge.id, friendly_name=fridge.friendly_name)
-        for fridge in session.execute(
-            select(Fridge).where(Fridge.id.in_(fridge_ids)).order_by(Fridge.friendly_name)
-        )
-        .scalars()
-        .all()
+        _MatrixFridge(fridge_id=fridge.fridge_id, friendly_name=fridge.friendly_name)
+        for fridge in delivery_day_fridges
     ]
     product_rows = list(
         session.execute(
@@ -205,12 +226,16 @@ def get_matrix(dispatch_id: int, session: Session) -> MatrixData:
         _MatrixCell(fridge_id=line.fridge_id, product_id=line.product_id, qty=line.qty)
         for line in lines
     ]
+    dispatched_cost_total = None
+    if dispatch.status in _CONFIRMED_STATUSES:
+        dispatched_cost_total = sum(line.qty * line.unit_purchase_price for line in lines)
     return MatrixData(
         dispatch_id=dispatch_id,
         fridges=fridges,
         products=products,
         categories=categories,
         cells=cells,
+        dispatched_cost_total=dispatched_cost_total,
     )
 
 
@@ -239,35 +264,36 @@ def _replace_lines(
     category_id: int | None,
     session: Session,
 ) -> int:
-    """Delete existing lines (optionally scoped to a category) and insert new."""
-    delete_stmt = select(DispatchLine).where(DispatchLine.dispatch_id == dispatch.id)
+    """Delete existing lines (optionally scoped to a category) and insert new.
+
+    Bulk statements on purpose: the composite (id, delivery_date) primary key makes
+    ORM adds and deletes run one round trip per row.
+    """
+    delete_stmt = delete(DispatchLine).where(DispatchLine.dispatch_id == dispatch.id)
     if category_id is not None:
         product_ids_in_cat = select(Product.id).where(Product.category_id == category_id)
         delete_stmt = delete_stmt.where(DispatchLine.product_id.in_(product_ids_in_cat))
-    for existing in session.execute(delete_stmt).scalars().all():
-        session.delete(existing)
-    session.flush()
+    session.execute(delete_stmt)
 
-    written = 0
-    for line in lines:
-        if line.qty <= 0:
-            continue
-        session.add(
-            DispatchLine(
-                dispatch_id=dispatch.id,
-                fridge_id=line.fridge_id,
-                product_id=line.product_id,
-                # Denormalised partition key - always the parent's delivery date.
-                delivery_date=dispatch.delivery_date,
-                qty=line.qty,
-                source=line.source,
-            )
-        )
-        written += 1
+    new_line_rows = [
+        {
+            "dispatch_id": dispatch.id,
+            "fridge_id": line.fridge_id,
+            "product_id": line.product_id,
+            # Denormalised partition key - always the parent's delivery date.
+            "delivery_date": dispatch.delivery_date,
+            "qty": line.qty,
+            "source": line.source,
+        }
+        for line in lines
+        if line.qty > 0
+    ]
+    if new_line_rows:
+        session.execute(insert(DispatchLine), new_line_rows)
 
     if dispatch.status == DispatchStatus.draft:
         dispatch.status = DispatchStatus.saved
-    return written
+    return len(new_line_rows)
 
 
 def replace_lines(
@@ -372,14 +398,21 @@ def _count_movements(dispatch_id: int, session: Session) -> int:
     )
 
 
-def _raise_stock_blocked(
-    *, dispatch_id: int, lines: list[DispatchLine], user_id: int | None, session: Session
-) -> None:
-    """After a trigger rejection: log the alert (fresh tx) and raise 409."""
+def _requested_qty_by_product(lines: list[DispatchLine]) -> dict[int, int]:
     requested: dict[int, int] = {}
     for line in lines:
         requested[line.product_id] = requested.get(line.product_id, 0) + line.qty
+    return requested
 
+
+def _raise_stock_blocked(
+    *,
+    dispatch_id: int,
+    requested: dict[int, int],
+    user_id: int | None,
+    session: Session,
+) -> None:
+    """After a trigger rejection: log the alert (fresh tx) and raise 409."""
     available: dict[int, int] = {}
     if requested:
         for row in session.execute(
@@ -460,37 +493,12 @@ def confirm_dispatch(
             {"dispatch_id": dispatch_id},
         )
 
-    product_ids = {line.product_id for line in lines}
-    fridge_ids = {line.fridge_id for line in lines}
-    products = {
-        product.id: product
-        for product in session.execute(
-            select(Product).where(Product.id.in_(product_ids))
-        )
-        .scalars()
-        .all()
-    }
-    overrides = {
-        (price.fridge_id, price.product_id): price.sales_price
-        for price in session.execute(
-            select(FridgeProductPrice).where(
-                FridgeProductPrice.fridge_id.in_(fridge_ids),
-                FridgeProductPrice.product_id.in_(product_ids),
-            )
-        )
-        .scalars()
-        .all()
-    }
-
-    # Snapshot prices from the catalogue (per-fridge override wins on sales price).
-    for line in lines:
-        product = products[line.product_id]
-        line.unit_purchase_price = product.purchase_price
-        line.unit_sales_price = overrides.get(
-            (line.fridge_id, line.product_id), product.sales_price
-        )
-        line.vat_rate = product.vat_rate
-    session.flush()
+    # Read before the flush: a rollback expires the lines, and re-reading each costs a query.
+    requested_by_product = _requested_qty_by_product(lines)
+    session.execute(
+        _SNAPSHOT_LINE_PRICES_SQL,
+        {"dispatch_id": dispatch_id, "delivery_date": dispatch.delivery_date},
+    )
 
     for line in lines:
         session.add(
@@ -499,6 +507,7 @@ def confirm_dispatch(
                 qty=-line.qty,
                 movement_type=StockMovementType.dispatch,
                 dispatch_line_id=line.id,
+                created_by=user_id,
             )
         )
     try:
@@ -507,7 +516,10 @@ def confirm_dispatch(
         session.rollback()
         if is_stock_non_negative_error(exc):
             _raise_stock_blocked(
-                dispatch_id=dispatch_id, lines=lines, user_id=user_id, session=session
+                dispatch_id=dispatch_id,
+                requested=requested_by_product,
+                user_id=user_id,
+                session=session,
             )
         raise
 
@@ -815,116 +827,6 @@ def withdrawal_list(
             )
     items.sort(key=lambda item: (item.friendly_name, item.product_name))
     return items
-
-
-def clone_dispatch(
-    *,
-    source_year: int,
-    source_week: int,
-    source_day_name: str,
-    target_year: int,
-    target_week: int,
-    target_day_name: str,
-    overwrite: bool,
-    user_id: int | None,
-    session: Session,
-) -> Dispatch:
-    """Copy a saved dispatch day's planned lines onto another day (D2, slide 10).
-
-    Reads the source day's saved lines and writes them as a PLANNED dispatch on
-    the target day - status 'saved', NO stock effect (stock only ever moves on
-    create-individual). Overwrite-confirm applies to the target: an existing
-    saved/draft target yields ``409 {code:"exists"}`` unless ``overwrite`` is
-    set; a confirmed target cannot be overwritten.
-    """
-    source_date = resolve_delivery_date(source_year, source_week, source_day_name)
-    target_date = resolve_delivery_date(target_year, target_week, target_day_name)
-    if source_date == target_date:
-        raise api_error(
-            422,
-            "validation_error",
-            "Source and target dispatch day must differ",
-            {"delivery_date": source_date.isoformat()},
-        )
-
-    source = _dispatch_for_delivery_date(source_date, session)
-    if source is None:
-        raise api_error(
-            404,
-            "not_found",
-            "No saved dispatch to clone for the source day",
-            {"year": source_year, "week": source_week, "day_name": source_day_name},
-        )
-    source_lines = list(
-        session.execute(
-            select(DispatchLine).where(DispatchLine.dispatch_id == source.id)
-        )
-        .scalars()
-        .all()
-    )
-    if not source_lines:
-        raise api_error(
-            409,
-            "conflict",
-            "The source dispatch has no lines to clone",
-            {"dispatch_id": source.id},
-        )
-
-    target = _dispatch_for_delivery_date(target_date, session)
-    if target is not None:
-        if target.status in _CONFIRMED_STATUSES:
-            raise api_error(
-                409,
-                "conflict",
-                "Target dispatch already created (dispatched); cannot overwrite",
-                {"delivery_date": target_date.isoformat(), "status": target.status.value},
-            )
-        if not overwrite:
-            raise api_error(
-                409,
-                "exists",
-                "A saved dispatch already exists for the target day; resend with overwrite=true",
-                {"delivery_date": target_date.isoformat(), "dispatch_id": target.id},
-            )
-    else:
-        iso_year, iso_week, weekday = target_date.isocalendar()
-        target = Dispatch(
-            delivery_date=target_date,
-            iso_week=iso_week,
-            weekday=weekday,
-            status=DispatchStatus.saved,
-            created_by=user_id,
-        )
-        session.add(target)
-        session.flush()  # assign target.id
-
-    lines = [
-        LineInput(
-            fridge_id=line.fridge_id,
-            product_id=line.product_id,
-            qty=line.qty,
-            source=line.source,
-        )
-        for line in source_lines
-    ]
-    written = _replace_lines(
-        dispatch=target, lines=lines, category_id=None, session=session
-    )
-    record_audit(
-        session,
-        action="dispatch.clone",
-        entity="dispatches",
-        entity_id=target.id,
-        after={
-            "source_delivery_date": source_date.isoformat(),
-            "target_delivery_date": target_date.isoformat(),
-            "lines_written": written,
-        },
-        user_id=user_id,
-    )
-    session.commit()
-    session.refresh(target)
-    return target
 
 
 def create_individual_by_key(

@@ -9,10 +9,10 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.husky.sync import effective_status_clause
-from app.models.master import FridgeProductPrice, Product
+from app.models.master import FridgeProductPrice, Product, Supplier
 from app.schemas.masters import Page, PaginationParams, api_error, make_router, pagination
 from app.schemas.products import (
-    FridgePriceItem,
+    EffectiveStatusFilter,
     FridgePriceRead,
     FridgePriceReplace,
     ProductCreate,
@@ -34,42 +34,43 @@ def _get_or_404(product_id: int, session: Session) -> Product:
 def list_products(
     page: PaginationParams = Depends(pagination),
     category_id: int | None = Query(default=None),
-    search: str | None = Query(default=None),
-    status: str | None = Query(
+    supplier_id: int | None = Query(default=None),
+    search: str | None = Query(
         default=None,
-        description="Filter by effective status: active | inactive | cancelled | all "
-        "(local_status override wins over Husky is_active).",
+        description="Case-insensitive contains match on product code or name.",
+    ),
+    status: EffectiveStatusFilter | None = Query(
+        default=None,
+        description="Filter by effective status (local_status override wins over "
+        "Husky is_active); 'all' or omitted means no filter.",
     ),
     session: Session = Depends(get_db),
 ) -> Page[ProductRead]:
-    stmt = select(Product)
-    count_stmt = select(func.count()).select_from(Product)
+    filters = []
     status_clause = effective_status_clause(Product, status)
     if status_clause is not None:
-        stmt = stmt.where(status_clause)
-        count_stmt = count_stmt.where(status_clause)
+        filters.append(status_clause)
     if category_id is not None:
-        stmt = stmt.where(Product.category_id == category_id)
-        count_stmt = count_stmt.where(Product.category_id == category_id)
+        filters.append(Product.category_id == category_id)
+    if supplier_id is not None:
+        filters.append(Product.supplier_id == supplier_id)
     if search:
         pattern = f"%{search}%"
-        clause = or_(Product.code.ilike(pattern), Product.name.ilike(pattern))
-        stmt = stmt.where(clause)
-        count_stmt = count_stmt.where(clause)
+        filters.append(or_(Product.code.ilike(pattern), Product.name.ilike(pattern)))
+
+    count_stmt = select(func.count()).select_from(Product).where(*filters)
     total = session.execute(count_stmt).scalar_one()
-    rows = list(
-        session.execute(
-            stmt.order_by(Product.name).limit(page.limit).offset(page.offset)
-        )
-        .scalars()
-        .all()
+    products_with_supplier = (
+        select(Product, Supplier.name)
+        .outerjoin(Supplier, Product.supplier_id == Supplier.id)
+        .where(*filters)
+        .order_by(Product.name)
+        .limit(page.limit)
+        .offset(page.offset)
     )
-    return Page(
-        items=[ProductRead.model_validate(row) for row in rows],
-        total=int(total),
-        limit=page.limit,
-        offset=page.offset,
-    )
+    rows = session.execute(products_with_supplier).all()
+    items = [_to_read(product, supplier_name) for product, supplier_name in rows]
+    return Page(items=items, total=int(total), limit=page.limit, offset=page.offset)
 
 
 @router.post("", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
@@ -84,12 +85,12 @@ def create_product(body: ProductCreate, session: Session = Depends(get_db)) -> P
             409, "conflict", "Product code already exists", {"code": body.code}
         ) from exc
     session.refresh(product)
-    return ProductRead.model_validate(product)
+    return _read_with_supplier_name(product, session)
 
 
 @router.get("/{product_id}", response_model=ProductRead)
 def get_product(product_id: int, session: Session = Depends(get_db)) -> ProductRead:
-    return ProductRead.model_validate(_get_or_404(product_id, session))
+    return _read_with_supplier_name(_get_or_404(product_id, session), session)
 
 
 @router.put("/{product_id}", response_model=ProductRead)
@@ -105,7 +106,7 @@ def update_product(
         session.rollback()
         raise api_error(409, "conflict", "Product code already exists", None) from exc
     session.refresh(product)
-    return ProductRead.model_validate(product)
+    return _read_with_supplier_name(product, session)
 
 
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -169,3 +170,16 @@ def replace_fridge_prices(
             409, "conflict", "Invalid fridge reference in fridge prices", None
         ) from exc
     return get_fridge_prices(product_id, session)
+
+
+def _read_with_supplier_name(product: Product, session: Session) -> ProductRead:
+    supplier_name = None
+    if product.supplier_id is not None:
+        supplier_name = session.get(Supplier, product.supplier_id).name
+    return _to_read(product, supplier_name)
+
+
+def _to_read(product: Product, supplier_name: str | None) -> ProductRead:
+    return ProductRead.model_validate(product).model_copy(
+        update={"supplier_name": supplier_name}
+    )

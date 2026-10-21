@@ -64,3 +64,9 @@ coverage/
 # ── Logs ──────────────────────────────────────────────────────────────
 logs/
 *.log
+
+# Generated raw-payload archive (runtime output, never deploy/commit)
+raw_archive/
+
+# Local plaintext login credentials (never commit)
+credentials.local.json
