@@ -30,7 +30,8 @@ export function Modal({
   React.useEffect(() => {
     if (!open) return
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      // An open dropdown inside the modal handles Escape first and marks it handled.
+      if (event.key === 'Escape' && !event.defaultPrevented) onClose()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -48,7 +49,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         className={cn(
-          'w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-lg',
+          'max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-card p-5 shadow-lg',
           className,
         )}
         onClick={(event) => event.stopPropagation()}

@@ -157,11 +157,10 @@ export function UsersPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <PageHeader
-        breadcrumb="System / Users"
         title="Users"
-        description="Manage accounts, roles, and access for the FrigoLoco app."
+        className="items-center border-b-0 pb-0"
         actions={
           <Button onClick={() => setCreating(true)}>
             <Plus className="h-4 w-4" /> New user

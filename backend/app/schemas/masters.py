@@ -203,6 +203,13 @@ class SupplierRead(ApiModel):
     updated_at: datetime.datetime
 
 
+class SupplierCategoryLink(ApiModel):
+    """One supplier that has at least one product in one category."""
+
+    supplier_id: int
+    category_id: int
+
+
 # ---------------------------------------------------------------------------
 # Categories (read-only)
 # ---------------------------------------------------------------------------

@@ -577,6 +577,56 @@ def test_dispatch_confirm_stock_blocked(ctx):
     assert body["details"][0]["product_id"] == pid
 
 
+def test_repeated_stock_block_updates_the_open_alert(ctx):
+    cats = _category_ids(ctx.session)
+    pid = _create_product(ctx.client, code=f"{TAG}Prep", category_id=cats["normal"])
+    fid = _create_fridge(ctx.client, f"{TAG}frRep")
+    delivery_date = datetime.date(2026, 6, 25)
+    disp = ctx.client.post(
+        f"{PREFIX}/dispatches", json={"delivery_date": delivery_date.isoformat()}
+    ).json()
+    ctx.client.put(
+        f"{PREFIX}/dispatches/{disp['id']}/lines",
+        json={"lines": [{"fridge_id": fid, "product_id": pid, "qty": 5}]},
+    )
+    confirm_url = f"{PREFIX}/dispatches/{disp['id']}/confirm"
+    first_block = ctx.client.post(confirm_url, json={"force": True})
+    second_block = ctx.client.post(confirm_url, json={"force": True})
+    assert first_block.status_code == second_block.status_code == 409
+
+    alert_count = ctx.session.execute(
+        text(
+            "SELECT count(*) FROM alerts WHERE alert_type = 'negative_blocked' "
+            "AND (payload->>'dispatch_id')::int = :dispatch_id"
+        ),
+        {"dispatch_id": disp["id"]},
+    ).scalar_one()
+    assert alert_count == 1
+
+    listing = ctx.client.get(
+        f"{PREFIX}/alerts",
+        params={"alert_type": "negative_blocked", "acknowledged": "false"},
+    ).json()
+    alert = next(
+        item
+        for item in listing["items"]
+        if item["stock_blocked"]["dispatch"]
+        and item["stock_blocked"]["dispatch"]["dispatch_id"] == disp["id"]
+    )
+    stock_blocked = alert["stock_blocked"]
+    assert stock_blocked["occurrences"] == 2
+    assert stock_blocked["dispatch"]["delivery_date"] == delivery_date.isoformat()
+    assert stock_blocked["dispatch"]["day_name"] == "Thursday"
+    assert stock_blocked["lines"] == [
+        {
+            "product_id": pid,
+            "product_name": f"{TAG}{TAG}Prep",
+            "requested": 5,
+            "available": 0,
+        }
+    ]
+
+
 def test_stock_adjustment_validation_and_movements(ctx):
     cats = _category_ids(ctx.session)
     pid = _create_product(ctx.client, code=f"{TAG}Padj", category_id=cats["normal"])

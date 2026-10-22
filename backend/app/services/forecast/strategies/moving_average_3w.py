@@ -14,7 +14,7 @@ from app.services.forecast.strategies.base import (
 
 class MovingAverage3Weeks(ForecastStrategy):
     code = "moving_average_3w"
-    label = "Moving average: last 3 weeks"
+    label = "Last 3 weeks"
 
     def sales_window(self, delivery_date: datetime.date) -> SalesWindow:
         return window_ending_before(delivery_date, THREE_WEEKS_DAYS)

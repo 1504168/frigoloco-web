@@ -55,11 +55,23 @@ export function formatFridgeName(
   return fridge.friendly_name || fridge.husky_name || `Fridge #${fridge.id}`
 }
 
+const DATE_PART_FORMAT = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+})
+
+// en-US, not en-GB: en-GB writes the 12-hour suffix as lowercase "pm".
+const TIME_12_HOUR_FORMAT = new Intl.DateTimeFormat('en-US', {
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+})
+
 /** Format an ISO datetime string as a short locale date-time; placeholder if empty. */
 export function formatDateTime(value: string | null | undefined): string {
-  if (!value) return EMPTY_PLACEHOLDER
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return EMPTY_PLACEHOLDER
+  const date = parseDateTime(value)
+  if (!date) return EMPTY_PLACEHOLDER
   return date.toLocaleString('en-GB', {
     day: '2-digit',
     month: 'short',
@@ -67,4 +79,20 @@ export function formatDateTime(value: string | null | undefined): string {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+/**
+ * Format an ISO datetime string in the browser's local time with a 12-hour
+ * clock, e.g. "22 Oct 2026, 1:00 PM"; placeholder if empty.
+ */
+export function formatDateTime12Hour(value: string | null | undefined): string {
+  const date = parseDateTime(value)
+  if (!date) return EMPTY_PLACEHOLDER
+  return `${DATE_PART_FORMAT.format(date)}, ${TIME_12_HOUR_FORMAT.format(date)}`
+}
+
+function parseDateTime(value: string | null | undefined): Date | null {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
 }

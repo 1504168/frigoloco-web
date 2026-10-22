@@ -15,7 +15,7 @@ from app.services.forecast.strategies.base import (
 
 class LastYear3Months(ForecastStrategy):
     code = "last_year_3m"
-    label = "Last year: same 3 months"
+    label = "Last year, same 3 months"
 
     def sales_window(self, delivery_date: datetime.date) -> SalesWindow:
         return window_ending_before(same_weekday_last_year(delivery_date), THIRTEEN_WEEKS_DAYS)

@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileSpreadsheet, FolderOpen, Import, Save, Truck } from 'lucide-react'
+import { Download, FileSpreadsheet, FolderOpen, History, Truck } from 'lucide-react'
+import { SaveIconButton } from '@/components/shared/SaveIconButton'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
@@ -29,7 +30,6 @@ import { keyIsPast, useWeekDayKey, weekKeyLabel } from '@/pages/ops/lib/pipeline
 import type { WeekDayKey } from '@/pages/ops/lib/pipelineKey'
 import {
   useCategoryName,
-  useMenuCategoryColumns,
   useProductCatalogue,
 } from '@/pages/ops/lib/reference'
 import type {
@@ -40,7 +40,6 @@ import type {
 } from '@/pages/ops/lib/types'
 
 const EMPTY_GRID: GridLike = { fridges: [], products: [], categories: [], cells: [] }
-const DEFAULT_COLUMNS_PER_CATEGORY = 6
 const STOCK_BLOCKED_PREVIEW_COUNT = 6
 
 export function DispatchPage() {
@@ -50,7 +49,6 @@ export function DispatchPage() {
   const { meta: productMeta, isLoading: metaLoading } = useProductMeta()
 
   const catalogueQuery = useProductCatalogue()
-  const columnsQuery = useMenuCategoryColumns()
 
   const [loaded, setLoaded] = React.useState(false)
   const [savedDispatch, setSavedDispatch] = React.useState<DispatchRead | null>(null)
@@ -261,14 +259,22 @@ export function DispatchPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <Toolbar
         left={
           <>
             <WeekDayPicker value={key} onChange={changeKey} compact />
             <CategoryScopeSelect value={scopeCategoryId} onChange={setScopeCategoryId} />
             {status ? <StatusChip status={status} /> : null}
-            {isPast ? <StatusChip variant="warning" label="Past date" /> : null}
+            {isPast ? (
+              <span
+                title="Past date: this delivery day is before today"
+                aria-label="Past date"
+                className="inline-flex cursor-help p-1"
+              >
+                <History className="h-4 w-4 shrink-0 text-warning" />
+              </span>
+            ) : null}
           </>
         }
         right={
@@ -279,14 +285,14 @@ export function DispatchPage() {
               className="h-9"
               title={
                 isDispatched
-                  ? 'This day is already dispatched.'
+                  ? 'This day is already dispatched, so it can no longer be re-imported from the menu.'
                   : 'Import the planned quantities from the saved menu'
               }
               onClick={() => guard.confirmDiscard(() => importMutation.mutate())}
               disabled={importMutation.isPending || isDispatched}
             >
-              <Import className="h-4 w-4" />
-              {importMutation.isPending ? 'Importing…' : 'From Menu'}
+              <Download className="h-4 w-4" />
+              {importMutation.isPending ? 'Importing…' : 'Menu'}
             </Button>
             <Button
               variant="outline"
@@ -297,27 +303,25 @@ export function DispatchPage() {
               disabled={loadSavedMutation.isPending}
             >
               <FolderOpen className="h-4 w-4" />
-              {loadSavedMutation.isPending ? 'Loading…' : 'Load saved'}
+              {loadSavedMutation.isPending ? 'Loading…' : 'Load'}
             </Button>
-            <Button
+            <SaveIconButton
+              label="Save dispatch"
               variant="secondary"
-              size="sm"
-              className="h-9"
               onClick={() => saveMutation.mutate(false)}
-              disabled={saveMutation.isPending || !canSave}
-            >
-              <Save className="h-4 w-4" />
-              {saveMutation.isPending ? 'Saving…' : 'Save'}
-            </Button>
+              disabled={!canSave}
+              isSaving={saveMutation.isPending}
+            />
             {isDispatched && savedDispatch ? (
               <Button
-                size="sm"
-                className="h-9"
+                size="icon"
+                className="shrink-0"
                 onClick={() => downloadMutation.mutate(savedDispatch)}
                 disabled={downloadMutation.isPending}
+                title={downloadMutation.isPending ? 'Downloading…' : 'Download the dispatch Excel file'}
+                aria-label="Download dispatch Excel"
               >
                 <FileSpreadsheet className="h-4 w-4" />
-                {downloadMutation.isPending ? 'Downloading…' : 'Download Excel'}
               </Button>
             ) : (
               <span title={createBlocker ?? 'Create Individual Dispatch for this day'}>
@@ -331,7 +335,7 @@ export function DispatchPage() {
                   disabled={createMutation.isPending || createBlocker !== null}
                 >
                   <Truck className="h-4 w-4" />
-                  Create dispatch
+                  Dispatch
                 </Button>
               </span>
             )}
@@ -365,7 +369,6 @@ export function DispatchPage() {
           draft={grid.draft}
           onCellChange={grid.setCell}
           editedKeys={grid.editedKeys}
-          columnsPerCategory={columnsQuery.data ?? DEFAULT_COLUMNS_PER_CATEGORY}
           readOnly={isDispatched}
         />
       )}

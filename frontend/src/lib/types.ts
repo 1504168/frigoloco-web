@@ -47,6 +47,12 @@ export interface Supplier {
   updated_at: string
 }
 
+/** GET /api/v1/suppliers/category-links item: a supplier with products in a category. */
+export interface SupplierCategoryLink {
+  supplier_id: number
+  category_id: number
+}
+
 /** GET /api/v1/fridges item (schema: FridgeRead). */
 export interface Fridge {
   id: number
@@ -109,6 +115,32 @@ export interface Setting {
   updated_at: string
 }
 
+/** One product a blocked dispatch asked for more of than the warehouse held. */
+export interface StockBlockedLine {
+  product_id: number
+  product_name: string
+  requested: number
+  available: number
+}
+
+/** The dispatch an alert is about, keyed like the Dispatch page URL. */
+export interface AlertDispatchRef {
+  dispatch_id: number
+  delivery_date: string
+  iso_year: number
+  iso_week: number
+  day_name: string
+}
+
+/** Readable form of a `negative_blocked` alert (schema: StockBlockedDetails). */
+export interface StockBlockedDetails {
+  /** Null when the dispatch was deleted after the alert was raised. */
+  dispatch: AlertDispatchRef | null
+  lines: StockBlockedLine[]
+  occurrences: number
+  last_raised_at: string
+}
+
 /** GET /api/v1/alerts item (schema: AlertRead). */
 export interface Alert {
   id: number
@@ -118,4 +150,5 @@ export interface Alert {
   created_at: string
   acknowledged_by: number | null
   acknowledged_at: string | null
+  stock_blocked: StockBlockedDetails | null
 }

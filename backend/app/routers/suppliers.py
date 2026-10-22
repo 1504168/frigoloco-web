@@ -12,6 +12,7 @@ from app.models.master import Product, Supplier
 from app.schemas.masters import (
     Page,
     PaginationParams,
+    SupplierCategoryLink,
     SupplierCreate,
     SupplierRead,
     SupplierUpdate,
@@ -65,6 +66,23 @@ def list_suppliers(
         limit=page.limit,
         offset=page.offset,
     )
+
+
+@router.get("/category-links", response_model=list[SupplierCategoryLink])
+def list_supplier_category_links(
+    session: Session = Depends(get_db),
+) -> list[SupplierCategoryLink]:
+    """Every (supplier, category) pair with at least one product, for client-side filters."""
+    distinct_pairs = (
+        select(Product.supplier_id, Product.category_id)
+        .where(Product.supplier_id.is_not(None))
+        .distinct()
+    )
+    rows = session.execute(distinct_pairs).all()
+    return [
+        SupplierCategoryLink(supplier_id=row.supplier_id, category_id=row.category_id)
+        for row in rows
+    ]
 
 
 @router.post("", response_model=SupplierRead, status_code=status.HTTP_201_CREATED)

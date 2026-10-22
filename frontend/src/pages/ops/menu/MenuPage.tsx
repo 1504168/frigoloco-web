@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Download, LayoutGrid, Plus, Save } from 'lucide-react'
+import { Download, LayoutGrid, Plus } from 'lucide-react'
+import { SaveIconButton } from '@/components/shared/SaveIconButton'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
@@ -235,7 +236,7 @@ export function MenuPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <Toolbar
         left={
           <>
@@ -268,29 +269,28 @@ export function MenuPage() {
               className="h-9"
               onClick={() => guard.confirmDiscard(() => importMutation.mutate())}
               disabled={importMutation.isPending || !isKeyLoaded}
+              title="Import the saved forecast for this day"
             >
               <Download className="h-4 w-4" />
-              {importMutation.isPending ? 'Importing…' : 'From Forecast'}
+              {importMutation.isPending ? 'Importing…' : 'Forecast'}
             </Button>
             <Button
               variant="outline"
               size="sm"
               className="h-9"
+              title="Load the saved menu for this day"
               onClick={() => guard.confirmDiscard(() => loadSavedMutation.mutate())}
               disabled={loadSavedMutation.isPending || !isKeyLoaded}
             >
               <Download className="h-4 w-4" />
-              {loadSavedMutation.isPending ? 'Loading…' : 'Load saved'}
+              {loadSavedMutation.isPending ? 'Loading…' : 'Load'}
             </Button>
-            <Button
-              size="sm"
-              className="h-9"
+            <SaveIconButton
+              label="Save menu"
               onClick={() => saveMutation.mutate(false)}
-              disabled={saveMutation.isPending || !canSave}
-            >
-              <Save className="h-4 w-4" />
-              {saveMutation.isPending ? 'Saving…' : 'Save'}
-            </Button>
+              disabled={!canSave}
+              isSaving={saveMutation.isPending}
+            />
           </>
         }
       />

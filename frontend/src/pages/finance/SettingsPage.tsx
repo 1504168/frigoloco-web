@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { RotateCcw, Save } from 'lucide-react'
+import { RotateCcw } from 'lucide-react'
+import { SaveIconButton } from '@/components/shared/SaveIconButton'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
@@ -98,13 +99,6 @@ const SETTING_META: Record<string, SettingMeta> = {
     unit: 'plain',
     suffix: 'days',
   },
-  menu_category_columns: {
-    label: 'Menu grid columns per category',
-    help: 'Minimum number of product slots shown for each category in the Menu and Dispatch grids.',
-    group: 'thresholds',
-    unit: 'plain',
-    suffix: 'columns',
-  },
   scoring_weights: {
     label: 'Product score weights',
     help: 'How much each factor counts towards a product score. The three weights should add up to 100%.',
@@ -136,7 +130,7 @@ export function SettingsPage() {
   if (settingsQuery.isError) {
     return (
       <div className="space-y-6">
-        <PageHeader breadcrumb="System / Settings" title="Settings" />
+        <PageHeader title="Settings" />
         <ErrorState error={settingsQuery.error} onRetry={() => settingsQuery.refetch()} />
       </div>
     )
@@ -151,9 +145,8 @@ export function SettingsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        breadcrumb="System / Settings"
         title="Settings"
-        description="Business settings that drive finance formulas and forecasting. Each value is typed to its stored shape."
+        className="border-b-0 pb-0"
       />
 
       {settingsQuery.isLoading ? (
@@ -219,26 +212,33 @@ function SettingRow({ setting }: { setting: Setting }) {
           Updated {formatDateTime(setting.updated_at)}
         </p>
       </div>
-      <div className="flex flex-col items-stretch gap-2 sm:min-w-[280px]">
-        <SettingValueEditor value={draft} meta={meta} onChange={setDraft} />
+      <div className="flex flex-col gap-1 sm:min-w-[320px]">
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <SettingValueEditor value={draft} meta={meta} onChange={setDraft} />
+          </div>
+          {dirty ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="shrink-0"
+              onClick={() => setDraft(setting.value)}
+              title="Undo changes"
+              aria-label="Undo changes"
+            >
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+          ) : null}
+          <SaveIconButton
+            label="Save setting"
+            onClick={() => mutation.mutate(draft)}
+            disabled={!dirty}
+            isSaving={mutation.isPending}
+          />
+        </div>
         {meta?.hint ? (
           <p className="text-right text-[11px] text-muted-foreground">{meta.hint}</p>
         ) : null}
-        <div className="flex items-center justify-end gap-2">
-          {dirty ? (
-            <Button variant="ghost" size="sm" onClick={() => setDraft(setting.value)}>
-              <RotateCcw className="mr-1 h-3.5 w-3.5" /> Reset
-            </Button>
-          ) : null}
-          <Button
-            size="sm"
-            disabled={!dirty || mutation.isPending}
-            onClick={() => mutation.mutate(draft)}
-          >
-            <Save className="mr-1 h-3.5 w-3.5" />
-            {mutation.isPending ? 'Saving…' : 'Save'}
-          </Button>
-        </div>
       </div>
     </div>
   )
@@ -349,15 +349,25 @@ function NumberField({
   compact?: boolean
   onChange: (next: number) => void
 }) {
+  const displayValue = toDisplayValue(value, unit)
+  // Local text keeps half-typed numbers like "0." or "" visible; the stored value only gets whole numbers.
+  const [text, setText] = React.useState(String(displayValue))
+  React.useEffect(() => {
+    setText((current) => (Number(current) === displayValue ? current : String(displayValue)))
+  }, [displayValue])
+
+  function handleChange(typed: string) {
+    setText(typed)
+    const typedNumber = Number(typed)
+    onChange(toStoredValue(Number.isFinite(typedNumber) ? typedNumber : 0, unit))
+  }
+
   return (
     <div className="flex items-center justify-end gap-1.5">
       <Input
         type="number"
-        inputMode="decimal"
-        value={String(toDisplayValue(value, unit))}
-        onChange={(event) =>
-          onChange(toStoredValue(event.target.value === '' ? 0 : Number(event.target.value), unit))
-        }
+        value={text}
+        onChange={(event) => handleChange(event.target.value)}
         className={compact ? 'h-8 w-24 text-right tabular-nums' : 'text-right tabular-nums'}
       />
       {suffix ? (

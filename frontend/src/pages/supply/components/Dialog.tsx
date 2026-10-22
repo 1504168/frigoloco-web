@@ -67,11 +67,11 @@ export function Dialog({
         aria-modal="true"
         tabIndex={-1}
         className={cn(
-          'my-8 w-full rounded-xl border border-border bg-card text-card-foreground shadow-lg outline-none',
+          'my-4 flex max-h-[calc(100vh-2rem)] w-full flex-col rounded-xl border border-border bg-card text-card-foreground shadow-lg outline-none',
           widthClassName,
         )}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-border p-5">
+        <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-2.5">
           <div className="min-w-0">
             <h2 className="text-base font-semibold tracking-tight text-foreground">{title}</h2>
             {description ? (
@@ -83,10 +83,10 @@ export function Dialog({
           </Button>
         </div>
 
-        <div className="max-h-[70vh] overflow-y-auto p-5">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-3">{children}</div>
 
         {footer ? (
-          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border p-5">
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border px-5 py-3">
             {footer}
           </div>
         ) : null}

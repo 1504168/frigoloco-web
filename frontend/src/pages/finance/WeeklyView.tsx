@@ -1,7 +1,6 @@
 import * as React from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { SaveIconButton } from '@/components/shared/SaveIconButton'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -251,16 +250,18 @@ export function WeeklyView() {
               title="Week entry - manual inputs"
               description="White fields are typed in; the KPI tiles above recalculate on the backend after saving."
               actions={
-                <Button onClick={handleSave} disabled={saveMutation.isPending}>
-                  <Save className="mr-1.5 h-4 w-4" />
-                  {saveMutation.isPending ? 'Saving…' : `Save week ${week}`}
-                </Button>
+                <SaveIconButton
+                  label={`Save week ${week}`}
+                  onClick={handleSave}
+                  isSaving={saveMutation.isPending}
+                />
               }
             >
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <FormField label="Business lunch CA (€)" hint="Catering turnover">
                   <Input
                     type="number"
+                    min={0}
                     inputMode="decimal"
                     value={form.catering_turnover}
                     onChange={(event) => setField('catering_turnover', event.target.value)}
@@ -269,6 +270,7 @@ export function WeeklyView() {
                 <FormField label="Business lunch food cost (€)">
                   <Input
                     type="number"
+                    min={0}
                     inputMode="decimal"
                     value={form.catering_food_cost}
                     onChange={(event) => setField('catering_food_cost', event.target.value)}
@@ -277,6 +279,7 @@ export function WeeklyView() {
                 <FormField label="TGTG CA (€)" hint="Too Good To Go">
                   <Input
                     type="number"
+                    min={0}
                     inputMode="decimal"
                     value={form.tgtg_turnover}
                     onChange={(event) => setField('tgtg_turnover', event.target.value)}
@@ -285,6 +288,7 @@ export function WeeklyView() {
                 <FormField label="Logistics cost (€)">
                   <Input
                     type="number"
+                    min={0}
                     inputMode="decimal"
                     value={form.logistics_cost}
                     onChange={(event) => setField('logistics_cost', event.target.value)}
@@ -293,6 +297,8 @@ export function WeeklyView() {
                 <FormField label="# of drops">
                   <Input
                     type="number"
+                    min={0}
+                    step={1}
                     value={form.drops_count}
                     onChange={(event) => setField('drops_count', event.target.value)}
                   />
@@ -300,6 +306,8 @@ export function WeeklyView() {
                 <FormField label="Unsold items">
                   <Input
                     type="number"
+                    min={0}
+                    step={1}
                     value={form.unsold_items}
                     onChange={(event) => setField('unsold_items', event.target.value)}
                   />
@@ -308,6 +316,8 @@ export function WeeklyView() {
 
                   <Input
                     type="number"
+                    min={0}
+                    step={1}
                     value={form.num_fridges}
                     onChange={(event) => setField('num_fridges', event.target.value)}
                   />

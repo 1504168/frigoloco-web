@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, Play, Save, TrendingUp } from 'lucide-react'
+import { Download, Play, TrendingUp } from 'lucide-react'
+import { SaveIconButton } from '@/components/shared/SaveIconButton'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
@@ -255,8 +256,8 @@ export function ForecastPage() {
               onValueChange={(mode) => roundAllCells(mode as RoundMode)}
               disabled={shownRun === null}
             >
-              <SelectTrigger className="h-9 w-28" aria-label="Round all quantities">
-                <SelectValue placeholder="Round…" />
+              <SelectTrigger className="h-9 w-32" aria-label="Round all quantities">
+                <SelectValue placeholder="Round all" />
               </SelectTrigger>
               <SelectContent>
                 {ROUND_MODE_OPTIONS.map((option) => (
@@ -274,11 +275,12 @@ export function ForecastPage() {
               variant="outline"
               size="sm"
               className="h-9"
+              title="Load the saved forecast for this day"
               onClick={() => guard.confirmDiscard(() => loadSavedMutation.mutate())}
               disabled={loadSavedMutation.isPending}
             >
               <Download className="h-4 w-4" />
-              {loadSavedMutation.isPending ? 'Loading…' : 'Load saved'}
+              {loadSavedMutation.isPending ? 'Loading…' : 'Load'}
             </Button>
             <Button
               size="sm"
@@ -289,17 +291,14 @@ export function ForecastPage() {
               <Play className="h-4 w-4" />
               {runMutation.isPending ? 'Running…' : 'Run'}
             </Button>
-            <Button
+            <SaveIconButton
+              label="Save forecast"
               variant="secondary"
-              size="sm"
-              className="h-9"
               onClick={() => saveShownForecast(false)}
               disabled={!canSave}
-              title={hasInvalidCells ? invalidCellsMessage : undefined}
-            >
-              <Save className="h-4 w-4" />
-              {saveMutation.isPending ? 'Saving…' : 'Save'}
-            </Button>
+              isSaving={saveMutation.isPending}
+              disabledReason={hasInvalidCells ? invalidCellsMessage : undefined}
+            />
           </>
         }
       />
@@ -315,14 +314,16 @@ export function ForecastPage() {
                 run={current}
                 modelLabel={modelLabel(current.model)}
                 viewOptions={
-                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={showHiddenCategories}
-                      onChange={(event) => setShowHiddenCategories(event.target.checked)}
-                    />
-                    Show hidden categories ({hiddenCategoryIds.size})
-                  </label>
+                  hiddenCategoryIds.size > 0 && (
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={showHiddenCategories}
+                        onChange={(event) => setShowHiddenCategories(event.target.checked)}
+                      />
+                      Show hidden categories ({hiddenCategoryIds.size})
+                    </label>
+                  )
                 }
               />
               {hasInvalidCells && <p className="text-xs text-critical">{invalidCellsMessage}</p>}

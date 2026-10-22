@@ -11,14 +11,13 @@ as HTTP 409 ``stock_blocked``.
 from __future__ import annotations
 
 import datetime
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from sqlalchemy import delete, func, insert, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.models.enums import (
-    AlertType,
     DispatchStatus,
     LineSource,
     StockMovementType,
@@ -29,7 +28,6 @@ from app.models.master import (
     Product,
 )
 from app.models.operations import (
-    Alert,
     Dispatch,
     DispatchLine,
     StockMovement,
@@ -37,6 +35,7 @@ from app.models.operations import (
 from app.models.planning import ForecastRun, WeeklyMenu
 from app.schemas.masters import api_error
 from app.services import menu_service
+from app.services.alerts_service import OffendingLine, raise_stock_blocked_alert
 from app.services.menu_allocation_service import compute_allocation
 from app.services.stock_service import (
     is_stock_non_negative_error,
@@ -424,21 +423,21 @@ def _raise_stock_blocked(
         ).all():
             available[row.product_id] = int(row.physical_qty)
 
-    details = [
-        {
-            "product_id": product_id,
-            "requested": qty,
-            "available": available.get(product_id, 0),
-        }
+    offending_lines = [
+        OffendingLine(
+            product_id=product_id,
+            requested=qty,
+            available=available.get(product_id, 0),
+        )
         for product_id, qty in requested.items()
         if qty > available.get(product_id, 0)
     ]
+    details = [asdict(line) for line in offending_lines]
 
-    session.add(
-        Alert(
-            alert_type=AlertType.negative_blocked,
-            payload={"dispatch_id": dispatch_id, "offending_lines": details},
-        )
+    raise_stock_blocked_alert(
+        session,
+        dispatch_id=dispatch_id,
+        offending_lines=offending_lines,
     )
     record_audit(
         session,

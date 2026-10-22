@@ -1,5 +1,4 @@
 import { NavLink } from 'react-router-dom'
-import { CalendarDays } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -13,6 +12,7 @@ import {
   deliveryDateFromKey,
   type DayName,
   type WeekDayKey,
+  weekDayKeySearch,
 } from '@/pages/ops/lib/pipelineKey'
 
 /** ISO weeks 1-53. */
@@ -45,10 +45,9 @@ const PICKER_SIZES = {
   compact: {
     wrapper: 'gap-1.5',
     trigger: 'h-9',
-    // Tighter padding keeps '2026' and 'W43' unclipped at the narrow compact widths.
     year: 'w-20 px-2',
-    week: 'w-[72px] px-2',
-    day: 'w-32',
+    week: 'w-20 px-2',
+    day: 'w-32 px-2',
   },
 } as const
 
@@ -90,12 +89,11 @@ export function WeekDayPicker({
   const deliveryDate = deliveryDateFromKey(value)
   const deliveryLabel = `Delivery ${deliveryDate}`
   const compactDayLabel = COMPACT_DAY_LABEL_FORMAT.format(new Date(deliveryDate))
-  const stageQuery = `?year=${value.year}&week=${value.week}&day=${value.dayName}`
+  const stageQuery = weekDayKeySearch(value)
 
   return (
     <div className={cn('flex flex-wrap items-center gap-3', className)}>
       <div className={cn('flex items-center', sizes.wrapper)}>
-        <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />
         <label className="sr-only" htmlFor="wdp-year">
           Year
         </label>

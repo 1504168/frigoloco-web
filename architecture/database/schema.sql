@@ -1004,10 +1004,7 @@ INSERT INTO settings (key, value, description) VALUES
       cents as of migration 0002 (2026-07-03); the key name is kept for continuity.'),
     ('expiry_alert_days',
      '2',
-     'Alert when product expiry is within N days (configurable, default 2).'),
-    ('menu_category_columns',
-     '6',
-     'Minimum product column slots per category in Menu/Dispatch grids')
+     'Alert when product expiry is within N days (configurable, default 2).')
 ON CONFLICT (key) DO NOTHING;
 
 -- Forecast margins are keyed by category id (migration 0015) so a category

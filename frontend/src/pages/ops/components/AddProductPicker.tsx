@@ -11,7 +11,7 @@ import type { Product } from '@/lib/types'
 const ACTIVE_STATUS = 'active'
 const MAX_LISTED_PRODUCTS = 50
 const PRODUCT_LIST_CLASS =
-  'max-h-80 divide-y divide-border overflow-y-auto rounded-lg border border-border'
+  'h-80 divide-y divide-border overflow-y-auto rounded-lg border border-border'
 
 export interface AddProductPickerProps {
   /** Full catalogue, loaded once and filtered entirely client-side. */
@@ -108,11 +108,11 @@ export function AddProductPicker({
           </li>
         ))}
       </ul>
-      {hiddenProductCount > 0 ? (
-        <p className="text-xs text-muted-foreground">
-          {hiddenProductCount} more match. Narrow the filters or search to see them.
-        </p>
-      ) : null}
+      {/* Always rendered so the dialog keeps one height whatever the filters match. */}
+      <p className="h-4 text-xs text-muted-foreground">
+        {hiddenProductCount > 0 &&
+          `${hiddenProductCount} more match. Narrow the filters or search to see them.`}
+      </p>
     </div>
   )
 }

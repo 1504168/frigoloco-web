@@ -20,6 +20,7 @@ from app.models.operations import Alert
 from app.schemas.alerts_settings import AlertRead
 from app.schemas.orders import Page
 from app.security import get_current_user
+from app.services.alerts_service import build_alert_reads
 from app.services.orders_service import (
     PageParams,
     envelope,
@@ -67,7 +68,7 @@ def list_alerts(
         .all()
     )
     return Page(
-        items=[AlertRead.model_validate(a) for a in rows],
+        items=build_alert_reads(list(rows), db),
         total=total,
         limit=page.limit,
         offset=page.offset,
@@ -86,7 +87,7 @@ def acknowledge_alert(
         raise not_found("alert", alert_id)
     # A repeat ack keeps the first acknowledger and time.
     if alert.status == ACKNOWLEDGED_STATUS:
-        return AlertRead.model_validate(alert)
+        return build_alert_reads([alert], db)[0]
 
     before = {"status": alert.status}
     alert.status = ACKNOWLEDGED_STATUS
@@ -103,4 +104,4 @@ def acknowledge_alert(
     )
     db.commit()
     db.refresh(alert)
-    return AlertRead.model_validate(alert)
+    return build_alert_reads([alert], db)[0]

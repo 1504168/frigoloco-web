@@ -143,7 +143,7 @@ export function StockPage() {
   })
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <Toolbar
         left={
           <FilterBar>
@@ -403,6 +403,7 @@ function AdjustmentDialog({ onClose, onDone }: { onClose: () => void; onDone: ()
         <Field label="Quantity (±)" required error={fieldErrors.qty} hint="e.g. 12 to add, -3 to remove">
           <Input
             type="number"
+            step={1}
             value={qty}
             onChange={(event) => setQty(event.target.value)}
             placeholder="0"

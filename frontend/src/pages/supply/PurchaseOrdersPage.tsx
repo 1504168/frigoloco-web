@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Trash2 } from 'lucide-react'
+import { ChevronRight, Download, Plus, Search, Trash2 } from 'lucide-react'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -22,6 +22,7 @@ import { useSingleSubmit } from '@/hooks/useSingleSubmit'
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import { api, ApiError, type Page } from '@/lib/api'
 import { formatEuro, formatFraction } from '@/lib/format'
+import { localIsoDate, localIsoDatePlusDays } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { WeekDayPicker } from '@/pages/ops/components/WeekDayPicker'
 import { currentWeekDayKey, type WeekDayKey } from '@/pages/ops/lib/pipelineKey'
@@ -42,8 +43,13 @@ import type {
 const PAGE_SIZE = 25
 const SEARCH_DEBOUNCE_MS = 300
 const DEFAULT_DELIVERY_LEAD_DAYS = 2
+/** Label on the left and its input on the right, on one row (stacked on phones). */
+const INLINE_FIELD_CLASS =
+  'sm:grid sm:grid-cols-[auto_1fr] sm:items-center sm:gap-x-3 sm:[&>p]:col-start-2'
+
 const LOAD_FROM_MENU_HELP =
-  "Copies the saved menu quantities for this supplier's products for the chosen week and day."
+  "Copies the saved menu quantities for this supplier's products for the chosen week and day. " +
+  'Unit price and VAT come from the product catalogue.'
 
 const CANCEL_PO_DESCRIPTION =
   'Any received stock, including a partial receipt, is reversed out. ' +
@@ -55,16 +61,6 @@ type StatusFilter = 'all' | PoStatus
 interface DraftLine {
   product: ProductLite
   qty: string
-}
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-
-function isoPlusDays(days: number): string {
-  const date = new Date()
-  date.setDate(date.getDate() + days)
-  return date.toISOString().slice(0, 10)
 }
 
 /** Order quantities are whole units; the API rejects fractions. */
@@ -194,7 +190,7 @@ export function PurchaseOrdersPage() {
   )
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
@@ -298,8 +294,8 @@ interface CreatePoDialogProps {
 
 function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) {
   const queryClient = useQueryClient()
-  const [initialOrderDate] = React.useState(todayIso)
-  const [initialExpectedDate] = React.useState(() => isoPlusDays(DEFAULT_DELIVERY_LEAD_DAYS))
+  const [initialOrderDate] = React.useState(localIsoDate)
+  const [initialExpectedDate] = React.useState(() => localIsoDatePlusDays(DEFAULT_DELIVERY_LEAD_DAYS))
   const [supplierId, setSupplierId] = React.useState('')
   const [orderDate, setOrderDate] = React.useState(initialOrderDate)
   const [expectedDate, setExpectedDate] = React.useState(initialExpectedDate)
@@ -449,7 +445,6 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
       open
       onClose={requestClose}
       title="New purchase order"
-      description="Pick a supplier, add product lines, and totals compute live."
       widthClassName="max-w-3xl"
       footer={
         <>
@@ -462,14 +457,14 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
         </>
       }
     >
-      <div className="space-y-5">
+      <div className="space-y-3">
         {generalError ? (
           <div className="rounded-md border border-critical/40 bg-critical/5 px-3 py-2 text-sm text-critical">
             {generalError}
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Field label="Supplier" required error={fieldErrors.supplier_id}>
             <Select value={supplierId} onValueChange={changeSupplier}>
               <SelectTrigger>
@@ -496,7 +491,11 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
           </Field>
         </div>
 
-        <Field label="Deliver to (warehouse address)" error={fieldErrors.delivery_address}>
+        <Field
+          label="Deliver to (warehouse address)"
+          error={fieldErrors.delivery_address}
+          className={INLINE_FIELD_CLASS}
+        >
           <Input
             value={deliveryAddress}
             onChange={(event) => setDeliveryAddress(event.target.value)}
@@ -504,45 +503,55 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
           />
         </Field>
 
-        <Field label="Comment to supplier" error={fieldErrors.comment}>
-          <Textarea value={comment} onChange={(event) => setComment(event.target.value)} />
-        </Field>
+        <details
+          className="group"
+          open={fieldErrors.comment !== undefined}
+        >
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+            <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
+            Comment to supplier
+            {comment.trim() !== '' && <span className="text-xs font-normal">(added)</span>}
+          </summary>
+          <Textarea
+            value={comment}
+            onChange={(event) => setComment(event.target.value)}
+            aria-label="Comment to supplier"
+            className="mt-2"
+          />
+          {fieldErrors.comment && <p className="mt-1 text-xs text-critical">{fieldErrors.comment}</p>}
+        </details>
 
         <div className="space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h4 className="text-sm font-semibold">Order lines</h4>
-            <div className="flex flex-wrap items-center gap-2">
-              <WeekDayPicker value={weekKey} onChange={setWeekKey} compact />
-              <Button
-                variant="outline"
-                onClick={requestMenuLoad}
-                disabled={!hasSupplier || loadFromMenu.isPending}
-                title={hasSupplier ? LOAD_FROM_MENU_HELP : 'Pick a supplier first'}
-              >
-                {loadFromMenu.isPending ? 'Loading…' : 'Load from menu'}
-              </Button>
-            </div>
+            <ProductPicker
+              onSelect={addProduct}
+              disabledIds={chosenIds}
+              supplierId={hasSupplier ? Number(supplierId) : undefined}
+              disabled={!hasSupplier}
+              placeholder={
+                hasSupplier ? "Search this supplier's products…" : 'Pick a supplier first'
+              }
+              className="min-w-[12rem] flex-1"
+            />
+            <WeekDayPicker value={weekKey} onChange={setWeekKey} compact />
+            <Button
+              variant="outline"
+              onClick={requestMenuLoad}
+              disabled={!hasSupplier || loadFromMenu.isPending}
+              title={hasSupplier ? LOAD_FROM_MENU_HELP : 'Pick a supplier first'}
+            >
+              <Download className="h-4 w-4" />
+              {loadFromMenu.isPending ? 'Loading…' : 'Menu'}
+            </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Load from menu: {LOAD_FROM_MENU_HELP} Unit price and VAT always come from the product
-            catalogue.
-          </p>
-          <ProductPicker
-            onSelect={addProduct}
-            disabledIds={chosenIds}
-            supplierId={hasSupplier ? Number(supplierId) : undefined}
-            disabled={!hasSupplier}
-            placeholder={
-              hasSupplier ? "Search this supplier's products…" : 'Pick a supplier first'
-            }
-          />
           {fieldErrors.lines ? (
             <p className="text-xs text-critical">{fieldErrors.lines}</p>
           ) : null}
 
           {lines.length === 0 ? (
-            <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
-              Search and add products above to build the order.
+            <p className="rounded-md border border-dashed border-border px-3 py-3 text-center text-sm text-muted-foreground">
+              Search products or load them from the menu to build the order.
             </p>
           ) : (
             <div className="overflow-hidden rounded-lg border border-border">
@@ -550,7 +559,7 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
                 <thead className="bg-muted/40 text-xs text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2 text-left font-medium">Product</th>
-                    <th className="px-3 py-2 text-right font-medium">Qty</th>
+                    <th className="px-3 py-2 text-center font-medium">Qty</th>
                     <th className="px-3 py-2 text-right font-medium">Unit €</th>
                     <th className="px-3 py-2 text-right font-medium">VAT</th>
                     <th className="px-3 py-2 text-right font-medium">Line incl.</th>
@@ -560,35 +569,36 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
                 <tbody>
                   {lines.map((line) => (
                     <tr key={line.product.id} className="border-t border-border">
-                      <td className="px-3 py-2">
-                        <div className="font-medium">{line.product.name}</div>
-                        <div className="font-mono text-xs text-muted-foreground">
-                          {line.product.code}
-                        </div>
+                      <td
+                        className="px-3 py-1 font-medium"
+                        title={`Code ${line.product.code}`}
+                      >
+                        {line.product.name}
                       </td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="px-3 py-1">
                         <Input
                           type="number"
                           min={1}
                           step={1}
                           value={line.qty}
                           onChange={(event) => updateLineQty(line.product.id, event.target.value)}
-                          className="ml-auto h-8 w-20 text-right"
+                          className="mx-auto h-7 w-16 text-center"
                         />
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                      <td className="px-3 py-1 text-right tabular-nums text-muted-foreground">
                         {formatEuro(line.product.purchase_price)}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                      <td className="px-3 py-1 text-right tabular-nums text-muted-foreground">
                         {formatFraction(line.product.vat_rate)}
                       </td>
-                      <td className="px-3 py-2 text-right font-medium tabular-nums">
+                      <td className="px-3 py-1 text-right font-medium tabular-nums">
                         {formatEuro(lineExVat(line) + lineVat(line))}
                       </td>
-                      <td className="px-2 py-2 text-right">
+                      <td className="px-2 py-1 text-right">
                         <Button
                           variant="ghost"
                           size="icon"
+                          className="h-7 w-7"
                           aria-label="Remove line"
                           onClick={() => removeLine(line.product.id)}
                         >
@@ -822,6 +832,7 @@ function PoDetailDialog({ poId, supplierName, onClose }: PoDetailDialogProps) {
                         <Input
                           type="number"
                           min={0}
+                          step={1}
                           value={receiveQty[line.id] ?? '0'}
                           onChange={(event) =>
                             setReceiveQty((prev) => ({ ...prev, [line.id]: event.target.value }))

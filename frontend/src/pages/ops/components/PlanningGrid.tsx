@@ -3,6 +3,7 @@ import { FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EMPTY_PLACEHOLDER, formatEuro } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { STICKY_GRID_BOX_CLASS, useStickyHeaderRows } from '@/pages/ops/lib/stickyHeaderRows'
 import type { GridCategory, GridFridge } from '@/pages/ops/lib/types'
 
 /** Per-product metadata resolved from the catalogue + score map by the parent. */
@@ -33,6 +34,14 @@ const CATEGORY_ACCENTS = [
 const EMPTY_SLOT_SUPPLIER = -1
 /** A real product that has no supplier linked in the catalogue. */
 const UNASSIGNED_SUPPLIER = -2
+
+const CATEGORY_ROW = 0
+const SUPPLIER_ROW = 1
+const PRODUCT_ROW = 2
+const STICKY_HEADER_ROW_COUNT = 3
+const HEADER_CELL_CLASS = 'sticky z-20 bg-card'
+/** Header cells that also stick sideways (first and total columns) sit above both. */
+const HEADER_CORNER_CLASS = 'sticky z-30 bg-card'
 
 interface FlatColumn {
   key: string
@@ -79,8 +88,6 @@ export interface PlanningGridProps {
   onCellChange: (fridgeId: number, productId: number, rawValue: string) => void
   /** Keys the operator edited this session (highlighted, saved as manual). */
   editedKeys?: Set<string>
-  /** Deprecated: empty "add here" slots were removed; retained for caller compat. */
-  columnsPerCategory?: number
   /** Optional per-supplier action shown in the supplier band (Menu: Draft PO). */
   onDraftPo?: (supplierId: number) => void
   draftPoPendingSupplierId?: number | null
@@ -94,8 +101,7 @@ export interface PlanningGridProps {
  * Excel-like planning grid shared by the Menu and Dispatch pages. Products are
  * columns (grouped category → supplier), fridges are rows. The first column is
  * sticky; the whole table lives in a horizontal-scroll container so the page
- * body never scrolls sideways. Column groups pad out to the configured minimum
- * slots-per-category so operators always have empty cells to fill.
+ * body never scrolls sideways.
  */
 export function PlanningGrid({
   fridges,
@@ -109,6 +115,7 @@ export function PlanningGrid({
   readOnly = false,
   extraDetailRows = [],
 }: PlanningGridProps) {
+  const { rowRef, stickyTop } = useStickyHeaderRows(STICKY_HEADER_ROW_COUNT)
   const { columns, categoryBands, supplierBands } = React.useMemo(() => {
     const flat: FlatColumn[] = []
     const catBands: CategoryBand[] = []
@@ -224,33 +231,40 @@ export function PlanningGrid({
   const columnCount = columns.length
 
   return (
-    <div className="overflow-x-auto overflow-y-auto rounded-xl border border-border">
+    <div className={cn(STICKY_GRID_BOX_CLASS, 'rounded-xl border border-border')}>
       <table className="border-separate border-spacing-0 text-xs">
         <thead>
-          {/* Category band */}
-          <tr>
-            <th className={cn(stickyLeft, 'border-b px-3 py-1.5')} />
+          <tr ref={rowRef(CATEGORY_ROW)}>
+            <th
+              className={cn(stickyLeft, HEADER_CORNER_CLASS, 'border-b px-3 py-1.5')}
+              style={stickyTop(CATEGORY_ROW)}
+            />
             {categoryBands.map((band) => (
               <th
                 key={`cat-${band.categoryId}`}
                 colSpan={band.span}
                 className={cn(
+                  HEADER_CELL_CLASS,
                   'border-b border-l-2 border-border px-2 py-1.5 text-center text-[11px] font-bold uppercase tracking-wide text-foreground',
                   band.accent,
                 )}
+                style={stickyTop(CATEGORY_ROW)}
               >
                 {band.categoryName}
               </th>
             ))}
-            <th className="sticky right-0 z-10 border-b border-l border-border bg-card px-2 py-1.5 text-[11px] font-bold uppercase text-muted-foreground">
+            <th
+              className={cn(HEADER_CORNER_CLASS, 'right-0 border-b border-l border-border px-2 py-1.5 text-[11px] font-bold uppercase text-muted-foreground')}
+              style={stickyTop(CATEGORY_ROW)}
+            >
               Total
             </th>
           </tr>
-          {/* Supplier band */}
-          <tr>
+          <tr ref={rowRef(SUPPLIER_ROW)}>
             <th
               scope="row"
-              className={cn(stickyLeft, 'border-b px-3 py-1 text-[11px] font-medium text-muted-foreground')}
+              className={cn(stickyLeft, HEADER_CORNER_CLASS, 'border-b px-3 py-1 text-[11px] font-medium text-muted-foreground')}
+              style={stickyTop(SUPPLIER_ROW)}
             >
               Supplier
             </th>
@@ -259,9 +273,11 @@ export function PlanningGrid({
                 key={`sup-${band.key}`}
                 colSpan={band.span}
                 className={cn(
+                  HEADER_CELL_CLASS,
                   'border-b border-l-2 border-border px-2 py-1 text-center text-[11px] font-semibold text-muted-foreground',
                   band.accent,
                 )}
+                style={stickyTop(SUPPLIER_ROW)}
               >
                 {band.isPlaceholder ? (
                   <span className="italic text-muted-foreground/60">Add products…</span>
@@ -285,11 +301,17 @@ export function PlanningGrid({
                 )}
               </th>
             ))}
-            <th className="sticky right-0 z-10 border-b border-l border-border bg-card" />
+            <th
+              className={cn(HEADER_CORNER_CLASS, 'right-0 border-b border-l border-border')}
+              style={stickyTop(SUPPLIER_ROW)}
+            />
           </tr>
-          {/* Product name */}
-          <tr>
-            <th scope="col" className={cn(stickyLeft, 'border-b px-3 py-2 font-semibold text-foreground')}>
+          <tr ref={rowRef(PRODUCT_ROW)}>
+            <th
+              scope="col"
+              className={cn(stickyLeft, HEADER_CORNER_CLASS, 'border-b px-3 py-2 font-semibold text-foreground')}
+              style={stickyTop(PRODUCT_ROW)}
+            >
               Product
             </th>
             {columns.map((column) => {
@@ -298,19 +320,22 @@ export function PlanningGrid({
                 <th
                   key={column.key}
                   className={cn(
+                    HEADER_CELL_CLASS,
                     'min-w-[92px] max-w-[120px] border-b border-l border-border px-2 py-2 text-left align-bottom text-[11px] font-semibold leading-tight text-foreground',
                     column.isCategoryStart && 'border-l-2',
-                    column.productId === null && 'bg-muted/20',
                   )}
+                  style={stickyTop(PRODUCT_ROW)}
                   title={meta?.productName}
                 >
                   {meta?.productName ?? ''}
                 </th>
               )
             })}
-            <th className="sticky right-0 z-10 border-b border-l border-border bg-card px-2 py-2" />
+            <th
+              className={cn(HEADER_CORNER_CLASS, 'right-0 border-b border-l border-border px-2 py-2')}
+              style={stickyTop(PRODUCT_ROW)}
+            />
           </tr>
-          {/* Detail rows */}
           {detailRow('Code', (column) => productMeta(column.productId!)?.code ?? EMPTY_PLACEHOLDER)}
           {detailRow('Purchase', (column) => formatEuro(productMeta(column.productId!)?.purchasePrice))}
           {detailRow('Sales', (column) => formatEuro(productMeta(column.productId!)?.salesPrice))}

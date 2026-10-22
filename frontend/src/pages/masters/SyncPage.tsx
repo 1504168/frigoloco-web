@@ -73,7 +73,7 @@ export function SyncPage() {
   const anyRunning = runs.some(isRunning)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <div className="flex items-center justify-end">
         <Select value={endpoint} onValueChange={setEndpoint}>
           <SelectTrigger className="w-48">
@@ -102,7 +102,7 @@ export function SyncPage() {
       ) : runs.length === 0 ? (
         <EmptyState title="No sync runs" description="Trigger a sync from the Products or Fridges page." />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+        <div className="overflow-x-auto overflow-y-hidden rounded-xl border border-border bg-card">
           <Table>
             <TableHeader>
               <TableRow>

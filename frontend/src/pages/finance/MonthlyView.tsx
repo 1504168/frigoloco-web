@@ -169,7 +169,7 @@ export function MonthlyView() {
                 : `${rows.length} rows`
             }
           >
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto overflow-y-hidden">
               <Table>
                 <TableHeader>
                   <TableRow>

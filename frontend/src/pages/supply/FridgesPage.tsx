@@ -200,7 +200,7 @@ export function FridgesPage() {
     dayFilter !== ALL_OPTION_VALUE
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <Toolbar
         left={
           <FilterBar>
@@ -609,6 +609,7 @@ function DeliveryConfigDialog({ fridge, onClose }: { fridge: Fridge; onClose: ()
               <Input
                 type="number"
                 min={0}
+                step={1}
                 value={row.min_daily_qty}
                 disabled={!row.enabled}
                 onChange={(event) => updateRow(index, { min_daily_qty: event.target.value })}

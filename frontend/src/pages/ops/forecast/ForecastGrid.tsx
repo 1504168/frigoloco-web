@@ -4,6 +4,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { Input } from '@/components/ui/input'
 import { EMPTY_PLACEHOLDER } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { STICKY_GRID_BOX_CLASS, useStickyHeaderRows } from '@/pages/ops/lib/stickyHeaderRows'
 import type { ForecastActualCell, ForecastActuals, ForecastRun } from '@/pages/ops/lib/types'
 import { cellKey, parseQuantity, type ForecastDraft } from './forecastDraft'
 
@@ -11,8 +12,15 @@ const NUMBER_FMT = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 2 })
 const LOW_RATIO = 0.7
 const GOOD_RATIO = 0.9
 
+const GROUP_ROW = 0
+const CATEGORY_ROW = 1
+const STICKY_HEADER_ROW_COUNT = 2
+const HEADER_CELL_CLASS = 'sticky z-20 bg-card'
+/** The fridge header also sticks sideways, so it sits above both. */
+const HEADER_CORNER_CLASS = 'sticky z-30 bg-card'
+
 const CATEGORY_HEAD_CLASS =
-  'min-w-[6rem] whitespace-nowrap border-b border-l border-border bg-card px-3 py-2 text-center font-semibold text-foreground'
+  'w-24 min-w-[6rem] max-w-[6rem] whitespace-normal break-words border-b border-l border-border bg-card px-2 py-2 text-center align-bottom font-semibold leading-tight text-foreground'
 
 interface ForecastGridProps {
   run: ForecastRun
@@ -39,6 +47,7 @@ export function ForecastGrid({
   categoryIds,
   categoryName,
 }: ForecastGridProps) {
+  const { rowRef, stickyTop } = useStickyHeaderRows(STICKY_HEADER_ROW_COUNT)
   const originalQuantities = React.useMemo(() => {
     const quantities = new Map<string, number>()
     for (const result of run.results) {
@@ -78,46 +87,55 @@ export function ForecastGrid({
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-border">
+    <div className={cn(STICKY_GRID_BOX_CLASS, 'rounded-xl border border-border')}>
       <table className="min-w-full border-separate border-spacing-0 text-xs">
         <thead>
-          <tr>
+          <tr ref={rowRef(GROUP_ROW)}>
             <th
               rowSpan={2}
-              className="sticky left-0 z-10 whitespace-nowrap border-b border-r border-border bg-card px-3 py-2 text-left align-bottom font-semibold text-foreground"
+              className={cn(
+                HEADER_CORNER_CLASS,
+                'left-0 whitespace-nowrap border-b border-r border-border px-3 py-2 text-left align-bottom font-semibold text-foreground',
+              )}
+              style={stickyTop(GROUP_ROW)}
             >
               Fridge
             </th>
             <th
               rowSpan={2}
-              className="border-b border-border bg-card px-2 py-2 text-right align-bottom font-semibold text-muted-foreground"
+              className={cn(HEADER_CELL_CLASS, 'border-b border-border px-2 py-2 text-right align-bottom font-semibold text-muted-foreground')}
+              style={stickyTop(GROUP_ROW)}
             >
               Min
             </th>
             <th
               rowSpan={2}
-              className="border-b border-border bg-card px-2 py-2 text-right align-bottom font-semibold text-muted-foreground"
+              className={cn(HEADER_CELL_CLASS, 'border-b border-border px-2 py-2 text-right align-bottom font-semibold text-muted-foreground')}
+              style={stickyTop(GROUP_ROW)}
             >
               Days
             </th>
             <th
               colSpan={categoryIds.length}
-              className="border-b border-l-2 border-border bg-card px-3 py-1.5 text-center font-semibold text-foreground"
+              className={cn(HEADER_CELL_CLASS, 'border-b border-l-2 border-border px-3 py-1.5 text-center font-semibold text-foreground')}
+              style={stickyTop(GROUP_ROW)}
             >
               Forecast (QTY)
             </th>
             <th
               colSpan={categoryIds.length}
-              className="border-b border-l-2 border-border bg-card px-3 py-1.5 text-center font-semibold text-foreground"
+              className={cn(HEADER_CELL_CLASS, 'border-b border-l-2 border-border px-3 py-1.5 text-center font-semibold text-foreground')}
+              style={stickyTop(GROUP_ROW)}
             >
               Added → Sold Ratio
             </th>
           </tr>
-          <tr>
+          <tr ref={rowRef(CATEGORY_ROW)}>
             {categoryIds.map((categoryId, index) => (
               <th
                 key={`f-${categoryId}`}
-                className={cn(CATEGORY_HEAD_CLASS, index === 0 && 'border-l-2')}
+                className={cn(HEADER_CELL_CLASS, CATEGORY_HEAD_CLASS, index === 0 && 'border-l-2')}
+                style={stickyTop(CATEGORY_ROW)}
               >
                 {categoryName(categoryId)}
               </th>
@@ -125,7 +143,8 @@ export function ForecastGrid({
             {categoryIds.map((categoryId, index) => (
               <th
                 key={`a-${categoryId}`}
-                className={cn(CATEGORY_HEAD_CLASS, index === 0 && 'border-l-2')}
+                className={cn(HEADER_CELL_CLASS, CATEGORY_HEAD_CLASS, index === 0 && 'border-l-2')}
+                style={stickyTop(CATEGORY_ROW)}
               >
                 {categoryName(categoryId)}
               </th>
@@ -228,9 +247,7 @@ function QuantityInput({ text, originalQuantity, label, onChange }: QuantityInpu
   return (
     <Input
       type="number"
-      inputMode="decimal"
       min={0}
-      step="any"
       value={text}
       aria-label={label}
       aria-invalid={isInvalid}

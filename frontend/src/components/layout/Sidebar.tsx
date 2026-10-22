@@ -49,14 +49,13 @@ function BrandBlock() {
           onError={() => setLogoFailed(true)}
         />
       )}
-      <div className="mt-1 text-[11px] text-[#7d8b9a]">Forecasting &amp; Operations</div>
     </div>
   )
 }
 
 /**
- * Fixed dark sidebar matching the canonical mockup: brand block, titled nav
- * sections, active-item highlight with a left accent bar, and a footer.
+ * Fixed dark sidebar: brand block, nav links grouped without section titles,
+ * active-item highlight with a left accent bar, and a footer.
  */
 export function Sidebar() {
   const currentUser = useCurrentUser()
@@ -75,10 +74,10 @@ export function Sidebar() {
 
       <nav className="flex-1 overflow-y-auto pb-4">
         {sections.map((section) => (
-          <div key={section.title}>
-            <div className="px-5 pb-1.5 pt-3 text-[10.5px] font-medium uppercase tracking-wider text-[#647181]">
-              {section.title}
-            </div>
+          <div
+            key={section.title}
+            className="pt-2"
+          >
             {section.items.map((item) => (
               <NavLink
                 key={item.path}

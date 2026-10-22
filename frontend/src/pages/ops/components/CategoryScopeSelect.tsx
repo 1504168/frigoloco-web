@@ -30,7 +30,7 @@ export function CategoryScopeSelect({ value, onChange }: CategoryScopeSelectProp
       value={value === null ? ALL : String(value)}
       onValueChange={(next) => onChange(next === ALL ? null : Number(next))}
     >
-      <SelectTrigger className="h-9 w-[13rem]">
+      <SelectTrigger className="h-9 w-40">
         <SelectValue placeholder="All categories" />
       </SelectTrigger>
       <SelectContent>

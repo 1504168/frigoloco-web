@@ -17,7 +17,6 @@ import type {
   Category,
   Fridge,
   ScorecardItem,
-  Setting,
   Supplier,
 } from '@/pages/ops/lib/types'
 
@@ -25,8 +24,6 @@ const REFERENCE_STALE_MS = 5 * 60_000
 const PRODUCTS_PAGE_SIZE = 500
 // Scorecard window for the grid's score row: the stored 365-day scores menu allocation uses.
 const ALLOCATION_SCORE_WINDOW_DAYS = 365
-const MENU_COLUMNS_SETTING_KEY = 'menu_category_columns'
-const DEFAULT_MENU_COLUMNS = 6
 
 /** Map of fridge id -> friendly name. Loads all active fridges once. */
 export function useFridgeMap() {
@@ -128,24 +125,5 @@ export function useScoreMap() {
     // A missing scorecard is non-fatal - the score row simply shows placeholders.
     retry: false,
     select: (items) => new Map(items.map((item) => [item.product_id, item.final_score])),
-  })
-}
-
-/**
- * Configurable minimum column slots per category for the Menu/Dispatch grids.
- * Read from the `menu_category_columns` app setting; falls back to 6 when the
- * setting is absent or non-numeric.
- */
-export function useMenuCategoryColumns() {
-  return useQuery({
-    queryKey: ['ops', 'settings', MENU_COLUMNS_SETTING_KEY],
-    staleTime: REFERENCE_STALE_MS,
-    retry: false,
-    queryFn: ({ signal }) => api.get<Setting[]>('/api/v1/settings', { signal }),
-    select: (settings) => {
-      const setting = settings.find((entry) => entry.key === MENU_COLUMNS_SETTING_KEY)
-      const value = Number(setting?.value)
-      return Number.isFinite(value) && value > 0 ? Math.floor(value) : DEFAULT_MENU_COLUMNS
-    },
   })
 }

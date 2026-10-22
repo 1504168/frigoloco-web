@@ -16,13 +16,22 @@ import {
 import { toast } from '@/components/ui/sonner'
 import { api, ApiError, type Page } from '@/lib/api'
 import type { Alert } from '@/lib/types'
-import { EMPTY_PLACEHOLDER, formatDateTime } from '@/lib/format'
+import { EMPTY_PLACEHOLDER, formatDateTime12Hour } from '@/lib/format'
 import { ALERTS_COUNT_KEY } from '@/hooks/useAlertsCount'
+import { StockBlockedSummary } from '@/pages/alerts/StockBlockedSummary'
 
 const PAGE_SIZE = 25
 
 /** Summaries longer than this are clamped to a few lines with a "Show all" toggle. */
 const LONG_DETAILS_CHARS = 240
+
+const ALERT_TYPE_LABELS: Record<string, string> = {
+  negative_blocked: 'Stock blocked',
+  low_stock: 'Low stock',
+  below_target: 'Below target',
+  expiry: 'Expiry',
+  rfid_offline: 'RFID offline',
+}
 
 type AckFilter = 'unacknowledged' | 'acknowledged' | 'all'
 
@@ -30,6 +39,14 @@ const ACK_PARAM: Record<AckFilter, boolean | undefined> = {
   unacknowledged: false,
   acknowledged: true,
   all: undefined,
+}
+
+/** "low_stock" -> "Low stock"; a type the backend adds later still reads as words. */
+function alertTypeLabel(alertType: string): string {
+  const knownLabel = ALERT_TYPE_LABELS[alertType]
+  if (knownLabel) return knownLabel
+  const words = alertType.replaceAll('_', ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
 /** Best-effort human summary of an alert's arbitrary JSON payload. */
@@ -113,13 +130,22 @@ export function AlertsPage() {
       {
         id: 'type',
         header: 'Type',
-        cell: (row) => <span className="font-medium">{row.alert_type}</span>,
-        sortValue: (row) => row.alert_type,
+        cell: (row) => (
+          <span className="whitespace-nowrap font-medium">{alertTypeLabel(row.alert_type)}</span>
+        ),
+        sortValue: (row) => alertTypeLabel(row.alert_type),
       },
       {
         id: 'details',
         header: 'Details',
-        cell: (row) => <AlertDetails payload={row.payload} />,
+        // Sortable headers render inside a button, which drops the table's uppercase style.
+        headerClassName: 'normal-case',
+        cell: (row) =>
+          row.stock_blocked ? (
+            <StockBlockedSummary details={row.stock_blocked} />
+          ) : (
+            <AlertDetails payload={row.payload} />
+          ),
       },
       {
         id: 'status',
@@ -132,7 +158,7 @@ export function AlertsPage() {
         header: 'Created',
         cell: (row) => (
           <span className="whitespace-nowrap text-muted-foreground">
-            {formatDateTime(row.created_at)}
+            {formatDateTime12Hour(row.created_at)}
           </span>
         ),
         sortValue: (row) => row.created_at,
@@ -167,7 +193,7 @@ export function AlertsPage() {
   )
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <Toolbar
         left={
           <Select

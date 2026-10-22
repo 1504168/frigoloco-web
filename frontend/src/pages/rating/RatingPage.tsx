@@ -193,18 +193,18 @@ export function RatingPage() {
         }
         right={
           <>
-            <LastComputed computedAt={scorecard?.computed_at} />
             <Button
               variant="outline"
-              className="h-9"
+              size="icon"
+              className="shrink-0"
               onClick={() => recomputeMutation.mutate({ window_days: windowDays })}
               disabled={recomputeMutation.isPending}
-              title={`Recompute and store scores for the last ${windowDays} days`}
+              title={recomputeTooltip(windowDays, scorecard?.computed_at)}
+              aria-label="Recompute scores"
             >
               <RefreshCw
                 className={cn('h-4 w-4', recomputeMutation.isPending && 'animate-spin')}
               />
-              {recomputeMutation.isPending ? 'Recomputing...' : 'Recompute'}
             </Button>
           </>
         }
@@ -223,13 +223,10 @@ export function RatingPage() {
   )
 }
 
-function LastComputed({ computedAt }: { computedAt: string | null | undefined }) {
-  if (!computedAt) return null
-  return (
-    <span className="whitespace-nowrap text-xs text-muted-foreground">
-      Last computed {COMPUTED_AT_FORMATTER.format(new Date(computedAt))}
-    </span>
-  )
+function recomputeTooltip(windowDays: number, computedAt: string | null | undefined): string {
+  const action = `Recompute scores for the last ${windowDays} days`
+  if (!computedAt) return `${action} (never computed)`
+  return `${action}\nLast computed ${COMPUTED_AT_FORMATTER.format(new Date(computedAt))}`
 }
 
 interface ScorecardBodyProps {
@@ -292,7 +289,7 @@ function ScorecardBody({
 
   return (
     <div className="space-y-3">
-      <div className="overflow-x-auto rounded-xl border border-border bg-card">
+      <div className="overflow-x-auto overflow-y-hidden rounded-xl border border-border bg-card">
         <Table>
           <TableHeader>
             <TableRow>

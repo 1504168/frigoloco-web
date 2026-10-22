@@ -132,6 +132,35 @@ def test_suppliers_filter_by_category_sorted_case_insensitively(ctx):  # noqa: F
     assert test_supplier_names == [f"{TAG}aCatSup", f"{TAG}BCatSup"]
 
 
+def test_supplier_category_links_list_each_pair_once(ctx):  # noqa: F811
+    cats = _category_ids(ctx.session)
+    supplier = _create_supplier(ctx.client, f"{TAG}LinkSup")
+    _create_product(
+        ctx.client,
+        code=f"{TAG}LNK-1",
+        category_id=cats["normal"],
+        supplier_id=supplier,
+    )
+    _create_product(
+        ctx.client,
+        code=f"{TAG}LNK-2",
+        category_id=cats["normal"],
+        supplier_id=supplier,
+    )
+    _create_product(
+        ctx.client,
+        code=f"{TAG}LNK-3",
+        category_id=cats["drinks"],
+        supplier_id=supplier,
+    )
+
+    links = ctx.client.get(f"{PREFIX}/suppliers/category-links").json()
+    supplier_category_ids = sorted(
+        link["category_id"] for link in links if link["supplier_id"] == supplier
+    )
+    assert supplier_category_ids == sorted([cats["normal"], cats["drinks"]])
+
+
 def test_categories_ordered_by_display_order_then_name_uncategorised_last(ctx):  # noqa: F811
     categories = ctx.client.get(f"{PREFIX}/categories").json()
 
