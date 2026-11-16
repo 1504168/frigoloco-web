@@ -28,6 +28,8 @@ class ProductCreate(ApiModel):
     shelf_life_days: int | None = Field(default=None, gt=0)
     is_active: bool = True
     local_status: LocalStatus | None = None
+    min_stock_qty: int | None = Field(default=None, ge=0)
+    print_order: int | None = None
 
 
 class ProductUpdate(ApiModel):
@@ -42,6 +44,9 @@ class ProductUpdate(ApiModel):
     is_active: bool | None = None
     # Explicit null clears the override (follow Husky again); omitted = unchanged.
     local_status: LocalStatus | None = None
+    # Explicit null clears the minimum / print position; omitted = unchanged.
+    min_stock_qty: int | None = Field(default=None, ge=0)
+    print_order: int | None = None
 
 
 class ProductRead(ApiModel):
@@ -59,6 +64,10 @@ class ProductRead(ApiModel):
     local_status: LocalStatus | None
     # Effective status = local_status if set, else active/inactive from is_active.
     effective_status: str
+    # Warehouse minimum: below it a low_stock alert opens. Null = no minimum.
+    min_stock_qty: int | None
+    # Position on the printed dispatch sheet inside the category. Null = after numbered ones.
+    print_order: int | None
     husky_synced_at: datetime.datetime | None
     created_at: datetime.datetime
     updated_at: datetime.datetime

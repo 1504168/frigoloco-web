@@ -41,7 +41,11 @@ def test_job_that_never_ran_is_overdue():
 
 
 def test_catch_up_times_are_staggered_in_job_list_order():
-    fresh_jobs = {"snapshot_stock": NOW, "sync_restock": NOW}
+    fresh_jobs = {
+        "snapshot_stock": NOW,
+        "sync_restock": NOW,
+        "low_stock_check": NOW,
+    }
 
     catch_up_times = plan_catch_up_times(_jobs(), fresh_jobs, NOW)
 

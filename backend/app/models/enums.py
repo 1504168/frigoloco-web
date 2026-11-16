@@ -61,7 +61,21 @@ class UserRole(str, enum.Enum):
 class PoStatus(str, enum.Enum):
     pending = "pending"
     received = "received"
+    # Closed with the received quantities; the open remainder is no longer on order.
+    closed_short = "closed_short"
     cancelled = "cancelled"
+
+
+class PoDiscrepancyKind(str, enum.Enum):
+    short = "short"
+    over = "over"
+
+
+class PoDiscrepancyReason(str, enum.Enum):
+    missing = "missing"
+    damaged = "damaged"
+    wrong_product = "wrong_product"
+    other = "other"
 
 
 class DispatchStatus(str, enum.Enum):
@@ -108,9 +122,17 @@ class AlertType(str, enum.Enum):
     rfid_offline = "rfid_offline"
 
 
+class ClientContactRole(str, enum.Enum):
+    account_finance = "account_finance"
+    operations = "operations"
+    it = "it"
+
+
 # Reusable SQLAlchemy type instances - VARCHAR-backed (native_enum=False).
 USER_ROLE_ENUM = text_enum(UserRole, "user_role")
 PO_STATUS_ENUM = text_enum(PoStatus, "po_status")
+PO_DISCREPANCY_KIND_ENUM = text_enum(PoDiscrepancyKind, "po_discrepancy_kind")
+PO_DISCREPANCY_REASON_ENUM = text_enum(PoDiscrepancyReason, "po_discrepancy_reason")
 DISPATCH_STATUS_ENUM = text_enum(DispatchStatus, "dispatch_status")
 STOCK_MOVEMENT_TYPE_ENUM = text_enum(StockMovementType, "stock_movement_type")
 MENU_STATUS_ENUM = text_enum(MenuStatus, "menu_status")
@@ -118,3 +140,4 @@ RESTOCK_ACTION_ENUM = text_enum(RestockAction, "restock_action")
 TAG_STATUS_ENUM = text_enum(TagStatus, "tag_status")
 LINE_SOURCE_ENUM = text_enum(LineSource, "line_source")
 ALERT_TYPE_ENUM = text_enum(AlertType, "alert_type")
+CLIENT_CONTACT_ROLE_ENUM = text_enum(ClientContactRole, "client_contact_role")

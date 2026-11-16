@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, type UseQueryResult } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import {
@@ -19,19 +19,30 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ErrorState } from '@/components/shared/ErrorState'
+import { InfoHint, type Hint } from '@/components/shared/InfoHint'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { MoneyCell } from '@/components/shared/MoneyCell'
-import { toast } from '@/components/ui/sonner'
-import { formatEuro, formatFraction, formatFridgeName } from '@/lib/format'
-import { api, type Page } from '@/lib/api'
+import { toast } from '@/components/ui/toast'
+import { formatFridgeName } from '@/lib/format'
+import { api, downloadFile, type Page } from '@/lib/api'
 import { REFERENCE_FRIDGES_KEY, REFERENCE_FRIDGES_LIMIT } from '@/lib/query-keys'
-import type { Fridge, FridgeReport } from '@/pages/finance/types'
-import { KpiTile, SectionCard, type KpiTileProps } from '@/pages/finance/components'
-import { downloadFileFromApi, formatCount, toNumber } from '@/pages/finance/utils'
+import type { AllFridgesReport, Fridge, FridgeReport } from '@/pages/finance/types'
+import { SectionCard } from '@/pages/finance/components'
+import { AllFridgesReportTable } from '@/pages/finance/AllFridgesReportTable'
+import { NOT_AVAILABLE, ReportKpiTiles } from '@/pages/finance/ReportKpiTiles'
+import { formatCount } from '@/pages/finance/utils'
 
-/** Shown wherever the backend sends null, matching the Excel export's own wording. */
-const NOT_AVAILABLE = 'n/a'
+/** Select value for the all-fridges report (fridge ids are numeric, so it cannot clash). */
+const ALL_FRIDGES = 'all'
+const FRIDGE_CHOICE_HINT: Hint = {
+  text:
+    'Pick one fridge for its product detail, or All fridges for one row per fridge plus totals ' +
+    '(also as Excel).',
+  example: 'All fridges over last month compares the margin of every fridge side by side.',
+}
+const FRIDGE_REPORT_PATH = '/api/v1/finance/fridge-report'
+const ALL_FRIDGES_REPORT_PATH = '/api/v1/finance/all-fridges-report'
 
 /** First/last day of the previous calendar month, ISO date strings. */
 function defaultRange(): { from: string; to: string } {
@@ -43,20 +54,19 @@ function defaultRange(): { from: string; to: string } {
   return { from: iso(firstPrev), to: iso(lastPrev) }
 }
 
-/**
- * Format the backend margin fraction (e.g. "0.6000") for display. The backend
- * sends null when there is no ex-VAT revenue to divide by: that is an undefined
- * margin, not a 0% one, so it must not be coerced to a number.
- */
-function formatMarginPct(value: string | null): string {
-  if (value === null) return NOT_AVAILABLE
-  return formatFraction(value, 1)
-}
-
-/** An undefined margin is neutral: only a real percentage earns good/critical. */
-function marginPctTone(value: string | null): KpiTileProps['tone'] {
-  if (value === null) return 'default'
-  return toNumber(value) >= 0 ? 'good' : 'critical'
+function exportRequest(fridgeId: string, from: string, to: string) {
+  if (fridgeId === ALL_FRIDGES) {
+    return {
+      path: `${ALL_FRIDGES_REPORT_PATH}/export.xlsx`,
+      fallbackFilename: `all-fridges-report_${from}_${to}.xlsx`,
+      params: { from, to },
+    }
+  }
+  return {
+    path: `${FRIDGE_REPORT_PATH}/export.xlsx`,
+    fallbackFilename: `fridge-report_${fridgeId}_${from}_${to}.xlsx`,
+    params: { fridge_id: Number(fridgeId), from, to },
+  }
 }
 
 export function FridgeReportCard() {
@@ -75,44 +85,56 @@ export function FridgeReportCard() {
     staleTime: 5 * 60_000,
   })
 
+  const isAllFridges = fridgeId === ALL_FRIDGES
+  const hasRange = Boolean(from) && Boolean(to)
+
   const reportQuery = useQuery({
     queryKey: ['finance', 'fridge-report', fridgeId, from, to],
     queryFn: ({ signal }) =>
-      api.get<FridgeReport>('/api/v1/finance/fridge-report', {
+      api.get<FridgeReport>(FRIDGE_REPORT_PATH, {
         params: { fridge_id: Number(fridgeId), from, to },
         signal,
       }),
-    enabled: Boolean(fridgeId) && Boolean(from) && Boolean(to),
+    enabled: Boolean(fridgeId) && !isAllFridges && hasRange,
+  })
+
+  const allFridgesQuery = useQuery({
+    queryKey: ['finance', 'all-fridges-report', from, to],
+    queryFn: ({ signal }) =>
+      api.get<AllFridgesReport>(ALL_FRIDGES_REPORT_PATH, { params: { from, to }, signal }),
+    enabled: isAllFridges && hasRange,
   })
 
   const exportMutation = useMutation({
-    mutationFn: () =>
-      downloadFileFromApi(
-        `/api/v1/finance/fridge-report/export.xlsx?fridge_id=${Number(fridgeId)}&from=${from}&to=${to}`,
-        `fridge-report_${fridgeId}_${from}_${to}.xlsx`,
-      ),
+    mutationFn: () => {
+      const request = exportRequest(fridgeId, from, to)
+      return downloadFile(request.path, request.fallbackFilename, request.params)
+    },
     onSuccess: () => toast.success('Fridge report exported'),
     onError: (error) =>
       toast.error(error instanceof Error ? error.message : 'Export failed'),
   })
 
   const fridges = fridgesQuery.data?.items ?? []
-  const report = reportQuery.data
-  const canExport = Boolean(fridgeId) && Boolean(from) && Boolean(to) && Boolean(report)
+  const activeQuery = isAllFridges ? allFridgesQuery : reportQuery
+  const canExport = hasRange && Boolean(activeQuery.data)
 
   return (
     <SectionCard
       title="Fridge report"
-      description="Added quantity, food cost, revenue and margin for a single fridge over a date range."
+      description="Added quantity, food cost, revenue and margin for one fridge, or all fridges, over a date range."
       actions={
         <div className="flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-            Fridge
+            <span className="inline-flex items-center gap-1">
+              Fridge <InfoHint {...FRIDGE_CHOICE_HINT} />
+            </span>
             <Select value={fridgeId} onValueChange={setFridgeId}>
               <SelectTrigger className="w-56">
                 <SelectValue placeholder={fridgesQuery.isLoading ? 'Loading…' : 'Select a fridge…'} />
               </SelectTrigger>
               <SelectContent className="max-h-72">
+                <SelectItem value={ALL_FRIDGES}>All fridges</SelectItem>
                 {fridges.map((fridge) => (
                   <SelectItem key={fridge.id} value={String(fridge.id)}>
                     {formatFridgeName(fridge)}
@@ -140,73 +162,92 @@ export function FridgeReportCard() {
         </div>
       }
     >
-      {!fridgeId ? (
-        <EmptyState title="Select a fridge" description="Pick a fridge and date range to run the report." />
-      ) : reportQuery.isError ? (
-        <ErrorState error={reportQuery.error} onRetry={() => reportQuery.refetch()} />
-      ) : reportQuery.isLoading || !report ? (
-        <LoadingSkeleton rows={3} columns={5} />
-      ) : (
-        <div className="space-y-5">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <KpiTile label="Added quantity" value={formatCount(report.added_qty)} caption="Items restocked (ADDED)" />
-            <KpiTile label="Food cost" value={formatEuro(report.food_cost)} caption="ADDED / restock basis" />
-            <KpiTile label="Revenue" value={formatEuro(report.revenue)} />
-            <KpiTile
-              label="Food margin"
-              value={formatEuro(report.margin)}
-              tone={toNumber(report.margin) >= 0 ? 'good' : 'critical'}
-              caption="Revenue − food cost"
-            />
-            <KpiTile
-              label="Margin %"
-              value={formatMarginPct(report.margin_pct)}
-              tone={marginPctTone(report.margin_pct)}
-              caption="Food margin / revenue"
-            />
-          </div>
+      <ReportBody
+        fridgeId={fridgeId}
+        reportQuery={reportQuery}
+        allFridgesQuery={allFridgesQuery}
+      />
+    </SectionCard>
+  )
+}
 
-          {report.rows.length === 0 ? (
-            <EmptyState
-              title="No product rows"
-              description="No restock activity for this fridge in the selected range."
-            />
-          ) : (
-            <div className="overflow-x-auto overflow-y-hidden rounded-xl border border-border bg-card">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Code</TableHead>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">Added qty</TableHead>
-                    <TableHead className="text-right">Unit buy</TableHead>
-                    <TableHead className="text-right">Unit sell</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {report.rows.map((row) => (
-                    <TableRow key={row.product_id}>
-                      <TableCell className="font-mono text-xs">{row.code}</TableCell>
-                      <TableCell className="font-medium">{row.name}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {row.category ?? NOT_AVAILABLE}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCount(row.added_qty)}</TableCell>
-                      <TableCell className="text-right">
-                        <MoneyCell value={row.unit_buying_price} />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <MoneyCell value={row.unit_selling_price} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+function ReportBody({
+  fridgeId,
+  reportQuery,
+  allFridgesQuery,
+}: {
+  fridgeId: string
+  reportQuery: UseQueryResult<FridgeReport>
+  allFridgesQuery: UseQueryResult<AllFridgesReport>
+}) {
+  if (!fridgeId) {
+    return (
+      <EmptyState
+        title="Select a fridge"
+        description="Pick a fridge (or All fridges) and a date range to run the report."
+      />
+    )
+  }
+  const activeQuery = fridgeId === ALL_FRIDGES ? allFridgesQuery : reportQuery
+  if (activeQuery.isError) {
+    return <ErrorState error={activeQuery.error} onRetry={() => activeQuery.refetch()} />
+  }
+  if (fridgeId === ALL_FRIDGES) {
+    if (!allFridgesQuery.data) return <LoadingSkeleton rows={6} columns={8} />
+    return (
+      <div className="space-y-5">
+        <ReportKpiTiles figures={allFridgesQuery.data.totals} />
+        <AllFridgesReportTable report={allFridgesQuery.data} />
+      </div>
+    )
+  }
+  if (!reportQuery.data) return <LoadingSkeleton rows={3} columns={5} />
+  return <SingleFridgeReport report={reportQuery.data} />
+}
+
+function SingleFridgeReport({ report }: { report: FridgeReport }) {
+  return (
+    <div className="space-y-5">
+      <ReportKpiTiles figures={report} />
+      {report.rows.length === 0 ? (
+        <EmptyState
+          title="No product rows"
+          description="No restock activity for this fridge in the selected range."
+        />
+      ) : (
+        <div className="overflow-x-auto overflow-y-hidden rounded-xl border border-border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Code</TableHead>
+                <TableHead>Product</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead className="text-right">Added qty</TableHead>
+                <TableHead className="text-right">Unit buy</TableHead>
+                <TableHead className="text-right">Unit sell</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {report.rows.map((row) => (
+                <TableRow key={row.product_id}>
+                  <TableCell className="font-mono text-xs">{row.code}</TableCell>
+                  <TableCell className="font-medium">{row.name}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {row.category ?? NOT_AVAILABLE}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCount(row.added_qty)}</TableCell>
+                  <TableCell className="text-right">
+                    <MoneyCell value={row.unit_buying_price} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <MoneyCell value={row.unit_selling_price} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
-    </SectionCard>
+    </div>
   )
 }

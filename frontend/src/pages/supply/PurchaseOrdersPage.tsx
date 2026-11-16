@@ -1,9 +1,18 @@
 import * as React from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, Download, Plus, Search, Trash2 } from 'lucide-react'
+import {
+  ChevronRight,
+  ClipboardList,
+  Download,
+  ListChecks,
+  Plus,
+  Search,
+  Trash2,
+} from 'lucide-react'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { WithInfoHint, type Hint } from '@/components/shared/InfoHint'
 import { StatusChip } from '@/components/shared/StatusChip'
 import { MoneyCell } from '@/components/shared/MoneyCell'
 import { UnsavedChangesDialog } from '@/components/shared/UnsavedChangesDialog'
@@ -16,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { toast } from '@/components/ui/sonner'
+import { toast } from '@/components/ui/toast'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useSingleSubmit } from '@/hooks/useSingleSubmit'
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
@@ -26,13 +35,21 @@ import { localIsoDate, localIsoDatePlusDays } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { WeekDayPicker } from '@/pages/ops/components/WeekDayPicker'
 import { currentWeekDayKey, type WeekDayKey } from '@/pages/ops/lib/pipelineKey'
+import { STOCK_BALANCES_QUERY_KEY } from '@/pages/ops/menu/menuApi'
 import { Dialog } from './components/Dialog'
 import { Field, Textarea, fieldErrorsFromApiError, generalErrorMessage } from './components/form'
+import { GeneratePosFromMenuDialog } from './components/GeneratePosFromMenuDialog'
+import { NotReceivedLogDialog } from './components/NotReceivedLogDialog'
+import { PoActivityTimeline } from './components/PoActivityTimeline'
+import { PoCancelDialog } from './components/PoCancelDialog'
+import { PoCloseShortDialog } from './components/PoCloseShortDialog'
+import { CLOSE_SHORT_LABEL, shortfallOf } from './components/poLabels'
 import { ProductPicker } from './components/ProductPicker'
 import type {
   MenuDraftLineOut,
   OverReceiptDetail,
   PoLineCreate,
+  PoReceiveRequest,
   PoStatus,
   ProductLite,
   PurchaseOrder,
@@ -47,13 +64,31 @@ const DEFAULT_DELIVERY_LEAD_DAYS = 2
 const INLINE_FIELD_CLASS =
   'sm:grid sm:grid-cols-[auto_1fr] sm:items-center sm:gap-x-3 sm:[&>p]:col-start-2'
 
+const NOT_RECEIVED_LOG_HINT: Hint = {
+  text: 'Lists every unit ordered but never received, from orders closed with received quantities.',
+  example: 'Ordered 24 yoghurts, received 20, closed: the log shows 4 missing.',
+}
+const GENERATE_FROM_MENU_HINT: Hint = {
+  text:
+    'Plans one purchase order per supplier from the saved menus of the chosen days: ' +
+    'need minus warehouse stock minus units already on order. You edit before creating.',
+  example: 'Menus need 50 salads, 12 in stock, 0 on order: a PO line of 38 salads.',
+}
+const CLOSE_SHORT_HINT: Hint = {
+  text:
+    'Closes the order with what actually arrived. The missing units leave the "on order" ' +
+    'stock and go to the Not received log.',
+  example: 'Ordered 10, received 8: the PO closes and 2 are logged as not received.',
+}
 const LOAD_FROM_MENU_HELP =
   "Copies the saved menu quantities for this supplier's products for the chosen week and day. " +
   'Unit price and VAT come from the product catalogue.'
 
-const CANCEL_PO_DESCRIPTION =
-  'Any received stock, including a partial receipt, is reversed out. ' +
-  'If it has already been dispatched, the cancel is refused.'
+const RECEIVE_HELP =
+  'Enter the units that actually arrived. Stock goes up only by what you receive; the rest ' +
+  `stays on order until it arrives or you use "${CLOSE_SHORT_LABEL}", which logs the shortfall.`
+
+const RECEIPT_COMMENT_PLACEHOLDER = 'Issues with this delivery, e.g. 2 boxes broken, arrived a day late'
 
 type StatusFilter = 'all' | PoStatus
 
@@ -97,6 +132,9 @@ function PoStatusChip({ po, className }: { po: PurchaseOrder; className?: string
   if (isPartlyReceived(po)) {
     return <StatusChip status="partial" label="Partly received" className={className} />
   }
+  if (po.status === 'closed_short') {
+    return <StatusChip status="partial" label="Closed short" className={className} />
+  }
   return <StatusChip status={po.status} className={className} />
 }
 
@@ -117,6 +155,8 @@ export function PurchaseOrdersPage() {
   const [searchInput, setSearchInput] = React.useState('')
   const [offset, setOffset] = React.useState(0)
   const [creating, setCreating] = React.useState(false)
+  const [generatingFromMenu, setGeneratingFromMenu] = React.useState(false)
+  const [showingNotReceivedLog, setShowingNotReceivedLog] = React.useState(false)
   const [detailId, setDetailId] = React.useState<number | null>(null)
   const search = useDebouncedValue(searchInput.trim(), SEARCH_DEBOUNCE_MS)
 
@@ -174,10 +214,10 @@ export function PurchaseOrdersPage() {
       },
       {
         id: 'total',
-        header: 'Total incl. VAT',
+        header: 'Total ex VAT',
         align: 'right',
-        cell: (row) => <MoneyCell value={row.total_incl_vat} />,
-        sortValue: (row) => Number(row.total_incl_vat),
+        cell: (row) => <MoneyCell value={row.total_ex_vat} />,
+        sortValue: (row) => Number(row.total_ex_vat),
       },
       {
         id: 'status',
@@ -201,6 +241,7 @@ export function PurchaseOrdersPage() {
               <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
               <SelectItem value="received">Received</SelectItem>
+              <SelectItem value="closed_short">Closed short</SelectItem>
               <SelectItem value="cancelled">Cancelled</SelectItem>
             </SelectContent>
           </Select>
@@ -227,9 +268,21 @@ export function PurchaseOrdersPage() {
             />
           </div>
         </div>
-        <Button onClick={() => setCreating(true)}>
-          <Plus className="h-4 w-4" /> New PO
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <WithInfoHint hint={NOT_RECEIVED_LOG_HINT}>
+            <Button variant="outline" onClick={() => setShowingNotReceivedLog(true)}>
+              <ClipboardList className="h-4 w-4" /> Not received log
+            </Button>
+          </WithInfoHint>
+          <WithInfoHint hint={GENERATE_FROM_MENU_HINT}>
+            <Button variant="outline" onClick={() => setGeneratingFromMenu(true)}>
+              <ListChecks className="h-4 w-4" /> Generate from menu
+            </Button>
+          </WithInfoHint>
+          <Button onClick={() => setCreating(true)}>
+            <Plus className="h-4 w-4" /> New PO
+          </Button>
+        </div>
       </div>
 
       <DataTable
@@ -270,6 +323,18 @@ export function PurchaseOrdersPage() {
             posQuery.refetch()
             setDetailId(po.id)
           }}
+        />
+      ) : null}
+
+      {generatingFromMenu ? (
+        <GeneratePosFromMenuDialog onClose={() => setGeneratingFromMenu(false)} />
+      ) : null}
+
+      {showingNotReceivedLog ? (
+        <NotReceivedLogDialog
+          suppliers={suppliersQuery.data ?? []}
+          onClose={() => setShowingNotReceivedLog(false)}
+          onOpenOrder={setDetailId}
         />
       ) : null}
 
@@ -562,7 +627,7 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
                     <th className="px-3 py-2 text-center font-medium">Qty</th>
                     <th className="px-3 py-2 text-right font-medium">Unit €</th>
                     <th className="px-3 py-2 text-right font-medium">VAT</th>
-                    <th className="px-3 py-2 text-right font-medium">Line incl.</th>
+                    <th className="px-3 py-2 text-right font-medium">Line ex VAT</th>
                     <th className="px-2 py-2" />
                   </tr>
                 </thead>
@@ -592,7 +657,7 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
                         {formatFraction(line.product.vat_rate)}
                       </td>
                       <td className="px-3 py-1 text-right font-medium tabular-nums">
-                        {formatEuro(lineExVat(line) + lineVat(line))}
+                        {formatEuro(lineExVat(line))}
                       </td>
                       <td className="px-2 py-1 text-right">
                         <Button
@@ -615,17 +680,17 @@ function CreatePoDialog({ suppliers, onClose, onCreated }: CreatePoDialogProps) 
           <div className="flex justify-end">
             <table className="w-auto min-w-[240px] text-sm">
               <tbody>
-                <tr>
-                  <td className="py-1 pr-6 text-muted-foreground">Total ex VAT</td>
+                <tr className="text-base font-semibold">
+                  <td className="py-1 pr-6">Total ex VAT</td>
                   <td className="py-1 text-right tabular-nums">{formatEuro(totals.ex)}</td>
                 </tr>
-                <tr>
-                  <td className="py-1 pr-6 text-muted-foreground">VAT</td>
-                  <td className="py-1 text-right tabular-nums">{formatEuro(totals.vat)}</td>
+                <tr className="text-xs text-muted-foreground">
+                  <td className="py-0.5 pr-6">VAT</td>
+                  <td className="py-0.5 text-right tabular-nums">{formatEuro(totals.vat)}</td>
                 </tr>
-                <tr className="border-t border-border font-semibold">
-                  <td className="py-1 pr-6">Total incl. VAT</td>
-                  <td className="py-1 text-right tabular-nums">{formatEuro(totals.incl)}</td>
+                <tr className="border-t border-border text-xs text-muted-foreground">
+                  <td className="py-0.5 pr-6">Total incl. VAT</td>
+                  <td className="py-0.5 text-right tabular-nums">{formatEuro(totals.incl)}</td>
                 </tr>
               </tbody>
             </table>
@@ -667,7 +732,9 @@ interface PoDetailDialogProps {
 function PoDetailDialog({ poId, supplierName, onClose }: PoDetailDialogProps) {
   const queryClient = useQueryClient()
   const [receiveQty, setReceiveQty] = React.useState<Record<number, string>>({})
+  const [receiptComment, setReceiptComment] = React.useState('')
   const [confirmingCancel, setConfirmingCancel] = React.useState(false)
+  const [closingShort, setClosingShort] = React.useState(false)
   const [overReceipt, setOverReceipt] = React.useState<OverReceiptDetail[] | null>(null)
 
   const poQuery = useQuery({
@@ -677,6 +744,7 @@ function PoDetailDialog({ poId, supplierName, onClose }: PoDetailDialogProps) {
 
   const po = poQuery.data
   const isPending = po?.status === 'pending'
+  const hasShortfall = po?.lines.some((line) => shortfallOf(line) > 0) ?? false
 
   // Seed receive inputs with each line's outstanding quantity once the PO loads.
   React.useEffect(() => {
@@ -693,6 +761,7 @@ function PoDetailDialog({ poId, supplierName, onClose }: PoDetailDialogProps) {
     queryClient.invalidateQueries({ queryKey: ['supply', 'purchase-orders'] })
     queryClient.invalidateQueries({ queryKey: ['supply', 'stock-balances'] })
     queryClient.invalidateQueries({ queryKey: ['supply', 'stock-movements'] })
+    queryClient.invalidateQueries({ queryKey: STOCK_BALANCES_QUERY_KEY })
   }
 
   const receiveMutation = useMutation({
@@ -700,14 +769,17 @@ function PoDetailDialog({ poId, supplierName, onClose }: PoDetailDialogProps) {
       const received = Object.entries(receiveQty)
         .map(([lineId, qty]) => ({ po_line_id: Number(lineId), qty_received: Number(qty) || 0 }))
         .filter((line) => line.qty_received > 0)
-      return api.post<unknown>(`/api/v1/purchase-orders/${poId}/receive`, {
+      const request: PoReceiveRequest = {
         received,
         acknowledge_over_receipt: acknowledge,
-      })
+        comment: receiptComment.trim() || null,
+      }
+      return api.post<unknown>(`/api/v1/purchase-orders/${poId}/receive`, request)
     },
     onSuccess: () => {
       toast.success('Stock received')
       setOverReceipt(null)
+      setReceiptComment('')
       invalidateAll()
     },
     onError: (error) => {
@@ -721,23 +793,7 @@ function PoDetailDialog({ poId, supplierName, onClose }: PoDetailDialogProps) {
     },
   })
 
-  const cancelMutation = useMutation({
-    mutationFn: () => api.post<unknown>(`/api/v1/purchase-orders/${poId}/cancel`),
-    onSuccess: () => {
-      toast.success('Purchase order cancelled')
-      setConfirmingCancel(false)
-      invalidateAll()
-    },
-    onError: (error) => {
-      // cancel_blocked (409): received stock already dispatched.
-      const message = error instanceof ApiError ? error.message : 'Failed to cancel PO'
-      toast.error(message)
-      setConfirmingCancel(false)
-    },
-  })
-
   const submitReceipt = useSingleSubmit(receiveMutation)
-  const submitCancel = useSingleSubmit(cancelMutation)
   const receivingTotal = Object.values(receiveQty).reduce((sum, qty) => sum + (Number(qty) || 0), 0)
 
   return (
@@ -759,13 +815,16 @@ function PoDetailDialog({ poId, supplierName, onClose }: PoDetailDialogProps) {
                 {receiveMutation.isPending ? 'Receiving…' : 'Receive goods'}
               </Button>
             ) : null}
+            {isPending && hasShortfall ? (
+              <WithInfoHint hint={CLOSE_SHORT_HINT}>
+                <Button variant="outline" onClick={() => setClosingShort(true)}>
+                  {CLOSE_SHORT_LABEL}
+                </Button>
+              </WithInfoHint>
+            ) : null}
             {po.status !== 'cancelled' ? (
-              <Button
-                variant="destructive"
-                onClick={() => setConfirmingCancel(true)}
-                disabled={cancelMutation.isPending}
-              >
-                Cancel with reversal
+              <Button variant="destructive" onClick={() => setConfirmingCancel(true)}>
+                Cancel PO
               </Button>
             ) : null}
             <Button variant="outline" onClick={onClose}>
@@ -788,16 +847,25 @@ function PoDetailDialog({ poId, supplierName, onClose }: PoDetailDialogProps) {
           <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
             <Meta label="Order date" value={po.order_date} />
             <Meta label="Expected" value={po.expected_delivery_date} />
-            <Meta label="Total ex VAT" value={formatEuro(po.total_ex_vat)} />
-            <Meta label="Total incl." value={formatEuro(po.total_incl_vat)} />
+            <Meta
+              label="Total ex VAT"
+              value={<span className="text-base">{formatEuro(po.total_ex_vat)}</span>}
+            />
+            <Meta
+              label="Total incl. VAT"
+              value={
+                <span className="font-normal text-muted-foreground">
+                  {formatEuro(po.total_incl_vat)}
+                </span>
+              }
+            />
           </div>
           {po.delivery_address ? <Meta label="Deliver to" value={po.delivery_address} /> : null}
           {po.comment ? <Meta label="Comment" value={po.comment} /> : null}
 
           {isPending ? (
             <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[#8a6100] dark:text-warning">
-              Receiving fewer units than ordered? Enter the actual quantity received per line - the
-              difference is logged and stock increases only by the received amount.
+              {RECEIVE_HELP}
             </div>
           ) : null}
 
@@ -812,7 +880,7 @@ function PoDetailDialog({ poId, supplierName, onClose }: PoDetailDialogProps) {
                   {isPending ? (
                     <th className="px-3 py-2 text-right font-medium">Receive now</th>
                   ) : null}
-                  <th className="px-3 py-2 text-right font-medium">Line incl.</th>
+                  <th className="px-3 py-2 text-right font-medium">Line ex VAT</th>
                 </tr>
               </thead>
               <tbody>
@@ -842,39 +910,57 @@ function PoDetailDialog({ poId, supplierName, onClose }: PoDetailDialogProps) {
                       </td>
                     ) : null}
                     <td className="px-3 py-2 text-right font-medium tabular-nums">
-                      {formatEuro(line.line_incl_vat)}
+                      {formatEuro(line.line_ex_vat)}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+
+          {isPending ? (
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-muted-foreground">
+                Receipt comment (optional)
+              </span>
+              <Textarea
+                value={receiptComment}
+                onChange={(event) => setReceiptComment(event.target.value)}
+                placeholder={RECEIPT_COMMENT_PLACEHOLDER}
+                className="min-h-[56px]"
+              />
+            </label>
+          ) : null}
+
+          <PoActivityTimeline poId={poId} />
         </div>
       ) : null}
 
-      {confirmingCancel ? (
-        <Dialog
-          open
+      {confirmingCancel && po ? (
+        <PoCancelDialog
+          po={po}
+          isPartlyReceived={isPartlyReceived(po)}
           onClose={() => setConfirmingCancel(false)}
-          title="Cancel this purchase order?"
-          description={CANCEL_PO_DESCRIPTION}
-          footer={
-            <>
-              <Button variant="outline" onClick={() => setConfirmingCancel(false)} disabled={cancelMutation.isPending}>
-                Keep PO
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => submitCancel()}
-                disabled={cancelMutation.isPending}
-              >
-                {cancelMutation.isPending ? 'Cancelling…' : 'Cancel PO'}
-              </Button>
-            </>
-          }
-        >
-          <p className="text-sm text-muted-foreground">This action reverses any received stock movements.</p>
-        </Dialog>
+          onCancelled={() => {
+            setConfirmingCancel(false)
+            invalidateAll()
+          }}
+          onCloseShortInstead={() => {
+            setConfirmingCancel(false)
+            setClosingShort(true)
+          }}
+        />
+      ) : null}
+
+      {closingShort && po ? (
+        <PoCloseShortDialog
+          po={po}
+          onClose={() => setClosingShort(false)}
+          onClosedShort={() => {
+            setClosingShort(false)
+            invalidateAll()
+          }}
+        />
       ) : null}
 
       {overReceipt !== null ? (

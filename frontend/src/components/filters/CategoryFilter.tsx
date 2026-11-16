@@ -5,14 +5,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { sortCategories } from '@/lib/naturalSort'
 import { cn } from '@/lib/utils'
-import { useCategories } from '@/pages/ops/lib/reference'
 import {
   ALL_OPTION_VALUE,
   fromSelectValue,
   toSelectValue,
 } from '@/components/filters/filterValues'
+import {
+  HistoricCategoriesItem,
+  TOGGLE_HISTORIC_VALUE,
+  useCategoryOptions,
+} from '@/components/filters/categoryOptions'
 
 export interface CategoryFilterProps {
   /** Selected category id; null means all categories. */
@@ -21,15 +24,22 @@ export interface CategoryFilterProps {
   className?: string
 }
 
-/** "All categories" plus every category, display_order then natural name. */
+/** "All categories" plus the current categories, display_order then natural name. */
 export function CategoryFilter({ value, onChange, className }: CategoryFilterProps) {
-  const categoriesQuery = useCategories()
-  const sortedCategories = sortCategories(categoriesQuery.data?.ordered ?? [])
+  const categoryOptions = useCategoryOptions(value)
+
+  function handleValueChange(next: string) {
+    if (next === TOGGLE_HISTORIC_VALUE) {
+      categoryOptions.toggleShowHistoric()
+      return
+    }
+    onChange(fromSelectValue(next))
+  }
 
   return (
     <Select
       value={toSelectValue(value)}
-      onValueChange={(next) => onChange(fromSelectValue(next))}
+      onValueChange={handleValueChange}
     >
       <SelectTrigger
         className={cn('w-44', className)}
@@ -39,7 +49,7 @@ export function CategoryFilter({ value, onChange, className }: CategoryFilterPro
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={ALL_OPTION_VALUE}>All categories</SelectItem>
-        {sortedCategories.map((category) => (
+        {categoryOptions.visibleCategories.map((category) => (
           <SelectItem
             key={category.id}
             value={String(category.id)}
@@ -47,6 +57,10 @@ export function CategoryFilter({ value, onChange, className }: CategoryFilterPro
             {category.name}
           </SelectItem>
         ))}
+        <HistoricCategoriesItem
+          historicCount={categoryOptions.historicCount}
+          showHistoric={categoryOptions.showHistoric}
+        />
       </SelectContent>
     </Select>
   )

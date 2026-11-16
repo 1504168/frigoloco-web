@@ -105,8 +105,7 @@ async function request<T>(
   const hasBody = body !== undefined
   if (hasBody) headers['Content-Type'] = 'application/json'
 
-  const token = getToken()
-  if (token) headers['Authorization'] = `Bearer ${token}`
+  addBearerToken(headers)
 
   const response = await fetch(url, {
     method,
@@ -116,16 +115,7 @@ async function request<T>(
   })
 
   if (!response.ok) {
-    // An expired/invalid session on any endpoint (other than the login call
-    // itself) clears the token and bounces to the login page. Guard against a
-    // redirect loop if we are already sitting on /login.
-    if (response.status === 401 && path !== LOGIN_PATH) {
-      clearToken()
-      if (window.location.pathname !== LOGIN_ROUTE) {
-        window.location.href = LOGIN_ROUTE
-      }
-    }
-    throw await toApiError(response)
+    throw await toAuthCheckedApiError(path, response)
   }
 
   // 204 No Content or empty body.
@@ -135,6 +125,64 @@ async function request<T>(
   const text = await response.text()
   if (!text) return undefined as T
   return JSON.parse(text) as T
+}
+
+function addBearerToken(headers: Record<string, string>): void {
+  const token = getToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+}
+
+/**
+ * An expired/invalid session on any endpoint (other than the login call itself)
+ * clears the token and bounces to the login page. Guards against a redirect loop
+ * when already sitting on /login.
+ */
+async function toAuthCheckedApiError(path: string, response: Response): Promise<ApiError> {
+  if (response.status === 401 && path !== LOGIN_PATH) {
+    clearToken()
+    if (window.location.pathname !== LOGIN_ROUTE) {
+      window.location.href = LOGIN_ROUTE
+    }
+  }
+  return toApiError(response)
+}
+
+/** Pull the filename out of a Content-Disposition header, if present. */
+function filenameFromDisposition(header: string | null): string | null {
+  if (!header) return null
+  const utf8Match = header.match(/filename\*=(?:UTF-8'')?["']?([^"';]+)/i)
+  if (utf8Match) return decodeURIComponent(utf8Match[1])
+  const plainMatch = header.match(/filename=["']?([^"';]+)/i)
+  return plainMatch ? plainMatch[1] : null
+}
+
+/**
+ * GET a file endpoint with the bearer token and save it through a browser
+ * download, using the server's Content-Disposition filename when it sends one.
+ * Throws ApiError on non-2xx, like the JSON helpers.
+ */
+export async function downloadFile(
+  path: string,
+  fallbackFilename: string,
+  params?: QueryParams,
+): Promise<void> {
+  const headers: Record<string, string> = { Accept: '*/*' }
+  addBearerToken(headers)
+  const response = await fetch(`${API_BASE_URL}${path}${buildQuery(params)}`, { headers })
+  if (!response.ok) {
+    throw await toAuthCheckedApiError(path, response)
+  }
+  const blob = await response.blob()
+  const filename =
+    filenameFromDisposition(response.headers.get('Content-Disposition')) ?? fallbackFilename
+  const objectUrl = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = objectUrl
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(objectUrl)
 }
 
 export const api = {

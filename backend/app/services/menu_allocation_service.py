@@ -11,6 +11,9 @@ ties, highest-scored) product, and any product whose exact share exceeds 0.5 is
 rounded up rather than silently dropped. Per-product ``menu_product_caps`` are
 respected, with capped overflow redistributed to remaining products.
 
+A product with no score yet weighs the mean score of the scored products of its
+category (see :func:`rating_weights`), so a new product is not left out.
+
 Snacks & Drinks bypass the score split entirely: their per-product quantity is
 ``max(target_qty - live_stock, 0)`` from ``product_targets`` and the in-fridge
 ``fridge_stock`` reading (the latest-known state written by the snapshot job).
@@ -51,7 +54,7 @@ from app.services import scoring_service
 
 logger = logging.getLogger("services.menu_allocation")
 
-_TARGET_CATEGORY_TOKENS = ("snack", "drink")
+TARGET_REPLENISH_CATEGORY_TOKENS = ("snack", "drink")
 
 SOURCE_FORECAST = "forecast"
 SOURCE_TARGET = "target_replenish"
@@ -59,6 +62,9 @@ SOURCE_TARGET = "target_replenish"
 # Beyond this age the whole fridge_stock generation is considered untrustworthy
 # (the snapshot job runs every 15 min; the architecture docs specify a 2h bound).
 STOCK_READING_MAX_AGE = datetime.timedelta(hours=2)
+
+ZERO_WEIGHT = Decimal("0")
+EVEN_WEIGHT = Decimal("1")
 
 
 @dataclass(frozen=True)
@@ -72,6 +78,17 @@ class AllocationLine:
     # fridge_stock generation. Forecast lines never read stock, so they keep the
     # default.
     stock_stale: bool = False
+    # True when the product had no score and weighed its category's mean score.
+    default_score: bool = False
+
+
+@dataclass(frozen=True)
+class RatingWeights:
+    """Split weights for one category's products, in the order they were given."""
+
+    weights: list[Decimal]
+    # Products without a score of their own (they weigh the category mean).
+    default_score_product_ids: list[int]
 
 
 @dataclass(frozen=True)
@@ -111,6 +128,37 @@ class FridgeStockReadings:
         return {
             fridge_id: self.is_stale(fridge_id, now) for fridge_id in fridge_ids
         }
+
+
+def is_target_replenish_category(category_name: str) -> bool:
+    """Snacks and Drinks refill to a per-fridge target instead of a forecast split."""
+    lowered_name = category_name.lower()
+    return any(token in lowered_name for token in TARGET_REPLENISH_CATEGORY_TOKENS)
+
+
+def rating_weights(product_ids: list[int], scores: dict[int, Decimal]) -> RatingWeights:
+    """Latest final scores; an unscored product weighs the mean of the scored ones.
+
+    ``product_ids`` are the products of ONE category. A stored score of 0 counts as
+    scored (it weighs 0); a negative score (a loss-making margin can cause one) weighs 0
+    too, since a negative weight would take units away from the others. When no product
+    of the category has a positive score the category is split evenly.
+    """
+    usable_scores = {
+        product_id: max(scores[product_id], ZERO_WEIGHT)
+        for product_id in product_ids
+        if product_id in scores
+    }
+    unscored_product_ids = [product_id for product_id in product_ids if product_id not in scores]
+    known_total = sum(usable_scores.values(), ZERO_WEIGHT)
+    if known_total <= 0:
+        return RatingWeights(
+            weights=[EVEN_WEIGHT] * len(product_ids),
+            default_score_product_ids=unscored_product_ids,
+        )
+    mean_score = known_total / len(usable_scores)
+    weights = [usable_scores.get(product_id, mean_score) for product_id in product_ids]
+    return RatingWeights(weights=weights, default_score_product_ids=unscored_product_ids)
 
 
 def _largest_remainder(target: int, weights: list[Decimal]) -> list[int]:
@@ -165,7 +213,7 @@ def _apply_caps(
     return capped
 
 
-def _fridge_stock_readings(
+def load_fridge_stock_readings(
     fridge_ids: list[int], session: Session
 ) -> FridgeStockReadings:
     """Read the latest in-fridge stock for ``fridge_ids`` plus each one's generation.
@@ -258,7 +306,7 @@ def compute_allocation(
         .scalars()
         .all()
     }
-    readings = _fridge_stock_readings(fridge_ids, session)
+    readings = load_fridge_stock_readings(fridge_ids, session)
     # Staleness is decided ONCE PER FRIDGE and reused across that fridge's lines.
     stale_by_fridge = readings.stale_fridge_ids(
         fridge_ids, datetime.datetime.now(datetime.timezone.utc)
@@ -278,10 +326,8 @@ def compute_allocation(
         if not product_ids:
             continue
 
-        name = category_names.get(result.category_id, "").lower()
-        is_target_category = any(token in name for token in _TARGET_CATEGORY_TOKENS)
-
-        if is_target_category:
+        category_name = category_names.get(result.category_id, "")
+        if is_target_replenish_category(category_name):
             for product_id in product_ids:
                 target_qty = targets.get((result.fridge_id, product_id))
                 if target_qty is None:
@@ -305,9 +351,9 @@ def compute_allocation(
         if target_total <= 0:
             continue
 
-        weights = [scores.get(pid, Decimal("0")) for pid in product_ids]
-        if sum(weights, Decimal("0")) <= 0:
-            weights = [Decimal("1")] * len(product_ids)
+        category_weights = rating_weights(product_ids, scores)
+        weights = category_weights.weights
+        default_score_product_ids = set(category_weights.default_score_product_ids)
 
         allocations = _largest_remainder(target_total, weights)
         fridge_caps = {
@@ -326,6 +372,7 @@ def compute_allocation(
                         product_id=product_id,
                         qty=qty,
                         source=SOURCE_FORECAST,
+                        default_score=product_id in default_score_product_ids,
                     )
                 )
 

@@ -70,3 +70,6 @@ raw_archive/
 
 # Local plaintext login credentials (never commit)
 credentials.local.json
+
+# Legacy Excel Office Scripts: contain hardcoded credentials and webhook signatures
+Office Scripts/

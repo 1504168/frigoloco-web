@@ -1,7 +1,8 @@
 """Operational models - purchase orders (SECTION 3), dispatch (SECTION 5), stock
 ledger (SECTION 6), and finance/alerts/audit (SECTION 9). Mirrors:
-order_no_counters, purchase_orders, purchase_order_lines, dispatches,
-dispatch_lines, stock_movements, weekly_financials, alerts, audit_log.
+order_no_counters, purchase_orders, purchase_order_lines, purchase_order_receipts,
+purchase_order_discrepancies, dispatches, dispatch_lines, stock_movements, weekly_financials,
+alerts, audit_log.
 
 NOTE: ``weekly_financials`` (schema.sql SECTION 9) was not named in the model-
 split brief; it is a finance table and is mirrored here alongside alerts/audit.
@@ -43,11 +44,15 @@ from app.models.enums import (
     ALERT_TYPE_ENUM,
     DISPATCH_STATUS_ENUM,
     LINE_SOURCE_ENUM,
+    PO_DISCREPANCY_KIND_ENUM,
+    PO_DISCREPANCY_REASON_ENUM,
     PO_STATUS_ENUM,
     STOCK_MOVEMENT_TYPE_ENUM,
     AlertType,
     DispatchStatus,
     LineSource,
+    PoDiscrepancyKind,
+    PoDiscrepancyReason,
     PoStatus,
     StockMovementType,
     enum_check,
@@ -107,7 +112,10 @@ class PurchaseOrder(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
 
@@ -140,6 +148,60 @@ class PurchaseOrderLine(Base):
     unit_price: Mapped[int] = mapped_column(BigInteger, nullable=False)  # cents
     vat_rate: Mapped[Decimal] = mapped_column(
         Numeric(6, 4), nullable=False, server_default=text("0")
+    )
+
+
+class PurchaseOrderReceipt(Base):
+    """One "Receive goods" action on a purchase order, with its free-text comment."""
+
+    __tablename__ = "purchase_order_receipts"
+    __table_args__ = (Index("ix_purchase_order_receipts_po", "po_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, Identity(always=True), primary_key=True)
+    po_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("purchase_orders.id", ondelete="CASCADE"), nullable=False
+    )
+    comment: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PurchaseOrderDiscrepancy(Base):
+    """One line's difference between ordered and received units (short-close or over-receipt)."""
+
+    __tablename__ = "purchase_order_discrepancies"
+    __table_args__ = (
+        Index("ix_purchase_order_discrepancies_po", "po_id"),
+        Index("ix_purchase_order_discrepancies_created", "created_at"),
+        enum_check("kind", PoDiscrepancyKind, "chk_po_discrepancies_kind"),
+        CheckConstraint(
+            "reason IS NULL OR reason IN ('missing', 'damaged', 'wrong_product', 'other')",
+            name="chk_po_discrepancies_reason",
+        ),
+        CheckConstraint("qty_difference > 0", name="chk_po_discrepancies_difference_positive"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, Identity(always=True), primary_key=True)
+    po_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("purchase_orders.id", ondelete="CASCADE"), nullable=False
+    )
+    po_line_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("purchase_order_lines.id", ondelete="CASCADE"), nullable=False
+    )
+    receipt_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("purchase_order_receipts.id", ondelete="CASCADE")
+    )
+    kind: Mapped[PoDiscrepancyKind] = mapped_column(PO_DISCREPANCY_KIND_ENUM, nullable=False)
+    qty_ordered: Mapped[int] = mapped_column(Integer, nullable=False)
+    qty_received: Mapped[int] = mapped_column(Integer, nullable=False)
+    qty_difference: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[PoDiscrepancyReason | None] = mapped_column(PO_DISCREPANCY_REASON_ENUM)
+    comment: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -182,7 +244,10 @@ class Dispatch(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
 
@@ -292,6 +357,9 @@ class StockMovement(Base):
     # is enforced by the application; the id value is still stored for joins.
     dispatch_line_id: Mapped[int | None] = mapped_column(Integer)
     reason: Mapped[str | None] = mapped_column(Text)
+    receipt_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("purchase_order_receipts.id")
+    )
     created_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -362,7 +430,10 @@ class WeeklyFinancial(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
 

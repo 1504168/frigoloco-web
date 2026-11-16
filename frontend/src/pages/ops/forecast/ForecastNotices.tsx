@@ -38,6 +38,7 @@ export function ForecastNotices({ run, modelLabel, viewOptions }: ForecastNotice
   const firstDay = formatDay(run.window_start)
   const lastDay = formatDay(dayBefore(run.window_end))
   const hasNoSales = run.window_sales_units === 0
+  const excludedHolidays = (run.params.excluded_bank_holidays ?? []).map(formatDay)
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -49,6 +50,16 @@ export function ForecastNotices({ run, modelLabel, viewOptions }: ForecastNotice
         </p>
         {viewOptions}
       </div>
+      {run.delivery_bank_holiday !== null && (
+        <Notice tone="warning">
+          The delivery day is a bank holiday ({run.delivery_bank_holiday}).
+        </Notice>
+      )}
+      {excludedHolidays.length > 0 && (
+        <Notice tone="info">
+          Bank holidays left out of the selling days: {excludedHolidays.join(', ')}.
+        </Notice>
+      )}
       {hasNoSales && (
         <Notice tone="warning">
           No sales recorded between {firstDay} and {lastDay}.

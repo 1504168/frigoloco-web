@@ -20,12 +20,16 @@ from app.schemas.menus import (
     CapsReplace,
     MenuDraftLineOut,
     MenuGridOut,
+    MenuImportOut,
+    MenuImportRequest,
     MenuProductsReplace,
     MenuRead,
     MenuSaveRequest,
     MenuStockBalanceOut,
+    TargetCategoryOut,
     TargetRead,
     TargetsReplace,
+    WeekMenuOut,
 )
 from app.schemas.orders import PurchaseOrderRead
 from app.security import get_current_user
@@ -109,29 +113,48 @@ def create_menu(
 # --- Workflow: import-from-forecast / save / load-saved / draft PO (D2) -----
 
 
-@router.post("/import-from-forecast", response_model=MenuGridOut)
+@router.post("/import-from-forecast", response_model=MenuImportOut)
 def import_menu_from_forecast(
     year: int = Query(..., ge=2020, le=2100),
     week: int = Query(..., ge=1, le=53),
     day_name: str = Query(...),
     category_id: int | None = Query(default=None),
+    body: MenuImportRequest | None = None,
     session: Session = Depends(get_db),
-) -> MenuGridOut:
+) -> MenuImportOut:
     """Seed a draft menu grid (not persisted) from the saved forecast.
 
-    ``category_id`` restricts the preview to a single category (the caller merges
-    it into the existing grid); omit it to pull all categories.
+    Quantities are split over the chosen products (``body.product_ids`` or the
+    saved week menu). ``category_id`` restricts the preview to a single category
+    (the caller merges it into the existing grid); omit it to pull all categories.
     """
+    import_request = body if body is not None else MenuImportRequest()
     delivery_date = resolve_delivery_date(year, week, day_name)
-    grid = menu_service.import_from_forecast(
+    menu_import = menu_service.import_from_forecast(
         year=year,
         week=week,
         day_name=day_name,
         delivery_date=delivery_date,
         category_id=category_id,
+        chosen_product_ids=import_request.product_ids,
+        sold_first=import_request.sold_first,
+        use_fridge_stock=import_request.use_fridge_stock,
+        sales_speed=import_request.sales_speed,
+        fit_to_stock=import_request.fit_to_stock,
         session=session,
     )
-    return MenuGridOut.model_validate(grid)
+    return MenuImportOut.model_validate(menu_import)
+
+
+@router.get("/week", response_model=WeekMenuOut)
+def get_week_menu(
+    year: int = Query(..., ge=2020, le=2100),
+    week: int = Query(..., ge=1, le=53),
+    session: Session = Depends(get_db),
+) -> WeekMenuOut:
+    """The product list chosen for an ISO week (shared by every day of that week)."""
+    week_menu = menu_service.get_week_menu(year=year, week=week, session=session)
+    return WeekMenuOut.model_validate(week_menu)
 
 
 @router.post("/save", response_model=MenuGridOut)
@@ -279,6 +302,39 @@ def get_product_targets(
         .all()
     )
     return [TargetRead.model_validate(row) for row in rows]
+
+
+@router.get("/product-targets/products", response_model=list[TargetCategoryOut])
+def list_target_products(session: Session = Depends(get_db)) -> list[TargetCategoryOut]:
+    """The active Snacks and Drinks products a fridge can have a refill target for."""
+    target_categories = menu_service.list_target_categories(session)
+    return [TargetCategoryOut.model_validate(category) for category in target_categories]
+
+
+@router.post("/product-targets/copy", response_model=list[TargetRead])
+def copy_product_targets(
+    from_fridge_id: int = Query(...),
+    to_fridge_id: int = Query(...),
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[TargetRead]:
+    """Replace one fridge's Snacks and Drinks targets with a copy of another fridge's."""
+    _require_fridge(from_fridge_id, session)
+    _require_fridge(to_fridge_id, session)
+    if from_fridge_id == to_fridge_id:
+        raise api_error(
+            422,
+            "validation_error",
+            "Pick another fridge to copy the targets from",
+            {"fridge_id": to_fridge_id},
+        )
+    menu_service.copy_product_targets(
+        from_fridge_id=from_fridge_id,
+        to_fridge_id=to_fridge_id,
+        user_id=current_user.id,
+        session=session,
+    )
+    return get_product_targets(to_fridge_id, session)
 
 
 @router.put("/product-targets", response_model=list[TargetRead])
@@ -453,6 +509,7 @@ def allocate_menu(
                 qty=line.qty,
                 source=line.source,
                 stock_stale=line.stock_stale,
+                default_score=line.default_score,
             )
             for line in lines
         ],

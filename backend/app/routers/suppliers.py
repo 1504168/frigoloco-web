@@ -1,25 +1,38 @@
-"""Supplier CRUD."""
+"""Supplier CRUD plus yearly agreements and the weekly delivery schedule."""
 
 from __future__ import annotations
 
+import datetime
+
 from fastapi import Depends, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models.master import Product, Supplier
+from app.models.master import (
+    Product,
+    Supplier,
+    SupplierAgreement,
+    SupplierDeliverySchedule,
+)
 from app.schemas.masters import (
     Page,
     PaginationParams,
+    SupplierAgreementCreate,
+    SupplierAgreementRead,
     SupplierCategoryLink,
     SupplierCreate,
+    SupplierDeliveryScheduleItem,
+    SupplierDeliveryScheduleReplace,
+    SupplierNextDeliveryRead,
     SupplierRead,
     SupplierUpdate,
     api_error,
     make_router,
     pagination,
 )
+from app.services.supplier_schedule_service import LOCAL_TIMEZONE, find_next_supplier_delivery
 
 router = make_router(prefix="/api/v1/suppliers", tags=["suppliers"])
 
@@ -132,3 +145,112 @@ def delete_supplier(supplier_id: int, session: Session = Depends(get_db)) -> Non
         raise api_error(
             409, "conflict", "Supplier is referenced and cannot be deleted", {"id": supplier_id}
         ) from exc
+
+
+@router.get("/{supplier_id}/agreements", response_model=list[SupplierAgreementRead])
+def list_supplier_agreements(
+    supplier_id: int, session: Session = Depends(get_db)
+) -> list[SupplierAgreementRead]:
+    _get_or_404(supplier_id, session)
+    agreements = session.execute(
+        select(SupplierAgreement)
+        .where(SupplierAgreement.supplier_id == supplier_id)
+        .order_by(SupplierAgreement.year.desc(), SupplierAgreement.id)
+    ).scalars()
+    return [SupplierAgreementRead.model_validate(agreement) for agreement in agreements]
+
+
+@router.post(
+    "/{supplier_id}/agreements",
+    response_model=SupplierAgreementRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_supplier_agreement(
+    supplier_id: int,
+    body: SupplierAgreementCreate,
+    session: Session = Depends(get_db),
+) -> SupplierAgreementRead:
+    _get_or_404(supplier_id, session)
+    agreement = SupplierAgreement(supplier_id=supplier_id, **body.model_dump())
+    session.add(agreement)
+    session.commit()
+    session.refresh(agreement)
+    return SupplierAgreementRead.model_validate(agreement)
+
+
+@router.delete(
+    "/{supplier_id}/agreements/{agreement_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_supplier_agreement(
+    supplier_id: int,
+    agreement_id: int,
+    session: Session = Depends(get_db),
+) -> None:
+    agreement = session.get(SupplierAgreement, agreement_id)
+    if agreement is None or agreement.supplier_id != supplier_id:
+        raise api_error(404, "not_found", "Agreement not found", {"id": agreement_id})
+    session.delete(agreement)
+    session.commit()
+
+
+@router.get(
+    "/{supplier_id}/delivery-schedule",
+    response_model=list[SupplierDeliveryScheduleItem],
+)
+def get_supplier_delivery_schedule(
+    supplier_id: int, session: Session = Depends(get_db)
+) -> list[SupplierDeliveryScheduleItem]:
+    _get_or_404(supplier_id, session)
+    schedules = session.execute(
+        select(SupplierDeliverySchedule)
+        .where(SupplierDeliverySchedule.supplier_id == supplier_id)
+        .order_by(SupplierDeliverySchedule.delivery_weekday)
+    ).scalars()
+    return [SupplierDeliveryScheduleItem.model_validate(schedule) for schedule in schedules]
+
+
+@router.put(
+    "/{supplier_id}/delivery-schedule",
+    response_model=list[SupplierDeliveryScheduleItem],
+)
+def replace_supplier_delivery_schedule(
+    supplier_id: int,
+    body: SupplierDeliveryScheduleReplace,
+    session: Session = Depends(get_db),
+) -> list[SupplierDeliveryScheduleItem]:
+    """Replace the whole weekly schedule; one row per delivery weekday."""
+    _get_or_404(supplier_id, session)
+    delivery_weekdays = [item.delivery_weekday for item in body.items]
+    if len(delivery_weekdays) != len(set(delivery_weekdays)):
+        raise api_error(422, "validation_error", "Duplicate delivery weekday", None)
+    session.execute(
+        delete(SupplierDeliverySchedule).where(
+            SupplierDeliverySchedule.supplier_id == supplier_id
+        )
+    )
+    for item in body.items:
+        session.add(SupplierDeliverySchedule(supplier_id=supplier_id, **item.model_dump()))
+    session.commit()
+    return get_supplier_delivery_schedule(supplier_id, session)
+
+
+@router.get("/{supplier_id}/next-delivery", response_model=SupplierNextDeliveryRead | None)
+def get_supplier_next_delivery(
+    supplier_id: int,
+    ordered_at: datetime.datetime | None = Query(
+        default=None,
+        description="When the order is placed (default now). Naive = Europe/Brussels time.",
+    ),
+    session: Session = Depends(get_db),
+) -> SupplierNextDeliveryRead | None:
+    """Next delivery date and its order deadline; null when the supplier has no schedule."""
+    _get_or_404(supplier_id, session)
+    order_moment = ordered_at or datetime.datetime.now(LOCAL_TIMEZONE)
+    next_delivery = find_next_supplier_delivery(session, supplier_id, order_moment)
+    if next_delivery is None:
+        return None
+    return SupplierNextDeliveryRead(
+        delivery_date=next_delivery.delivery_date,
+        order_deadline=next_delivery.order_deadline,
+    )

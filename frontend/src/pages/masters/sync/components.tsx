@@ -9,9 +9,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { StatusChip } from '@/components/shared/StatusChip'
-import { toast } from '@/components/ui/sonner'
+import { toast } from '@/components/ui/toast'
 import { api, ApiError } from '@/lib/api'
-import { formatDateTime } from '@/lib/format'
+import { formatDateTime12Hour } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useHuskySync, useLatestSyncRun } from './hooks'
 import type { EffectiveStatus, LocalStatus, StatusFilter, SyncFeed, SyncRun } from './types'
@@ -148,5 +148,5 @@ export function StatusFilterSelect({ value, onChange, className }: StatusFilterS
 function lastSyncedText(isLoading: boolean, run: SyncRun | null | undefined): string {
   if (isLoading) return 'Loading last sync…'
   if (!run) return 'Never synced'
-  return `Last synced ${formatDateTime(run.finished_at ?? run.started_at)} · ${run.status}`
+  return `Last synced ${formatDateTime12Hour(run.finished_at ?? run.started_at)} · ${run.status}`
 }

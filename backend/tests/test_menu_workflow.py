@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from app.services.menu_service import _category_products_by_score
+from app.services.menu_service import _active_products_by_category
 from tests.test_workflow_pipeline import (
     DAY_NAME,
     DELIVERY_WEEKDAY,
@@ -134,7 +134,7 @@ def test_forecast_split_skips_products_disabled_locally(ctx):  # noqa: F811
     )
     session.flush()
 
-    products_by_category, _scores = _category_products_by_score(session)
+    products_by_category = _active_products_by_category(session)
 
     assert active_product in products_by_category[category_id]
     assert disabled_product not in products_by_category[category_id]

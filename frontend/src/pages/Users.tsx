@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { toast } from '@/components/ui/sonner'
+import { toast } from '@/components/ui/toast'
 import { api, ApiError, type Page } from '@/lib/api'
 import { ROLE_LABELS, USER_ROLES, type UserRole } from '@/hooks/useCurrentUser'
 import { Dialog } from '@/pages/supply/components/Dialog'

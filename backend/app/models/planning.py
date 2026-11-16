@@ -1,5 +1,5 @@
 """Menus, forecasts, scores - SECTION 4 of schema.sql. Mirrors: weekly_menus,
-menu_products, forecast_runs, forecast_results, product_scores,
+menu_products, forecast_runs, forecast_results, bank_holidays, product_scores,
 fridge_product_scores.
 """
 
@@ -67,7 +67,10 @@ class WeeklyMenu(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
 
@@ -192,6 +195,19 @@ class ForecastResult(Base):
     holiday_days: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
     )
+    # Before the in-fridge stock deduction, and the units deducted (migration 0024).
+    # NULL on runs computed before 0024.
+    gross_qty: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    residual_units: Mapped[int | None] = mapped_column(Integer)
+
+
+class BankHoliday(Base):
+    """A public holiday: not a selling day for the forecast (migration 0024)."""
+
+    __tablename__ = "bank_holidays"
+
+    holiday_date: Mapped[datetime.date] = mapped_column(Date, primary_key=True)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class ProductScore(Base):

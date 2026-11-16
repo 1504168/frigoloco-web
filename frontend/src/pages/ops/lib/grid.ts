@@ -62,7 +62,7 @@ const EMPTY_GRID: GridLike = {
   cells: [],
 }
 
-function cellKey(fridgeId: number, productId: number): string {
+export function cellKey(fridgeId: number, productId: number): string {
   return `${fridgeId}:${productId}`
 }
 
@@ -155,6 +155,10 @@ export interface PlanningGridState {
     options?: MergeCategoryOptions,
   ) => void
   addProduct: (product: Product) => void
+  /** Drop a product column and its quantities (e.g. its supplier cannot deliver). */
+  removeProduct: (productId: number) => void
+  /** Show exactly these product columns (a cloned week menu); kept products keep quantities. */
+  replaceProducts: (categories: GridCategory[]) => void
   setCell: (fridgeId: number, productId: number, rawValue: string) => void
   toLines: (options?: ToLinesOptions) => GridLineItem[]
   /** Product ids currently grouped under a category (empty set if none). */
@@ -242,6 +246,14 @@ export function usePlanningGridState(): PlanningGridState {
     [categoriesQuery.data],
   )
 
+  const removeProduct = React.useCallback((productId: number) => {
+    setContent((prev) => withoutProduct(prev, productId))
+  }, [])
+
+  const replaceProducts = React.useCallback((categories: GridCategory[]) => {
+    setContent((prev) => withProductColumns(prev, categories))
+  }, [])
+
   const setCell = React.useCallback((fridgeId: number, productId: number, rawValue: string) => {
     const key = cellKey(fridgeId, productId)
     const parsed = Math.max(0, Math.floor(Number(rawValue) || 0))
@@ -318,6 +330,8 @@ export function usePlanningGridState(): PlanningGridState {
     reset,
     mergeCategoryFromGrid,
     addProduct,
+    removeProduct,
+    replaceProducts,
     setCell,
     toLines,
     categoryProductIds,
@@ -377,6 +391,44 @@ function mergeCategory(
     editedKeys,
     isDirty: !isClean,
   }
+}
+
+function withoutProduct(current: GridContent, productId: number): GridContent {
+  const categoryEntries = new Map<number, CategoryEntry>()
+  for (const [categoryId, entry] of current.categoryEntries) {
+    const remainingProductIds = entry.product_ids.filter((id) => id !== productId)
+    if (remainingProductIds.length === 0) continue
+    categoryEntries.set(categoryId, { ...entry, product_ids: remainingProductIds })
+  }
+  return withoutHiddenProductCells({ ...current, categoryEntries, isDirty: true })
+}
+
+function withProductColumns(current: GridContent, categories: GridCategory[]): GridContent {
+  const categoryEntries = new Map<number, CategoryEntry>()
+  for (const category of categories) {
+    categoryEntries.set(category.category_id, {
+      category_name: category.category_name,
+      product_ids: [...category.product_ids],
+    })
+  }
+  return withoutHiddenProductCells({ ...current, categoryEntries, isDirty: true })
+}
+
+/** Drops the quantities and edit marks of products that no longer have a column. */
+function withoutHiddenProductCells(content: GridContent): GridContent {
+  const shownProductIds = new Set<number>()
+  for (const entry of content.categoryEntries.values()) {
+    for (const productId of entry.product_ids) shownProductIds.add(productId)
+  }
+  const draft = new Map<string, number>()
+  for (const [key, qty] of content.draft) {
+    if (shownProductIds.has(productIdOfKey(key))) draft.set(key, qty)
+  }
+  const editedKeys = new Set<string>()
+  for (const key of content.editedKeys) {
+    if (shownProductIds.has(productIdOfKey(key))) editedKeys.add(key)
+  }
+  return { ...content, draft, editedKeys }
 }
 
 function productIdOfKey(key: string): number {

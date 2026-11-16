@@ -1,7 +1,11 @@
-import { api, API_BASE_URL } from '@/lib/api'
-import { getToken } from '@/lib/auth'
+import { api, downloadFile } from '@/lib/api'
 import type { WeekDayKey } from '@/pages/ops/lib/pipelineKey'
-import type { DispatchMatrix, DispatchRead, GridLineItem } from '@/pages/ops/lib/types'
+import type {
+  DispatchMatrix,
+  DispatchRead,
+  GridLineItem,
+  WarehouseStockCut,
+} from '@/pages/ops/lib/types'
 
 /** GET /dispatches/{id}/matrix: the grid plus the cost at snapshot prices once dispatched. */
 export interface SavedDispatchMatrix extends DispatchMatrix {
@@ -16,7 +20,26 @@ export interface SavedDispatch {
 /** Query key prefix of every cached dispatch read; invalidate it after a write. */
 export const DISPATCH_QUERY_KEY = ['ops', 'dispatch'] as const
 
-type QuantityLine = Pick<GridLineItem, 'fridge_id' | 'product_id' | 'qty'>
+export type QuantityLine = Pick<GridLineItem, 'fridge_id' | 'product_id' | 'qty'>
+
+/** A fit-to-stock cut; `in_stock` includes `on_order` units when orders were included. */
+export interface DispatchStockCut extends WarehouseStockCut {
+  on_order: number
+}
+
+/** Units of a product that only fit because a purchase order is due in time. */
+export interface ProductOrderUse {
+  product_id: number
+  units_from_orders: number
+}
+
+/** POST /dispatches/fit-to-stock response (schema: StockFitOut). */
+export interface StockFit {
+  /** The request lines in the same order, cut to the warehouse stock. */
+  lines: QuantityLine[]
+  cuts: DispatchStockCut[]
+  order_uses: ProductOrderUse[]
+}
 
 /** Load the saved dispatch for a key with its matrix; throws ApiError 404 when none. */
 export async function fetchSavedDispatch(
@@ -43,23 +66,51 @@ export function quantitiesSignature(lines: QuantityLine[]): string {
 }
 
 /** Download the dispatch Excel file through the browser. */
-export async function downloadDispatchExcel(dispatch: DispatchRead): Promise<void> {
-  const headers: Record<string, string> = {}
-  const token = getToken()
-  if (token) headers.Authorization = `Bearer ${token}`
-  const response = await fetch(`${API_BASE_URL}/api/v1/dispatches/${dispatch.id}/export.xlsx`, {
-    headers,
+export function downloadDispatchExcel(dispatch: DispatchRead): Promise<void> {
+  return downloadFile(
+    `/api/v1/dispatches/${dispatch.id}/export.xlsx`,
+    `dispatch_${dispatch.delivery_date}.xlsx`,
+  )
+}
+
+/**
+ * Preview of cutting planned lines to the warehouse stock; nothing is saved. With
+ * `includeOrdersDueBy` (a yyyy-mm-dd delivery date) pending orders due by then count too.
+ */
+export function fitLinesToStock(
+  lines: QuantityLine[],
+  includeOrdersDueBy: string | null,
+): Promise<StockFit> {
+  const requestLines = lines.map(({ fridge_id, product_id, qty }) => ({
+    fridge_id,
+    product_id,
+    qty,
+  }))
+  return api.post<StockFit>('/api/v1/dispatches/fit-to-stock', {
+    lines: requestLines,
+    include_orders_due_by: includeOrdersDueBy,
   })
-  if (!response.ok) {
-    throw new Error(`Excel download failed (HTTP ${response.status})`)
-  }
-  const excelFile = await response.blob()
-  const objectUrl = URL.createObjectURL(excelFile)
-  const anchor = document.createElement('a')
-  anchor.href = objectUrl
-  anchor.download = `dispatch_${dispatch.delivery_date}.xlsx`
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(objectUrl)
+}
+
+/** The lines whose quantity the fit lowered, with their new quantity. */
+export function linesCutByStockFit(original: QuantityLine[], stockFit: StockFit): QuantityLine[] {
+  return stockFit.lines.filter((fittedLine, position) => fittedLine.qty !== original[position].qty)
+}
+
+export function totalUnitsCut(cuts: WarehouseStockCut[]): number {
+  return cuts.reduce((total, stockCut) => total + stockCut.cut, 0)
+}
+
+export function totalUnitsFromOrders(orderUses: ProductOrderUse[]): number {
+  return orderUses.reduce((total, orderUse) => total + orderUse.units_from_orders, 0)
+}
+
+/** Toast text when a fit found nothing to cut. */
+export function describeNothingToCut(orderUses: ProductOrderUse[]): string {
+  const unitsFromOrders = totalUnitsFromOrders(orderUses)
+  if (unitsFromOrders === 0) return 'Everything fits the warehouse stock: nothing to cut.'
+  return (
+    `Everything fits, but ${unitsFromOrders} units of ${orderUses.length} products ` +
+    'come from purchase orders that must arrive before you dispatch.'
+  )
 }

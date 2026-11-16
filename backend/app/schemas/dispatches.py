@@ -112,3 +112,74 @@ class ConfirmResult(ApiModel):
     dispatch_id: int
     status: DispatchStatus
     movements_created: int
+
+
+class StockFitLineItem(ApiModel):
+    fridge_id: int
+    product_id: int
+    qty: int = Field(ge=0)
+
+
+class StockFitRequest(ApiModel):
+    lines: list[StockFitLineItem]
+    # "Include ordered": also count pending purchase orders due on or before this date
+    # (the dispatch delivery date). Null counts only the physical warehouse stock.
+    include_orders_due_by: datetime.date | None = None
+
+
+class WarehouseStockCut(ApiModel):
+    """A product the fridges asked more of than the warehouse holds, and how much was cut."""
+
+    product_id: int
+    requested: int
+    in_stock: int
+    cut: int
+    # Part of in_stock still on a purchase order (0 unless orders were included).
+    on_order: int
+
+
+class ProductOrderUseOut(ApiModel):
+    """Units of a product that only fit because a purchase order is due in time."""
+
+    product_id: int
+    units_from_orders: int
+
+
+class StockFitOut(ApiModel):
+    # The request lines in the same order, cut to the warehouse stock.
+    lines: list[StockFitLineItem]
+    cuts: list[WarehouseStockCut]
+    order_uses: list[ProductOrderUseOut]
+
+
+class WarmDishLineOut(ApiModel):
+    delivery_date: datetime.date
+    fridge_id: int
+    friendly_name: str
+    product_id: int
+    product_name: str
+    category_name: str
+    qty: int
+
+
+class ComparedWeekOut(ApiModel):
+    year: int
+    week: int
+    week_start: datetime.date
+
+
+class CategoryWeekUnitsOut(ApiModel):
+    category_id: int
+    category_name: str
+    this_week_units: int
+    previous_week_units: int
+    last_year_units: int
+
+
+class WeekComparisonOut(ApiModel):
+    """Planned or dispatched units per category for a week and the two weeks it is compared to."""
+
+    this_week: ComparedWeekOut
+    previous_week: ComparedWeekOut
+    same_week_last_year: ComparedWeekOut
+    categories: list[CategoryWeekUnitsOut]

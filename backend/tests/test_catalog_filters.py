@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from sqlalchemy import func, select
+
+from app.husky.sync import UNCATEGORISED_NAME, category_display_order
+from app.models.master import Category
 from tests import TEST_ADMIN_USER
 from tests.test_ops_routers import (
     PREFIX,
@@ -12,7 +16,21 @@ from tests.test_ops_routers import (
     ctx,  # noqa: F401 - pytest fixture
 )
 
-UNCATEGORISED = "Uncategorised"
+
+def _ensure_uncategorised_category(session) -> None:
+    """The catalogue sync creates this row lazily, so a fresh database may not have it yet."""
+    existing_id = session.scalar(select(Category.id).where(Category.name == UNCATEGORISED_NAME))
+    if existing_id is not None:
+        return
+    highest_print_order = session.scalar(select(func.max(Category.dispatch_print_order)))
+    session.add(
+        Category(
+            name=UNCATEGORISED_NAME,
+            display_order=category_display_order(UNCATEGORISED_NAME),
+            dispatch_print_order=highest_print_order + 1,
+        )
+    )
+    session.flush()
 
 
 def test_products_filter_by_supplier_and_category_with_supplier_name(ctx):  # noqa: F811
@@ -162,11 +180,12 @@ def test_supplier_category_links_list_each_pair_once(ctx):  # noqa: F811
 
 
 def test_categories_ordered_by_display_order_then_name_uncategorised_last(ctx):  # noqa: F811
+    _ensure_uncategorised_category(ctx.session)
     categories = ctx.client.get(f"{PREFIX}/categories").json()
 
     sort_keys = [(item["display_order"], item["name"]) for item in categories]
     assert sort_keys == sorted(sort_keys)
-    assert categories[-1]["name"] == UNCATEGORISED
+    assert categories[-1]["name"] == UNCATEGORISED_NAME
 
 
 def test_stock_adjustment_records_current_user(ctx):  # noqa: F811

@@ -31,6 +31,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Lets the browser read the server's file name on Excel downloads.
+    expose_headers=["Content-Disposition"],
 )
 
 

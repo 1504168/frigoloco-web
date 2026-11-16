@@ -6,6 +6,9 @@ import type { MenuGrid } from '@/pages/ops/lib/types'
 /** Prefix of every saved-menu query; invalidate it after a save. */
 export const SAVED_MENU_QUERY_KEY = ['ops', 'menu', 'saved'] as const
 
+/** Warehouse stock balances; invalidate it after anything that moves stock. */
+export const STOCK_BALANCES_QUERY_KEY = ['ops', 'menu', 'stock-balances'] as const
+
 const STOCK_BALANCES_STALE_MS = 60_000
 const NOT_FOUND_STATUS = 404
 
@@ -39,7 +42,7 @@ export function useMenuForKey(key: WeekDayKey) {
 /** Warehouse in-stock and on-order units, by product id. */
 export function useMenuStockBalances() {
   return useQuery({
-    queryKey: ['ops', 'menu', 'stock-balances'],
+    queryKey: STOCK_BALANCES_QUERY_KEY,
     queryFn: ({ signal }) =>
       api.get<MenuStockBalance[]>('/api/v1/menus/stock-balances', { signal }),
     staleTime: STOCK_BALANCES_STALE_MS,

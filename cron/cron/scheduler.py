@@ -5,6 +5,7 @@ catalogue in ``architecture/IMPLEMENTATION-BRIEF.md``:
 
     purchases   :05 hourly
     restock     :10 hourly
+    low stock   :20 hourly
     snapshot    */15
     catalogue   02:00 daily
     reviews     02:15 daily
@@ -37,6 +38,7 @@ from app.husky.sync import utcnow
 from cron.catch_up import find_overdue_jobs
 from cron.jobs import (
     catalogue_sync,
+    low_stock_check,
     partition_maintenance,
     recompute_scores,
     reviews_sync,
@@ -94,6 +96,12 @@ def _jobs() -> list[ScheduledJob]:
             id="sync_restock",
             func=sync_restock.run,
             trigger=CronTrigger(minute="10", timezone=tz),
+            interval=HOUR,
+        ),
+        ScheduledJob(
+            id="low_stock_check",
+            func=low_stock_check.run,
+            trigger=CronTrigger(minute="20", timezone=tz),
             interval=HOUR,
         ),
         ScheduledJob(

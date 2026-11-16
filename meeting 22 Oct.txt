@@ -1,0 +1,727 @@
+Impromptu Call - October 22
+VIEW RECORDING - 89 mins (No highlights): https://fathom.video/share/AYBdm1ejNzWBEVDU-ziSopj1rkadavzA
+
+---
+
+0:01 - Speaker 1
+  Ability to add a fridge.-hmm.
+
+0:08 - Ismail Ismail (alliedchb.com)
+  Okay. So basically, we'll add a freeze, like an add freeze button on the forecast. Clicking on that, it will freeze, and then you can select those numbers.  Okay.
+
+0:20 - Speaker 1
+  Okay.
+
+0:22 - Ismail Ismail (alliedchb.com)
+  So this is the forecast. So we have the forecast, we added both the Google SEO, as it is in there, nothing new.
+
+0:26 - Speaker 1
+  Mm-hmm.-hmm.
+
+0:32 - Ismail Ismail (alliedchb.com)
+  And then we have the hidden categories button. This is what I wanted to explain. So you can see, it says, so hidden categories, right?  So what does this particular mean?
+
+0:41 - Speaker 1
+  Cribs and Sanders.
+
+0:41 - Ismail Ismail (alliedchb.com)
+  So we have cold, disease, draftsense, bonds, right? The second one. And if I click on this, then you'll see we have two, and sandwiches.
+  ACTION ITEM: Rename 'Hidden categories' to 'Historic categories' - WATCH: https://fathom.video/share/AYBdm1ejNzWBEVDU-ziSopj1rkadavzA?timestamp=46.9999  So, so, yeah.
+
+0:52 - Speaker 1
+  Ah, yeah. Yeah, I agree.
+
+0:55 - Ismail Ismail (alliedchb.com)
+  So,
+
+0:56 - Speaker 1
+  So categories... So that's kind of a, maybe show hidden categories can be called a show kind of old categories.  Would we use that, the word old categories to, well, the thing is that hidden categories is data that is, of categories that were created before, but that aren't active today.
+
+1:12 - Ismail Ismail (alliedchb.com)
+  Can you explain again?
+
+1:28 - Speaker 1
+  So, so that's, that's what you, so yeah, hidden categories can be a show historic categories or something like that, just a semantic issue.
+
+1:31 - Ismail Ismail (alliedchb.com)
+  Yes. Okay. Yes, sure. Yeah, just the messaging for example. Okay. Okay.
+
+1:52 - Speaker 1
+  Yeah, okay, great. Great, thank you. And so you have that, and then we can look at what was the previous, what was previously, so when I go on the right part of the screen, if go on the right part of the screen, what we had before, which was the categories, which was the first number is what was put in, the second number is what was sold, right?  For the same period, is that it? That's correct? We're talking about the same period. So last year, the last three weeks, from let's say Thursday to Friday, you added 48 cold dishes, but you sold 36.  Because the thing is that we deliver these fridges for different lives. For example, ABB, it's Thursday, I'm going to deliver product, and next time I come, it won't be until Monday.  So I have to do until, but nothing lasts for the weekend. I have to just to kind of sell product for Thursday and Friday.  For Allianz, next time I come is Monday as well, but it's open during the weekend, so I have to put products for Thursday, Friday, Saturday, and Sunday.  So I'm not sure this calculates exactly the same day range, right?
+
+3:15 - Ismail Ismail (alliedchb.com)
+  Uh, it, it, it, yes.
+
+3:18 - Speaker 1
+  Because here you're on Thursday, right? And the calculation is between Thursday, and actually I did tell you that we need to put somewhere whether the clients are active on the weekend, right?  This is something that I told you last time, that we need to say, is the client active on the weekend?  Because otherwise it just calculates until Friday, or it calculates until Sunday, right? So the calculations aren't right. But on this thing, on the...  The cold dish, 48, 36, that's on a whole week, right? It seems more like on a whole week in terms of volume, or even more than that, because 36 cold dishes in one week, that seems a lot for me.
+
+4:04 - Ismail Ismail (alliedchb.com)
+  I think it's not for the one week, it's like three weeks, right? same three weeks last year, same. So it's not for.
+
+4:13 - Speaker 1
+  So it's for three weeks, okay. So it's a three-week thing. Okay, so last year, three weeks, you put 46, so you were up.  It's not really that relevant to compare that, because you're not really comparing the same. Yeah. Well, we can keep it there for now, but I'm not sure we're going to use it much.  I just don't really see the relevance. Now let's... Probably just leave it there for now. It doesn't hurt to be there, but maybe we're going to have to just, yeah, take it out altogether.  It might be less relevant to have this sort of data. It doesn't tell us that much, especially kind of if we're talking about last year.
+
+5:01 - Ismail Ismail (alliedchb.com)
+  OK, OK, OK, so that is.
+
+5:04 - Speaker 1
+  But, okay. Because I've been talking to Claude about how can we really create a smart engine? We have so much data, and I really feel, I was talking to Claude, I was telling him now, I feel like I'm building a 20th century tool with all the AI tools at our disposal.  I feel that we really are building something that is very basic, which is good because this is what Claude can work on, to have good basics.  But, yeah. So let's just move on, and then we'll come back to that. Yep, yep, okay, great, mm-hmm, yeah, okay, okay, great, import from forecast, okay, add a product, okay, this is, when you import from forecast, do you import everything from the forecast, or can you import by category on the forecast, okay, you choose there, you choose there what you want to import from the forecast, so first you choose there, either all categories, or just one or two categories, right, yes, okay, great.
+
+5:46 - Ismail Ismail (alliedchb.com)
+  Okay, so we have the totals at the top, so how many units, what's the price, purchase price, what's the margin, what's the bet, and what's the total, and also we can import from forecast, so we can say, and then we can add, this is per category, yeah, please go ahead, yes, yes, yes.  So the product is basically, It was earlier as it is, it's just that, okay, we have the, the product search is now narrow it down to the category.
+
+6:43 - Speaker 1
+  Mm-hmm,-hmm, cool dude, yeah, great, perfect, okay.
+
+6:47 - Ismail Ismail (alliedchb.com)
+  So like, let's say if we want to select, coldly says, JSPART, so then, and then you can just say, add this, so this is coldly says, JSPART, we selected one.  And let's say, 42 and Salmon, so let's say we see that, so JSPART, this mint and coordinator, and 42 and Salmon salad, right, and then the same, it says we already had the data, so I'm going to overwrite, and let's try this, week 39, I don't think we have any data, so let's try week 42 again, and see if it is saved or not, okay.  So this is, yeah, so it's the, like, you know, import from, Forecast, add a product, if you need to do, and then save it, and then if we want to load a specific week, we can load it from the save date, and then it will show the total spark at the top, the changes we can change manually here, so where is this, jspark, we do not have any product, because we have added this manually, right, so we could have 5, 6, and, because we added this manually, so, yeah, yeah.
+
+7:39 - Speaker 1
+  yeah okay but what oh so we can change we can change manually and you don't have many products on the gspud is what is that oh yeah we add we added afterwards okay but now we can we can import the forecast on cold dish again and it would just kind of mix everything i mean so if you do kind of uh if you if you just select  The Cold Dish category, and you import from Forecasts, well, if it just leave that, you, the idea is to say, okay, don't worry about the thing, so just leave and import just the cold dishes, and now, yeah, it didn't save the fact that it has the other additional product, right?
+
+8:38 - Ismail Ismail (alliedchb.com)
+  Yeah. Okay. So should I save changes this first? Yeah.
+
+9:07 - Speaker 1
+  So the G-Spud isn't there, so you need to add it, save it, save the menu, and then import, right?
+
+9:07 - Ismail Ismail (alliedchb.com)
+  Yes. Because I think it, I think if you want to, like, you know, it's a decision, like, you know, let's say we manually added it, right?
+
+9:17 - Speaker 1
+  So if you want to add G-Spud,
+
+9:25 - Ismail Ismail (alliedchb.com)
+  And then we are importing again from cold access. So should we keep the manual on or just like, you know,  Replace everything, and just import from the cold access. And I think the workflow, it should be like, you know, import first, and then manually add any additional product if needed, right?
+
+9:43 - Speaker 1
+  Sure, but when you create the menu, do you save the menu somewhere before you, when you create it, or you save it there?
+
+9:46 - Ismail Ismail (alliedchb.com)
+  Yes.
+
+9:54 - Speaker 1
+  That is saving the menu for Thursday, October 15, right?
+
+9:58 - Ismail Ismail (alliedchb.com)
+  Right, yes.
+
+9:59 - Speaker 1
+  Okay, so maybe, so if you add a product now, on this menu, so just add whichever product, just same thing, whatever, another supplier, this cheese bud guy, okay, just add it.  And so we have one more product, so we, if we, if we save it now, on the top right, and overwrite, and if, even if it's with zero, and if we import from the forecast, the cold dishes.
+
+10:20 - Ismail Ismail (alliedchb.com)
+  Okay.
+
+10:28 - Speaker 1
+  It will just kind of give in the cold dishes now, and it's not there anymore.
+
+10:35 - Ismail Ismail (alliedchb.com)
+  Yes, yes, the cold issue is not there anymore.
+
+10:35 - Speaker 1
+  see?
+
+10:38 - Ismail Ismail (alliedchb.com)
+  So should we keep this cold issue, even if it is not in the, right now it just replaces everything.
+
+10:39 - Speaker 1
+  So, yeah, but what is it writing on?
+
+10:44 - Ismail Ismail (alliedchb.com)
+  Like, you know, if we import from cold issues, then it will remove all of the data that we have for the cold issues, and then it will replace with the new cold issues.
+
+10:57 - Speaker 1
+  So, I mean, the thing is that, how do I create my menu for Thursday? And let's say I want to add a dish for Thursday.  How do I do that and ask and get the menu from the forecast?
+
+11:13 - Ismail Ismail (alliedchb.com)
+  So I think the way it should be like, you know, we import from forecast for this cold issues, right?  And then this is done. So for, like, you know, from the forecast, So this menu sheet is done, right, this, this part is done, and I had a product that, okay, for cold uses, we need to add additionally this one, right, now I change or whatever I want in this segment for that particular added product, because it's all zero, right, so let's say I change five, and then I save, now once I saved it, I do not, like, if you want to import again from forecast, this will be overwritten, this will be, like, deleted, right, so that's why we see, yeah, yes, but, like, you know, we are still right, based on the rating,
+
+11:28 - Speaker 1
+  Mm-hmm. Yeah. Mm-hmm. Yeah. Okay. How come? Because forecast only has categories, right? Forecast doesn't have the same number, same forecast doesn't have product names.  So you import from categories, and then it should be splitting along the product names. Yeah, so what's the, so why isn't the G-Spot saved on the menu?  How do I save a menu for next week? Say I create a whole new menu for, or I want to kind of, because one thing that I would like to be able to do is create a menu for another week.  So if I want to create a menu for week 44, for example, let's say I want to kind of pre-create the menus for the following weeks, how do I do that?
+
+12:53 - Ismail Ismail (alliedchb.com)
+  Okay, so we need to do the forecasting, right? First, that is the first step, the forecasting, right?
+
+13:00 - Speaker 1
+  It's not possible to do the menu without the forecasting, just say week 45, and on Monday, whatever, and then the good thing would be, is it able to clone the menu from another week?
+
+13:03 - Ismail Ismail (alliedchb.com)
+  Yes, it's possible.
+
+13:19 - Speaker 1
+  In order to use it to recreate something similar for, you see what I'm saying? So let's say for week 45, I'd like to clone menu from week 35 and then just adjust a few categories.  Is that a way, is that, okay, because it would be good to be able to, yeah, you save this, exactly.
+
+13:37 - Ismail Ismail (alliedchb.com)
+  No, right, no, no. Okay, so what's the expected outcome? Is that like, you you save this, right? So we save this, and then, please wait.
+
+13:58 - Speaker 1
+  And then when comes the week 35, you generate the forecast and you import the data from the forecast. Right?
+
+14:10 - Ismail Ismail (alliedchb.com)
+  Right. So then, if we import from the forecast, and for the call, it says, so how this will work?  Because we already have added some product in the menu, so in that case, then for this particular category, it will reduce those product that is already planned, or how do you want it to behave?
+
+14:21 - Speaker 1
+  Yeah, hang on, I'm not sure if I followed you completely on that one, so, would you, yeah, mm-hmm, yeah, mm-hmm, yeah, yeah.
+
+14:38 - Ismail Ismail (alliedchb.com)
+  Okay, let me give you an example. Okay, so for example, let's say we planned this week 45, so we do not have the forecasting for week 45, so we planned it that, okay, for cold issues, GSPRT supplier, mint and coordinator, this will be, total quantity is 9, right?  So we planned that, okay, 9 quantity will be for this one, right, 9 quantity will be for this one, and then we created the forecast for this cold issues category for week 45, and when we select cold issues, and then we say,  Let's input, and let's say in the forecast, we have 20 quantity for cold dishes, right?
+
+15:15 - Speaker 1
+  From the forecast, yeah.
+
+15:21 - Ismail Ismail (alliedchb.com)
+  So 20 quantity, we already have planned that, okay, mint and coordinator will be nine, and this potato and salmon, that will be nine, so that is 18.  So we only left with two additional quantity that we need for this cold dishes. So in that case, only plan for the two, like, you know, remaining quantity from different products, or how this will behave, like, you we already have planned this for cold dishes, right?  So how should it behave, right?
+
+15:50 - Speaker 1
+  I think the way we do it now is we say, okay, we need 20 for the thing, and then it should split like 9-11 or 10-10 or 8-12.
+
+15:54 - Ismail Ismail (alliedchb.com)
+  Yes.
+
+16:00 - Speaker 1
+  It's got a, it should kind of, but the way it works now, we say we need 20, and now because.  There are two things that are important. One thing is get the data from the forecast, right?
+
+16:24 - Ismail Ismail (alliedchb.com)
+  Yes.
+
+16:24 - Speaker 1
+  So if we say, okay, the forecast was 20 cold dishes, that's the data. But we did discuss looking at what's actually already present in the fridges so that...  If you look like what's in the fridges on Thursday, so it's going to be, let's say, it's Wednesday, I'm going to look for the Thursday, I'm going to look at how to refill cold dishes, and it's going to tell me you need to put in 20 cold dishes, that's fine.  But I'm going to see that in the fridges, there are already six potato salmon salads. Because they sell less well.  So in the 20 cold dishes, I need to take into account that there are already six potato salad, so that I don't overweight the potato salad when I reorder something.  You see?
+
+17:22 - Ismail Ismail (alliedchb.com)
+  Yeah.
+
+17:22 - Speaker 1
+  This is one thing I think we discussed in the previous thing, which is kind of a look at what's currently in the fridge, so that when you assign it, you, and we discuss different ways of doing this, either you calculate what's already being sold, so you look at the sales, and you see, okay, well, we have sold six tomato salmon salads, so that means that these are the ones we should replenish, or you look at what's currently in the fridge with the API, an API call saying, oh, well, there are still three potato salmon salads, so we sold six, so in the replenishment, it should be taken into account.
+
+18:08 - Ismail Ismail (alliedchb.com)
+  Yes, but that is different than what, like, you know, this one, right? Like, you know, this one is what we are, yeah, what we are planning for the next, like, you know, next week, main or whatever it is, right?
+
+18:14 - Speaker 1
+  Okay.
+
+18:21 - Ismail Ismail (alliedchb.com)
+  So it's not.
+
+18:21 - Speaker 1
+  Okay. So if it's for next week menu and everything is empty, I mean, so if it's for next week menu, so for a Monday, it should restart from zero.  It's for next week menu. And your question is, should the forecast overwrite some manual things that you put in the menu?  Is that what your question was? Yeah, if you import from the forecast, you should be able to overwrite what's on the menu.  I think if you decide to take data from the forecast, it should overwrite what's on the menu manually, because otherwise there's no way to get the data from the forecast, right?
+
+19:02 - Ismail Ismail (alliedchb.com)
+  Yeah, that was what it was doing, like, whenever we select that, okay, let's say we added a product on this cold dishes, like, let's say this potato and salmon salad, but it's not on the forecast.
+
+19:14 - Speaker 1
+  Mm-hmm, yeah, yeah, mm-hmm, okay.
+
+19:15 - Ismail Ismail (alliedchb.com)
+  I mean, it's not, in the forecast, we have the category, right, and it, on the category and product rating, it picked up this first four, right, it didn't pick the potato and salmon salad, and we do not have any quantity here as well.  After we added, so when we import from the forecast, it will override the GS part, because, based on the product rating, will not be in this, in this segment, where we have that particular product, right, so, like, you know, if we import from forecast again, then it will, okay.
+
+19:51 - Speaker 1
+  Can I just share, let me just share my screen to show you what it's, what it's doing right now, I think.  We should be able to have something similar. Let me just get this thing here. Okay, so let's say here I have these salads here.  Okay, you see that?
+
+20:17 - Ismail Ismail (alliedchb.com)
+  Okay.
+
+20:18 - Speaker 1
+  And I have a forecast here. This is the forecast. And I run it, whatever, for Thursday. And I'm like, okay, run it, and then import from the cold dishes, you know, update the menu, and you're going to get the number from what was there.  So there are altogether 31 salads. Now, if I decide to add another salad, because I feel that I need another one, and I import it again.  It's going to keep the 31 salads, but it's just going to split them differently with the new product. You see what it does?
+
+21:10 - Ismail Ismail (alliedchb.com)
+  No, can you show me again, like, you know, so like, let's say, okay, yes.
+
+21:13 - Speaker 1
+  Okay, so let's say this is what we had previously without the... So let me just import. So now I import from the forecast, okay?  I import the cold dish from the forecast. I import the cold dish from the forecast, and this is the forecast it gives me.  Hang on, just... And together I have 31 salads, right? You see the quantities here. And let's say that I want to add this G-spot salad now.  I go there, I put this G-spot salad, the potato and salmon salad, this famous one. Even if I put a number here...  After, if I want to import again from the forecast, the forecast hasn't changed because the forecast tells me, it's going to overwrite what I had written manually, and it makes sense, right?
+
+22:05 - Ismail Ismail (alliedchb.com)
+  Yes, right, yes, okay.
+
+22:05 - Speaker 1
+  Because my forecast tells me, I need 31 salads. Because what happens in what I've seen is that, I'm like this, and I import it, and then whatever number it gives me, and then when I want to add a new product or a new supplier, and I want to import it again, the supplier disappears, right?  That's what it seems. So, my question is, when do you save the lines of the menu? That was the, let me just stop sharing here.  I'm not sure if I've made it a bit clearer or not.
+
+22:50 - Ismail Ismail (alliedchb.com)
+  So the problem, let me think through, okay, I'm just, so the forecast is on the category level, we do not have the product level forecasting, right, then in the menu we need on the product level that, okay, we need, like, let's say, cold dishes, we need 20 quantity, and under the cold dishes, we have maybe 50 different products, and out of this 50 different product, we need to distribute this 31 product, right, and based on operating, we calculate that, okay, what should be the product for that particular demand, right, so when we are importing from the forecast to the menu, it's basically doing the calculation again, right, so, like, let's say, it sees that, okay, we need product A, product B, product C, and it knows that, okay, who is the supplier for this product A, who is the supplier for product B, and C, right.
+
+22:56 - Speaker 1
+  yeah exactly mm-hmm mm-hmm yeah mm-hmm yeah yeah sure mm-hmm yeah mm-hmm
+
+23:48 - Ismail Ismail (alliedchb.com)
+  And so let's say we added manually something, like let's say a supplier D, we added a product for supplier D, like we said for this supplier we need 10 quantities, right?
+
+23:54 - Speaker 1
+  Mm-hmm. Yep.
+
+23:59 - Ismail Ismail (alliedchb.com)
+  So when we click on the input from forecast again, what it is doing, it is doing the calculation again.  So when it will do the calculation again, it will have the same exact calculation.
+
+24:07 - Speaker 1
+  Mm-hmm.
+
+24:10 - Ismail Ismail (alliedchb.com)
+  So it will see that, okay, we need product A, product B, and product C. It will not find the product D that we have added manually.  So when it's doing the overwriting, what it is doing, it is deleting everything that we had in the past.  So we had product A, product B, product C, and product D. D was added manually. Now it's removed.
+
+24:29 - Speaker 1
+  Mm-hmm.
+
+24:30 - Ismail Ismail (alliedchb.com)
+  Import the new product category, that is product A, B, and C. So now we are losing this manually added product, because when we are clicking the import from forecast, it's basically doing the calculation again, and it's removed.  Okay, so that's how it's overwriting right now. Now, like, you know, it could be a possibility that, okay, if we manually added something, then we want to keep it.
+
+24:53 - Speaker 1
+  Yeah, because it could also be that some supplier did not deliver a specific salad to me, so I need to re-split the salad among the remaining salad that remains, or I need to, some salad is not available anymore at the supplier, and so I need to delete also one product manually.
+
+24:56 - Ismail Ismail (alliedchb.com)
+  So in that case, I can do that, that, okay, when you are overwriting, then check that, okay, if we have manually added something, and if you have manually added something, take that into considerations.  Now, the consideration, yes, so in that case, I think, like, you know, right now, it's auto-select the product, right?
+
+25:30 - Speaker 1
+  I could also have to do that.
+
+25:38 - Ismail Ismail (alliedchb.com)
+  So it's just that, okay, we need to have Some say that, okay, when you select the product, take these into considerations, right?  That's why we are trying to say that, okay, we want to include this product, this product, or we want to exclude this product and this product, right?
+
+25:47 - Speaker 1
+  Mm-hmm, yeah.
+
+25:56 - Ismail Ismail (alliedchb.com)
+  Because this product is not available. Okay, so this is something different, right? Because right now it's doing the calculation.  And every time we do the calculation, it will say, see that every, like, you know, it will spit out the same result, like, you know, product A, product B, and product C, because it's based on the number.
+
+26:17 - Speaker 1
+  Okay, but product A, B, and C were saved somewhere at some point as a menu, right?
+
+26:22 - Ismail Ismail (alliedchb.com)
+  Yes, yes, it was. So we saved A, B, C, and manually added D. So, like, let's say we saved A, B, C, and then if we import again from the forecast, then it will override.  But let's see if we do not import from again. like an import again from the forecast then we can manually adjust this product right like you know so my my thinking was that okay first of all we do the forecasting and then once we have the forecasting we import it from the forecast to the menu and once we have the menu then we change whatever we want we add yeah we we can do that it's just okay right now it's not
+
+26:55 - Speaker 1
+  Yeah, eventually, yeah, we could eventually do that. But we just need to make sure that when we create a menu, yeah, well, it's easy to create a different menu for each week and that we're not stuck with a product ABC.  So, so product ABC can be product DEF for the next week. Just to, just once it's saved as a weekly product, it's hard to over, once it's saved as a weekly menu, you can't really overwrite the weekly menu.  How do you overwrite the weekly menu if you need to change it?
+
+27:36 - Ismail Ismail (alliedchb.com)
+  Okay, I'll add this particular option, so right now it's hardcore, yes, so, okay, let me try, let's try one week, okay, so let's leave this, I'm going to try week, week 40, okay, so we run, this is my understanding, okay, so let's see, week 41, week 41, that's three week, week 41, Monday, right?
+
+27:39 - Speaker 1
+  But let's, before you add any options, I want to make sure we all really understand what's happening here. I don't want to have you work on something and then go back the other way.  So maybe we can create a new menu so we can see how it works. So let's go on a Monday, for example, because we run for Monday.  Mondays is really when you create menus, okay? Okay, create menus for the Monday. Let's say week 41 is... that in the future?  Where are we today? Let's just say I want to create menu for week 45. Today is week 43, I think.  Let's just say I want to create menu for next week. Okay, menu for next week, that's fine. Week 44.
+
+28:49 - Ismail Ismail (alliedchb.com)
+  Monday, say Roundup, okay, so Cold Leases is in total 53 Cold Leases, right, for different freezes, so Save Changes, so Week 44 Forecasting is saved right now, so if we go into the, and let's say we want to do for Week 44, Monday, let's say Cold Leases, if we want to import Park Category, so then Cold Leases, right, and then it's have the, okay, I understand the problem that
+
+28:50 - Speaker 1
+  Monday, okay.
+
+29:30 - Ismail Ismail (alliedchb.com)
+  It's hard-coded, sorry, it's not easily available to change the supplier and product right now, right, that this is, this, no, this, this week 44, like, you we created the forecast for week 44, right, so, so week 44, we created the menu, sorry, we created the forecast, found it up, we saved it, and then in the menu, we selected week 44, Monday, 26 October, and then we say that, okay, and then this forecast, it's basically importing from the forecast, so when I say import from forecast, it will pull the data from the forecast for this,
+
+29:39 - Speaker 1
+  So hang on, let's go again, because you don't know what I'm going to sell on the week of the 26th.  Where did you get the menu from? So we need to create the menu from scratch. How can I create a menu from scratch?  I agree, but how... When did you choose which cold dish you were going to put?
+
+30:32 - Ismail Ismail (alliedchb.com)
+  You mean this?
+
+30:33 - Speaker 1
+  Every week, yeah, every week I create a different menu.
+
+30:38 - Ismail Ismail (alliedchb.com)
+  Oh, okay, I understand.
+
+30:39 - Speaker 1
+  So for week 43, maybe I was selling Caesar Salad, Farfall Boursin, and Fresh Pesto, but for week 45, my cold dishes are completely different.  So I create a whole new menu for the week, and I import my forecast for this whole new menu, you see?
+
+30:58 - Ismail Ismail (alliedchb.com)
+  Oh, okay, okay, understood. Okay, okay.
+
+31:01 - Speaker 1
+  So every week my menu changes. So every week I need to be able to create a new menu, because otherwise my users would be really fed up to eat the same salad every week.  So sometimes some products stay, for example, this Caesar Salad, maybe everybody likes it and it stays on every week, but every week I create a new menu.  So I create a new menu for each week, and each week, I mean, there are some things that change, others that don't.  The drinks and the snacks are the same, generally, but sometimes I add, and the cold dish, the warm dish, are generally very different.
+
+31:42 - Ismail Ismail (alliedchb.com)
+  Okay, so, okay, so.
+
+31:42 - Speaker 1
+  So each week, okay, so every week I go, and what I would need to be able to do is to create a menu for a week, and save it as saying, this is going to be the menu of week 34, this is going to be, or 44, this is going to be the menu of week 45, this is going to be the menu of week 46, and each week, I can create a different menu, and once I've created the menu, I've saved the menu for that week, I can upload whatever data from the forecast I need, you see?  So the menu is like some sort of blank sheet that I need to be able to adjust. From week to week, and then on that, I project the forecast.
+
+32:30 - Ismail Ismail (alliedchb.com)
+  Okay, okay, I understand. So basically, says that, okay, by when you are saying that we save the menu every week differently, that is means like, you know, for this whole disease, you select different supplier, different products, and then you save it.
+
+32:44 - Speaker 1
+  Yeah, yeah, yeah, yeah.
+
+32:44 - Ismail Ismail (alliedchb.com)
+  And then when you, from the input from forecast, it's basically, it's like, you know, it will basically take that, okay, for cold disease, we have 53, and then it will distribute to this selected products, for this supplier, right?
+  ACTION ITEM: Implement weekly menu save/clone; then Import from Forecast preserves manual products - WATCH: https://fathom.video/share/AYBdm1ejNzWBEVDU-ziSopj1rkadavzA?timestamp=1981.9999  Okay, okay, understood it. Okay, right now, it just do the calculation based on the product rating, and then it select the product.  So yeah, this is, this is not good. Okay, I'll change this.
+
+33:13 - Speaker 1
+  No, no, this is not good. This is not good. This is really something, and it's something that we want to be able to  And to be able to change, they'd say, okay, this is the menu for week 44, this is what I've decided to do, and then for some reason it changes because a supplier has a product that it needs to change, I need to be able to change it again.  So this is kind of something that's really important, is to be able to say, okay, menu per week is something you save.  Okay, okay.
+
+33:42 - Ismail Ismail (alliedchb.com)
+  Okay, understood. Okay, I'll change this. Okay, so I'll change this that, okay, we can add product, can delete product, and you can select the product, save the menu, and then click on the, you know, import from forecast, and it will import for that particular category.  Now I understand. Okay, great. Thank you.
+
+34:01 - Speaker 1
+  And the idea is that the menu should be saved per week. So if you're on week 44, whether it's Monday, Tuesday, Thursday, Wednesday, or Thursday, the same menu pops up because this is the menu for that week.  And then when you're going to be on week 45. Same thing. But week 45, maybe what you do is you get the menu from week 44, you clone it, you adjust it, and then you save it as menu from week 45.  see?
+
+34:29 - Ismail Ismail (alliedchb.com)
+  Okay, okay, understood. And so, yes, yes.
+
+34:32 - Speaker 1
+  do you want me to show you how I do it on the Excel? Just to be able to up, up, up, up, up, window.  we go. That's why this is an issue now, because I can only save the menu from one week. So this is the menu from this week.  When I'm going to do the menu from next week, it's going to be a bit of a pain in the , because there's no save and get back.  So I'm just going to say, okay, next week we keep the Caesar salad. Now I'm going to put this product, and I'm going to put that product.  Those are the same. The same as previously, so this one, and so, and I'm gonna adjust every single line, I'm just gonna have snacks, generally they're gonna be staying the same, but for example, snacks right now, our suppliers have been really unable to deliver some products, so the snacks are out, snacks are out, and so there's no, no, this one I can add, because this one's back on, in stock.  Okay, so, so, so this is, this is the way I do it, so next week, maybe I'll just get the granola apple, know, there's been people asking for the granola apple, or something like that, and the soup is a different soup, well, we'll just keep it as soup, we don't, we don't give it a different name, so that, that's how, that's how we do it, we just kind of recreate.  Just kind of undo whatever I've done. So the idea is that, yeah, we can create a new menu every week.  And so, for example, we have new suppliers, we refresh the whole thing so that the new suppliers come up, and we can add the new suppliers.
+
+36:37 - Ismail Ismail (alliedchb.com)
+  Okay, understood, understood. I'll change this. This is a major short block. Okay, I'll change this. Okay, but let's move ahead.
+
+36:50 - Speaker 1
+  Sure, let's move.
+
+36:59 - Ismail Ismail (alliedchb.com)
+  Okay, I'll change this for cost menu. Okay. Product reading.
+
+37:04 - Speaker 1
+  Okay.
+
+37:06 - Ismail Ismail (alliedchb.com)
+  We have the search. If you want to see for a specific category, specific supplier, a specific product, and this is the refresh button.
+
+37:09 - Speaker 1
+  Yeah, okay, mm-hmm, mm-hmm, yeah, no, go ahead, I'm listening.
+
+37:19 - Ismail Ismail (alliedchb.com)
+  Here we have a couple of questions, maybe we can ask later at the end of the call. So this is for refreshing, for product rating, it says 405 product scores for the last 365.  And this is just for, you know, looking into the, if you want to narrow it down, okay, based on different supplier, different category, different product.  Dispatch, yeah, please go ahead. Okay, so the dispatch is going to come from the menu. So we do not have anything for this one, 42, no, 39, do you have something?  That's weird. Let me see. Okay. We do not have anything. Let me save something. From forecast, nothing in forecast 44.  Select. Okay. So we have this. Let's save this. Dispatch. It's going to be from menu. So this is, let me know if I have any wrong understanding here as well.  So the dispatch, it will come from the menu, right?
+
+38:39 - Speaker 1
+  Mm-hmm, yeah, yeah, right.
+
+38:41 - Ismail Ismail (alliedchb.com)
+  As it is for, yeah.
+
+38:44 - Speaker 1
+  Mm-hmm, yeah.
+
+38:44 - Ismail Ismail (alliedchb.com)
+  So for the week and for the selected.
+
+38:46 - Speaker 1
+  Mm-hmm, okay.
+
+38:48 - Ismail Ismail (alliedchb.com)
+  Okay. It's, sorry. It's, it's basically, we have the save button. we can save this particular dispatch. Dispatch save land.  Stock is not reduced by saving. Only create dispatch mobista. And, and. And if we change it, let's see, change it back to 44, and it's loading from, yes, yeah, you can force it, so, okay, and then, yeah, and then, so the schedule that we need to deliver to this particular freeze on Monday, Thursday, or Friday, right, like, you know, we have this freeze settings, so, by, for that, we have 17 freeze, for which we are scheduled to deliver, like, no, it is stock in for this particular Monday, and, out of that, only 14 freeze has something to dispatch, okay, like, know, some product.
+
+39:09 - Speaker 1
+  It's still there, yeah, we don't even have to load it, right, if it exists it seems to pop up straight, okay, yeah, okay, okay, dispatch, create dispatch, what is it, scheduled for 17 fridge, which is so scheduled, yeah, okay, mm-hmm, okay, okay.
+
+39:59 - Ismail Ismail (alliedchb.com)
+  And Total Units 487, Total Cost is this, Dispatch, it will just say that, okay, create the individual dispatch and create dispatch.
+
+40:00 - Speaker 1
+  All right. Thank you. Thank you.
+
+40:10 - Ismail Ismail (alliedchb.com)
+  Right now, the, okay, so this is for if it is below the stock, the current stock that we have, so block it that, we do not have any stock for these products to dispatch.  So that's why we need to create the purchase order first, and then create the individual dispatch if it is low on the stock, okay.  And right now, this, even if it is allowed, right now it doesn't send the email automatically, I'll discuss this later on.  So we need an email applications, and for that we need Microsoft Graph application, so like, you I need your Azure connections, a string.  I'll create a Microsoft Graph application, and in that way, I can send emails from a specific email address using the graph, okay, and in that way, I'll be able to send the email.
+
+41:00 - Speaker 1
+  Okay. Okay.
+
+41:07 - Ismail Ismail (alliedchb.com)
+  So right now, it just, like, you even if it allowed, then it will just create and then download it in the computer, okay, like, you know, download it locally.
+  ACTION ITEM: Add In stock/On order lines to Menu and Dispatch - WATCH: https://fathom.video/share/AYBdm1ejNzWBEVDU-ziSopj1rkadavzA?timestamp=2468.9999
+
+41:11 - Speaker 1
+  Yeah. Okay. It would be good to have in this patch the stock somewhere.
+
+41:19 - Ismail Ismail (alliedchb.com)
+  Okay, okay, understood, yes, okay, I like that, okay, I like that, purchase order, it's just the same thing.
+
+41:23 - Speaker 1
+  You know, line with the stock of what's in there. So you have a line on the menu. If you go on the menu, you have a line with what's in the stock and what's ordered.  It would be good to have that line as well. In stock, on order, you see. And so it'd be good to have that line as well on dispatch.
+
+41:53 - Ismail Ismail (alliedchb.com)
+  We just have the new, like, you know, filters, like, you know, for a specific supplier, search for a specific order number, and if we have received it, if we have canceled it, we have, if it is pending, so just the filtering.
+
+41:59 - Speaker 1
+  Mm-hmm, mm-hmm, Supplier, yeah, Order Date, Expected Delivery Date, Comment to Supplier, mm-hmm, mm-hmm, okay, mm-hmm, yeah, and then, okay, yeah.
+
+42:10 - Ismail Ismail (alliedchb.com)
+  New Purchase Order, it's kind of a little bit of redesign, so you can select a specific supplier, a specific delivery.  Yeah, this one is, I think it will be less used, so that's why it's always collapsed, yeah, and if we select this, then the product will be only for that particular supplier, so, like this, and I think this search will still work.  And if we want to import from menu for this particular supplier, then we can do that using, like clicking on this button, it will import from the menu.
+
+42:52 - Speaker 1
+  Yeah, okay, okay, okay.
+
+43:01 - Ismail Ismail (alliedchb.com)
+  So it says no menu for this supplier, but if we have, then it will import from menu for this particular week, for this particular selection.  So, and, like this, Coca-Cola, but if you want to shut, let's say, like this, then it will show all the products that has this CE text.
+
+43:11 - Speaker 1
+  And then you can adjust manually. So you can either search the supplier product and add them. Because when you do search, what's, when you do search, you can just add, okay.
+
+43:36 - Ismail Ismail (alliedchb.com)
+  So, let's say, I select Appelge, it will basically add this, and can change the quantity that, okay, this is going to be 5, this is 15, whatever it is.  Or you can import it from menu, like, let's say, for this particular supplier, we need to create a purchase order, so look into the menu, and then create a purchase order for that particular supplier, and then this create PO, so basically this will purchase order, it will put it on a payment status, so either receive goods, you can close it, later on once we receive, then we can mark it that, okay, receive goods, and this will, okay, I'll add very much.
+  ACTION ITEM: Add PO receipt comments; support partial receipt/cancellation - WATCH: https://fathom.video/share/AYBdm1ejNzWBEVDU-ziSopj1rkadavzA?timestamp=2637.9999
+
+43:50 - Speaker 1
+  Okay, great. It would be good to be able to put a comment on the reception, because sometimes you can say, I don't know, goods were broken, or goods were delayed, or, you know, so we can go there and have a comment for whoever receives a comment for receiving goods is, yeah, great.
+
+44:44 - Ismail Ismail (alliedchb.com)
+  Yeah, but if we have ordered, like, let's say, three quantity, we have received only two, then you can adjust this.
+
+44:44 - Speaker 1
+  And this way you can, yeah, receive and cancel with reversal. Okay, great. You can change, and then you just say what you received.  Okay, great. Yeah, that's great.
+
+45:02 - Ismail Ismail (alliedchb.com)
+  So this is sort of stock is this, we have those filter, so category, specific supplier, and then search for a specific product if needed.
+
+45:07 - Speaker 1
+  Yeah, okay. Okay, great.
+
+45:14 - Ismail Ismail (alliedchb.com)
+  So it will narrow it down for a specific, yeah, so that's a big end thing.
+
+45:18 - Speaker 1
+  That's great. So you know what's in your stock for, yeah, that's really, really good. And then manual adjustment is we can adjust a product.  So we just kind of, you can choose a product and then reason, whatever.
+
+45:39 - Ismail Ismail (alliedchb.com)
+  Okay, so we have seller. Yeah, so this is stock, finance is not improved yet, so we can come back later on for this one, so product has all of those same kind of filtering, this refreshing, suppliers, like, know, it's just same basic thing.
+
+45:47 - Speaker 1
+  And then quantity, plus or minus, to remove, yeah, plus to add, minus to remove, and reason, wrong dispatch, or something like that.  Yeah, okay. Because we, yeah, yeah, okay, great. Yeah, okay. Yeah. Isn't on product and product rating very similar things?  Shouldn't we get the product rating into the...
+
+46:40 - Ismail Ismail (alliedchb.com)
+  Share, we can do that, yes.
+
+46:40 - Speaker 1
+  Or, I don't know, I'm just wondering if it's got any use to have two different things. Well, mean, we can keep them like that so we can search through the product rating and maybe adjust the product rating and the weight we give to the products in the product rating.  But that's not in the product rating that we adjust that, right? It's in the settings.
+
+47:10 - Ismail Ismail (alliedchb.com)
+  So the product is basically for searching for a product, looking into the, what's the purchase value, what's the sales, that percent is, this kind of information.
+  ACTION ITEM: Add Stock click-through to fridge-level inventory; measure API latency - WATCH: https://fathom.video/share/AYBdm1ejNzWBEVDU-ziSopj1rkadavzA?timestamp=2841.9999
+
+47:11 - Speaker 1
+  So what information do we have in the product? So we just, if you click on a product, does it give you any sort of information?
+
+47:28 - Ismail Ismail (alliedchb.com)
+  I know, it's not clickable, you only see what you have, right.
+
+47:32 - Speaker 1
+  Would it be able to have an option when you click on the... Product, to know what, for it to call the API, and to know in which fridges those products are.
+
+47:44 - Ismail Ismail (alliedchb.com)
+  Actively right now, okay, yeah, okay, yeah, we can.
+
+47:45 - Speaker 1
+  So you, so yeah, actively right now, because this is, this is something, this is something, you know, I'm like, okay, so how many apple cakes do I still have?  And then it tells me all the apple cakes in every fridge, and this way I have a, I have a vision that's not given to me by the back end of Husky.  Husky doesn't do that, and I think it would be a, uh, good to be able to, uh, click a product, and know the stock for fridge, and eventually, and eventually also central stock, right?  Uh, but it can be in, in, in the stock part, or in the product part, whichever we.
+
+48:33 - Ismail Ismail (alliedchb.com)
+  Yeah, I agree, because we're saying this stuff, yeah, okay, I'll time out, like,
+
+48:33 - Speaker 1
+  If you go on the stock, if you go on a product, if you click on it, you have what's in the warehouse, and then what's in every fridge, whichever, it's going to be the same thing, right?  The stock and the product list, the products, where you have more products in the products than in the stock, but ideally those lists should be similar.  It doesn't really matter if you put it in stock or in products, but it would make sense to look into stock, right?  So you click on a product in stock, and there's a button that asks you, do you want to know how many products is in every fridge?  And then yes, and then it launches the API. Maybe you have a two-step thing, because it's going to take a while for the API call, you know, maybe a few seconds or a minute or two to get this information.
+
+49:30 - Ismail Ismail (alliedchb.com)
+  I'll measure the time. If it is within seconds, then we can automatically load it.
+
+49:32 - Speaker 1
+  Okay.
+
+49:36 - Ismail Ismail (alliedchb.com)
+  But if it is way more than that, then we can click and then load it up.
+
+49:42 - Speaker 1
+  Okay.
+
+49:44 - Ismail Ismail (alliedchb.com)
+  Okay. Supplier, it's basically the same thing that we have. Name, where it's active or in a client.
+
+49:50 - Speaker 1
+  Okay. Okay. Okay. Again, sorry to come back. Supplier would be good to be able to put in the supplier whether we have some sort of annual rebates, and if we have discussed the price, is that the right places to store this type of information?  You see, so what I'm doing with my suppliers, as I draw a little bit my... So and I grow my customer, my supplier's basis, I go to them and I say, okay, well, I've increased my volume.  Now, can you give me some rebates, end-of-year rebates? And then they say, okay, well, we'll give you a 5% rebate on your yearly volume.  So they give me a credit note. So say I buy from them from 100,000 euros. At the end of the year, they give me a note for 5%.  So they give me like a credit note for 5,000 euros. And this is something I'm trying to install with all my suppliers.  But let's just leave it for now. Maybe it's not quite essential. But maybe at some point, I'm just going to put it down.
+
+51:09 - Ismail Ismail (alliedchb.com)
+  Yeah, I think we can add additional comments or something like this, and you can put this information.
+  ACTION ITEM: Add supplier contact fields (name, phone) - WATCH: https://fathom.video/share/AYBdm1ejNzWBEVDU-ziSopj1rkadavzA?timestamp=3073.9999
+
+51:24 - Speaker 1
+  Yeah, maybe, maybe we also, we have email, warehouse address, maybe phone number, phone number and names maybe, yeah, no, the name of the supplier, but then maybe we have the name of a contact of the suppliers, you know, because, because what happens when I'm, I've ordered my salads, but I see my salads are not coming up, I'm like, I need to call them up straight away, and I need to know who to call.
+
+51:32 - Ismail Ismail (alliedchb.com)
+  uh okay yes sure uh this this is the name it's a plan name okay understood i contact yeah okay
+
+51:59 - Speaker 1
+  So I think I need a proper contact thing on the, on the supplier thing, contact with, contact person, right, contact person with name and phone, right.
+
+52:22 - Ismail Ismail (alliedchb.com)
+  Okay, clients is basically the phrase clients, so it's simple, same thing.
+
+52:29 - Speaker 1
+  Yeah. So, yeah, but again, let's see what we have in there. We have the name, the location, preferences. Okay.
+  ACTION ITEM: Add client contact fields (manager, ops, IT) - WATCH: https://fathom.video/share/AYBdm1ejNzWBEVDU-ziSopj1rkadavzA?timestamp=3160.9999  I think this is something that we're going to be using a lot. And notes. Okay. Okay. But again, for the client, I think we need the contact person, which would be, one would be the account manager for finance and relationship, and just know what's his title in the company.  One contact for daily operations, say there is an issue by delivering at your company because the gates are closed.  Who can I call? So, contact for management, so kind of finance, contact for daily operations, maybe a contact for IT, and then a connectivity issue.  Let me just think of what we need with the customer, yeah, those are just the contacts, because afterwards we can add the, it's in the fridges that we put the clients, the fee for the fridge, and everything else, right?
+  ACTION ITEM: Add fridge flag 'Active on weekends' - WATCH: https://fathom.video/share/AYBdm1ejNzWBEVDU-ziSopj1rkadavzA?timestamp=3245.9999
+
+54:02 - Ismail Ismail (alliedchb.com)
+  Right, okay, so three contact person then, right, one is for the manager. One is for the operation, one is for the IT, right, okay, I understand, freeze is basically the husky freeze, we have those filtered, or freeze, sorry, freeze name, all right, refreshing, if we need, it's the same thing as, yeah, yeah, I haven't added that, so I'll add that, okay.
+
+54:16 - Speaker 1
+  yeah yeah yeah yeah okay okay so do we okay so what's important in this one is the delivery days so this this this somehow mixes a little bit the fridge with the delivery days which it's good I think it's good to be housed in one place so we have the name of the fridge the client the status um delivery days is it possible to kind of say whether it's active on the weekends or not yeah yeah sorry I gotta pick that up I'm the only one
+
+55:13 - Ismail Ismail (alliedchb.com)
+  I'll go back to you. We're just talking about like that more.
+
+57:16 - Speaker 1
+  Sorry, apologies, I'm back.
+
+57:18 - Ismail Ismail (alliedchb.com)
+  Okay, yes.
+
+57:22 - Speaker 1
+  Okay, so save on not on weekends. Okay. One thing that I'd like to be able to add on the, if you go on the little, on all the data, stay on fridge.  So it would be able, can we add any intervention kind of maintenance we've done on the fridge? That's something we can add, right?  It's already there. I think it's already there. If you click on it. So, I bought delivery address. Okay. Go down, delivery instructions.  Okay. It's not there. No, it was on the other thing. If you click, that was odd. It was an odd way you did it.  So if you click on the fridge itself, click on the fridge. Yeah, click on the fridge itself. No, so it wasn't the client then.  If you go on client, maybe click on the thing there. Okay, fees, intervention, intervention. Okay, fees, intervention. Maybe we can, can we add another line?  With a 4G connectivity, so that we know if we have a 4 or 5G modem with this, with this thing, and we can get the card number of the 4G modem that's been assigned to the, to this fridge.
+  ACTION ITEM: Move interventions to Fridge; add 4G/5G modem + card fields - WATCH: https://fathom.video/share/AYBdm1ejNzWBEVDU-ziSopj1rkadavzA?timestamp=3521.9999
+
+58:51 - Ismail Ismail (alliedchb.com)
+  So is this on the, or is this on the client?
+
+58:52 - Speaker 1
+  So it's on the fridge. We'd be on the fridge, but here again, I think this thing makes more sense if it's on the fridge.  Because here, you see, the interventions, it's on the client, but sometimes we have clients that have more than one fridge, so we need to kind of be able to link the maintenance to the fridge rather than to the client.
+
+59:20 - Ismail Ismail (alliedchb.com)
+  Okay. Okay. I'll change this to the freeze then.
+
+59:24 - Speaker 1
+  Maintenance link to fridge rather than client, and then add a feature to record the 5G modem number and card.  So the sheet marker.
+
+59:51 - Ismail Ismail (alliedchb.com)
+  Okay. Okay. Okay. I'll change this to freeze then. Okay. and the active on weekend or not, right?
+
+59:59 - Speaker 1
+  Yeah, mm-hmm, okay, okay, great, all right, mm-hmm, mm-hmm, yeah, okay, alerts, stock blocked, okay, these are the alerts then, as I told you, the alerts, we're getting the alerts from Husky, so far, they're pretty good, but it would be, yeah, but we're gonna have to work somehow to create a better kind of forecasting engine that uses, that calls the fridges, okay, so users, that's fine.
+
+1:00:03 - Ismail Ismail (alliedchb.com)
+  these two things, sync, got all of the sync history. So, like, you know, job start already started. This is for me, right?
+
+1:00:55 - Speaker 1
+  That's fine. okay, so there are a few things to add. The main thing is really to change, to be able to save the menu per week.  And then the second thing we did discuss was when I want to replenish a fridge of a menu that's already existing, there is the fridge look, the ERP or the system look at what's already in the fridge, or what was already sold that week to create the replenishment or to populate the menu.  So, for example, if the forecast tells me I have to put on Wednesday 20 desserts for ABB, okay? So, have to put on Thursday 20 desserts for ABB.  So, way way... it's going to do now, it's going to, let's say we have dessert one, dessert two, dessert three, that have all 60, 61, 62%.  The way I would like it to do is, instead of another rule that ends on top of that, which is, if there are products that are in the fridge, or that were sold in the fridge, first replenish those products, and then after, split the products according to the product.  product rating. You see?
+
+1:02:25 - Ismail Ismail (alliedchb.com)
+  Yeah, I think we did an example last time, right, with the number.
+
+1:02:30 - Speaker 1
+  Yeah, yeah, yeah, yeah.
+
+1:02:32 - Ismail Ismail (alliedchb.com)
+  Can you just see the Excel file? No, I'm not sure if we have that Excel file or not.
+
+1:02:38 - Speaker 1
+  No, no, but let me just, I just drew on an Excel file. So let me just share whatever, just go on a, on any type of file with you.  So let's say I have product one, two, three, right? Product one, two, three. And this is Monday. And Monday, either the fridge is empty, or would you say specifically for Monday, there is no, so for Monday, there is no.  You don't look at what's at the fridge, it's an option. Option to click, do not look at the fridge contents.  And then when they do not look at the fridge contents, what it does on Monday is, say we need to, oops, Monday, the, this isn't, okay.  Monday, I have my forecast for desserts that says, say, 20, let's say 30, okay. And so I have fridge, one fridge.  So my forecast says, forecast dessert, dessert fridge two, and this is dessert fridge one. Okay, so this one, and this one you have to put, say, five.  Okay, so what it's going to do, it's going to look at the product rating. Just getting this down here.  Product rating is 66%, 70%, and 75%. Okay, these are the product rating. Okay. And so the way it's going to split fridge one, probably going to split, I don't know, we're going to have 13 of this one.  We're going to have maybe... So of this one, and we're going to have 6 of this one. That's how it works today, right?
+
+1:05:48 - Ismail Ismail (alliedchb.com)
+  Right, true.
+
+1:05:50 - Speaker 1
+  And here it's going to be, the way it's going to be, it's going to be like maybe 2 to 1, right?  That's the way it's going to do. Okay, but it doesn't take into account what's inside the fridge, okay? So what we're going to do, what's going to happen on, let's say Wednesday, we're going back, and it's just telling me here, you've got to put 15, and here you've got to put 6, because that's from Monday until Wednesday, and that's from Wednesday until Friday, okay?  That's what you have to put, and that's what it tells you that you have to put, but it doesn't look at the same.  Sales, you don't know how many, and that's, I'm running this on the Tuesday, and it tells me on, statistically, for Wednesday to Friday, this is what you're going to have to put in.  But it doesn't look at the sales, sales of Monday, sales of Tuesday. What I wanted to do on Wednesday, for Wednesday's replenishment, so the day we're going to be, it's going to be there on Tuesday, it's going to be, look at what's left, left in bridge, look at what's left in, in the fridges, and so, so we're going to have it here, in product one, there's going to be five left, product two, there's, right.  Zero left, and product three, they're like 11 left, okay, that's what there is, and here, and here, there's just one here, and then one here, and then zero here.  Now, the way this would split, if it didn't take into account, is it would just go normally, like maybe a six, maybe six, five, and four here, or maybe a five and five, or seven, six, and five.  Now, thing is that, if you take into account, the fact that product two has, product two here, has sold 11, you really want to kind of focus on replenishing those 11 here.  So, you're gonna, we're gonna say, okay, well, first, out of the 15, I'm gonna replenish this product. So I'll put 11 here, and then here, I'm just going to put maybe two, and then the remaining two, I'm going to put in this one.  You see? And because of this replenishment took into account what was already in the fridge, which isn't what we do.  And so same for the second one. Replenishment says you have to take six, but you do realize that there's one one here, but there's zero here.  So out of the six, you'll just put more here, and just maybe four, and one one, instead of something else.
+  ACTION ITEM: Send replenishment logic Excel/snapshot to Ismail via WhatsApp - WATCH: https://fathom.video/share/AYBdm1ejNzWBEVDU-ziSopj1rkadavzA?timestamp=4147.9999  Do you follow what I'm trying to say?
+
+1:09:18 - Ismail Ismail (alliedchb.com)
+  Yes, yes, and yes, yes, please send Excel file or maybe a snapshot on WhatsApp, maybe.
+
+1:09:21 - Speaker 1
+  Yeah? So I'll just kind of...
+
+1:09:29 - Ismail Ismail (alliedchb.com)
+  So just
+
+1:09:30 - Speaker 1
+  Yeah, I'll send this so we can work, because we have a lot of data which we're not using. We have a lot of real-time data which we're not using.  We have a very basic forecasting model, but we really aren't using current sales in any of our replenishment users.  And so this is something we should do. What we should do is that when we do replenishing, we should privilege what was sold, and then do the normal replenishing as we do before.  So we should have just one rule that says when you do the replenishing on something during the week, privilege what was sold before, and then do the normal replenishment rules.
+
+1:10:28 - Ismail Ismail (alliedchb.com)
+  Okay one more thing that this is on the menu right like now we do not do we need any additional button for this replace replenishment or it just that okay whenever we click on the input from forecast then it will automatically do the best on the replenishment always
+  ACTION ITEM: Implement replenishment priority: sold-first; add Monday no-fridge option - WATCH: https://fathom.video/share/AYBdm1ejNzWBEVDU-ziSopj1rkadavzA?timestamp=4237.9999
+
+1:10:48 - Speaker 1
+  Not really, because we want to be able to put this as an option on and off, because on the Monday, I'd like, even if some products are already in the fridge, if it's a fresh Monday, I'd like to be able to take the option off, so that it doesn't take into account whatever is in the fridge, even if the shelf life of the products in the fridge are good.  Because obviously, the replenishment rule needs to kind of look at what was sold, what is already in the fridge, and  And how long it will be able to stay in the fridge. So if I'm delivering the products that are left, I think instead of making a complex calculation of the products that are left, it should just kind of do the replenishment by privileging the sales, what was already sold.  Just do that. Don't make your life complex, just kind of privilege, look at what was sold. If you, in this category, are supposed to put seven products, and in the previous two days, in the previous weeks, since the last replenishment, those specific products were sold, those needs to be replenished first.  That's the basic thing. It shouldn't be more complex than that.
+
+1:12:08 - Ismail Ismail (alliedchb.com)
+  Okay, so the time part, like, you know, let's say we are doing this on Thursday, right, sorry, Wednesday, right, for the Wednesday, we're doing this for Wednesday, and  And then the sales part, when we're looking into the sales part, we need to look into the Monday to Twitter sales.  Is that correct?
+
+1:12:32 - Speaker 1
+  Sorry, what are you saying again?
+
+1:12:35 - Ismail Ismail (alliedchb.com)
+  Can you share this screen again?
+
+1:12:39 - Speaker 1
+  Let's spin again. Okay, this is where it's becoming a little bit more complex, I know.
+
+1:12:50 - Ismail Ismail (alliedchb.com)
+  Yes. So here on Monday, we added this that, okay, in freeze one, we have added 13. freeze, sorry, in freeze one, product three, we have added 13, right?  Product two added 11, and product one is added six quantity. In freeze one, right? So then for Wednesday to Friday, we are doing the menu, right?  And then we are looking into that, and we are doing this on twist. Not on Wednesday, right, when we're doing this, then when we need to look into the sales, so up to what part, is it that going to be the sales from Monday to Tuesday, or like, you know, you know, how, okay.
+
+1:13:22 - Speaker 1
+  Yeah, yeah, yeah. Well, you just look at current sales. So whenever you look at it, it's just going to say, okay, look at current sales since last replenishment.  So your last replenishment was Wednesday. When I do this import from the thing, I look at what were the sales since last Wednesday.  And these are privileged in the replenishment.
+
+1:14:16 - Ismail Ismail (alliedchb.com)
+  Okay.
+
+1:14:17 - Speaker 1
+  So, okay, so this is Tuesday. I am Tuesday 2 p.m., and I see what's left in the fridge. This is what's left in the fridge Tuesday 2 p.m.  And then based on Tuesday 2 p.m., it makes this calculation. It says, okay, well, you know, I see that this is left in the fridge.  This is what needs to be replenished. So that's how I'm going to do it. What I'm thinking is we also need a rule to kind of, we need a rule to make sure that we don't overstock a product due to our forecasting.  If the product didn't sell. So for example, again, product one, two, three. The forecast tells me that generally from Wednesday to Friday, I sell 15.  Okay. But actually, what's left in the fridge is huge. Let's say I hardly sold anything. It should be able to adjust the forecast by the fact that the sales are not huge.  You see what I'm saying? But this is, let's first do the first thing. So first thing is replenishment priority.  That's the first rule. So you look at sales since last replenishment, and prioritize those, right? Those before using the rating to split the products.  Okay?
+
+1:16:35 - Ismail Ismail (alliedchb.com)
+  Okay?
+
+1:16:36 - Speaker 1
+  That's the first thing. I think that's the easy part. Second thing is current products in the fridge versus forecast.  And this is something we... I need to think a bit more on how to do it, which is like, I'm on Monday, and I did put 30 desserts here.  What the forecast, the sales forecast, the sales forecast from Monday to Wednesday was that I would sell 30 products, right?  But what actually, what was sold on Tuesday 2 p.m., instead of being maybe, I don't know what, 50% of those products, it's less or more.  Say I looked at Tuesday 2 p.m., and generally, I should have sold 50%, that's how it would have been.  And instead of selling 50% of the 30, on Tuesday 2 p.m., I see that I only sold 20% of the 30.  So generally, Tuesday 2 p.m., I should have sold 15, and actually, by Wednesday 2 p.m., I only sold 6.  So I should be able to adjust my delivery of Wednesday by the fact that I've had slower sales on the Tuesday.  But that's step 2. I think the first thing I want to do is just this replenishment priority, okay?
+
+1:18:53 - Ismail Ismail (alliedchb.com)
+  Okay.
+
+1:18:55 - Speaker 1
+  And I think this is pretty easy. This is pretty easy. You just look at the sales. And if you sold five product one, instead of in the replenishment rule, you first put five product one, and then you split it among the other products.  That's going to be the easiest rule to make. The other rule is a bit more technical, right? It's a bit more complex, because that's something we realize on a daily usage, which is, let me share the forecasting.  I'll share my screen with you, and I'll show you how I do it.
+
+1:19:31 - Ismail Ismail (alliedchb.com)
+  Okay, yes, yeah.
+
+1:19:32 - Speaker 1
+  So you understand. Thanks for your time and patience, it does require. Okay. So you're here, you're on the screen.  This is my forecast. You see the screen? It's a bit small, right? It's a bit small, but this is the forecast.  this is, I'm gonna make a forecast, that's what I have to do now, and I have to let you go because I actually have to do it.
+
+1:20:01 - Ismail Ismail (alliedchb.com)
+  Okay.
+
+1:20:04 - Speaker 1
+  So let me just do it, actually. I'll just do it with you, and you'll just see how I do it.  This way, I'll actually get ahead in my work, for which I'm already late. So it's easy because for Friday, I only have a few clients.  I only have RTBF, that needs to be Friday, Saturday, Sunday. This one, on this one, on this one, on this one.  These ones, I just have to do for one day. This one, I'm not sure, I have to check it out, but I'll have to go there.  I'm not sure, let's just say I don't have to. And this one, I have to do it for three days as well, and there's also DHL.  Whoops, sorry. So all these are back on zero. When am I delivering? And this guy, I deliver for Friday.  What are you doing?
+
+1:20:56 - Ismail Ismail (alliedchb.com)
+  Thank you.
+
+1:21:02 - Speaker 1
+  That's what I need for tomorrow. I'm going to update the forecast here. And that's one thing I'm going to run.  And the other thing I need here is, I'm to refresh this, and I'm going to look at what's in the fridges currently.  Okay? So I'm just going to take this, and I'm open it here, if it wants to. Because what I want to do is, I want to, sorry, compare this forecast that's going to come here.  It's going to tell me that, for example, for this fridge, here I go. So then we're just kind of descending, and let's look at the desserts, right?  That's going to be the best thing. So let's look at the desserts here. It's still running here, so it's a bit slow.  Okay. It tells me that desserts, they don't do desserts, for example. So warm dishes, it tells me that for three days, they generally eat 2.10, okay, in DHL.
+
+1:22:21 - Ismail Ismail (alliedchb.com)
+  Okay, great.
+
+1:22:23 - Speaker 1
+  Now, I want to make sure what's left in the warm dishes. So now I see that there are four left in the warm dishes.  So today is Thursday. So my forecasting is, let me change my forecasting, because I was looking at what I have to sell for Friday, Saturday, and Sunday.  I said, let me check it for three days. But actually, I'm checking on Thursday. of day. I look at, what I'm doing is I change my forecast, and I look at Thursday, what's the forecast from Thursday for, oh let me change that, for four days now, okay, let me change, this guy is zero, it failed because I changed, I changed some numbers, but let me just kind of, let me just change that here, and this is just for one, and this is going to be for four days, okay, so let's just, change this for four days, and let's run it, so I don't need this anymore, so what I need to do, what I want to do, is I look at what is forecasted for the next four days, but in contrast, I also look at
+
+1:23:02 - Ismail Ismail (alliedchb.com)
+  Okay, I think you need to...
+
+1:23:46 - Speaker 1
+  What's already left in the fridge? Because if what's already left in the fridge is enough for the next four days, I should decrease that from what I have to put.  It's okay. So DHL says warm dishes, 3.9 for Thursday, Friday, Saturday, and Sunday. What do I see? I already have four things.  So actually what I'm saying is I'm going to say, I'm going to put zero. You know, I'm just, I don't need to put any warm fridges because they already have enough in the fridge.  You see?
+
+1:24:20 - Ismail Ismail (alliedchb.com)
+  Great.
+
+1:24:20 - Speaker 1
+  So I'm adjusting my forecast with what's currently in the fridge. Now, the thing is that I know that, now, I don't really know why this forecast is saying so little because I think these guys eat much more.  So I think they have four and maybe I'm going to put another six. That's just me doing this. But I'm going to do the same thing with the bunds and the wraps.  How many are left? Where are buns and wraps here, and buns and wraps, 16 are left out of 26, and they have to eat, they're going to eat 37, so my guess is, should be 21, 22, I'll just put 24, just to make sure everybody's happy.  Okay, same thing goes for the salads, where's the salad, DHL, cool dish, they have five, they're going to eat six, I'm going to put three salads, just to, so that's just what I wanted to show you, is what I'm doing now, is working with the forecast, looking at what's already in the fridge, also, taking into account the shelf life of what's already in the fridge, and kind of making a compilation out of that, to, to, to, to...  Not to overfill the fridges if the previous forecast was too positive and there's a slowdown in what's being eaten.  So take into account what's currently in the fridge. I'm really going to have to leave you now. I'm sorry.  But there's one thing I'd like to show you that's really important that needs to be fixed now on the current document.
+  ACTION ITEM: Restore food cost in Dispatch; fix Product History for renamed/new categories - WATCH: https://fathom.video/share/AYBdm1ejNzWBEVDU-ziSopj1rkadavzA?timestamp=5160.9999  We don't have any data anymore for the past month or two. Sandra was doing it. For the dispatch view, so first, the dispatch view doesn't give us the number here anymore.  We don't have the food cost anymore. That's one thing. The second thing is that, so this is yesterday's, okay?  And let's
+
+1:26:37 - Ismail Ismail (alliedchb.com)
+  Okay.
+
+1:26:39 - Speaker 1
+  Let me just kind of save it somewhere, because I know it doesn't save properly, so I'll just save it somewhere.  Oh, I did save it, I did save it, I saved it somewhere already. So let me just say, okay, let me just kind of look at what was it, this batch for Monday again.  I go on the product history, preparing to run, running, oh, there you go. Now, somehow, wraps and buns, because there was a name in category change, doesn't come up anymore.
+
+1:27:08 - Ismail Ismail (alliedchb.com)
+  Yes.
+
+1:27:08 - Speaker 1
+  Maybe it's, so it's rubs and buns here, and it doesn't come up anymore, so we lost it somewhere. We also never got the warm, the frozen warm dish.  They don't show up, because somehow they're new categories, so all these new categories don't show up in the product history.  So it would be great to be able to have a food cost again, and that those product categories that were either  So change or add it to come back in the history because they're not there anymore.
+
+1:27:40 - Ismail Ismail (alliedchb.com)
+  Okay, okay, I'll just share.
+
+1:27:42 - Speaker 1
+  Okay? Okay. All right. I'll leave you with that. I have to run a little bit, but let's talk again soon just to make sure we move forward.  Whenever the railway works, just let me know so I can use it, and I'm sure there's going to be a lot of using things.  And I'd rather use them and give you kind of more thoughtful comments than give you kind of more direct comments like I did today, where maybe at some point I must think, okay, well, then maybe I don't need that, actually.  You see what I'm saying?
+
+1:28:17 - Ismail Ismail (alliedchb.com)
+  Yes, share, yes.
+
+1:28:19 - Speaker 1
+  So, okay. Okay. All right. Thanks a lot, Ismail. I have to run. Let's talk probably early next week. Yeah.  Okay. We WhatsApp and see what's. Okay?
+
+1:28:33 - Ismail Ismail (alliedchb.com)
+  Okay, bye-bye.
+
+1:28:34 - Speaker 1
+  All right. And thanks for your work. Have a good day. Bye-bye.

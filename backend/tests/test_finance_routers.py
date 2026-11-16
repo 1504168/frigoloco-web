@@ -11,10 +11,12 @@ ZZTEST-prefixed as a second belt-and-braces guard.
 from __future__ import annotations
 
 import datetime
+import io
 from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -42,8 +44,11 @@ from app.models.operations import (
     Dispatch,
     DispatchLine,
     StockMovement,
+    WeeklyFinancial,
 )
-from app.money import cents_to_euro_str
+from app.money import cents_to_euro_str, to_cents
+from app.schemas.orders import RECEIPT_COMMENT_MAX_LENGTH
+from app.services.finance_service import LOCAL_TIMEZONE
 from app.services.orders_service import PricedPoLine, compute_po_totals
 from tests import TEST_ADMIN_USER, ensure_dispatches_week_start, ensure_test_admin_user
 
@@ -322,6 +327,49 @@ def test_cancel_partly_received_po_reverses_stock(client, seed, db_session) -> N
     assert _stock_balance(db_session, seed.product_id) == 0
 
 
+def test_receipt_comments_listed_per_partial_receipt(client, seed, db_session) -> None:
+    po = client.post("/api/v1/purchase-orders", json=_po_payload(seed, qty=10)).json()
+    line_id = po["lines"][0]["id"]
+    receive_url = f"/api/v1/purchase-orders/{po['id']}/receive"
+    first = client.post(
+        receive_url,
+        json={
+            "received": [{"po_line_id": line_id, "qty_received": 4}],
+            "comment": "  2 boxes broken  ",
+        },
+    )
+    assert first.json()["order"]["status"] == "pending"
+    second = client.post(
+        receive_url,
+        json={"received": [{"po_line_id": line_id, "qty_received": 6}], "comment": ""},
+    )
+    assert second.json()["order"]["status"] == "received"
+
+    resp = client.get(f"/api/v1/purchase-orders/{po['id']}/receipts")
+    assert resp.status_code == 200, resp.text
+    receipts = resp.json()
+    assert [receipt["comment"] for receipt in receipts] == [None, "2 boxes broken"]
+    assert [receipt["lines"][0]["qty_received"] for receipt in receipts] == [6, 4]
+    assert receipts[0]["created_by_name"] is not None
+
+    cancel = client.post(f"/api/v1/purchase-orders/{po['id']}/cancel")
+    assert cancel.status_code == 200, cancel.text
+    assert [movement["qty"] for movement in cancel.json()["reversal_movements"]] == [-10]
+    assert _stock_balance(db_session, seed.product_id) == 0
+
+
+def test_receipt_comment_too_long_422(client, seed) -> None:
+    po = client.post("/api/v1/purchase-orders", json=_po_payload(seed)).json()
+    resp = client.post(
+        f"/api/v1/purchase-orders/{po['id']}/receive",
+        json={
+            "received": [{"po_line_id": po["lines"][0]["id"], "qty_received": 5}],
+            "comment": "x" * (RECEIPT_COMMENT_MAX_LENGTH + 1),
+        },
+    )
+    assert resp.status_code == 422
+
+
 def test_cancel_partly_received_po_blocked_when_stock_used(client, seed, db_session) -> None:
     po = client.post("/api/v1/purchase-orders", json=_po_payload(seed, qty=10)).json()
     line_id = po["lines"][0]["id"]
@@ -474,26 +522,12 @@ def test_monthly_client_dimension(client, seed, db_session) -> None:
         )
     )
     delivery = datetime.date(2026, 6, 17)
-    dispatch = Dispatch(
-        delivery_date=delivery,
-        iso_week=delivery.isocalendar()[1],
-        weekday=delivery.isocalendar()[2],
-        status=DispatchStatus.draft,
-    )
-    db_session.add(dispatch)
-    db_session.flush()
-    db_session.add(
-        DispatchLine(
-            dispatch_id=dispatch.id,
-            fridge_id=seed.fridge_id,
-            product_id=seed.product_id,
-            delivery_date=delivery,  # denormalised partition key
-            qty=10,
-            unit_purchase_price=400,   # cents (EUR 4.00)
-            unit_sales_price=1060,     # cents (EUR 10.60)
-            vat_rate=Decimal("0.06"),
-        )
-    )
+    _add_dispatch_line(db_session, seed, delivery, DispatchStatus.dispatched, qty=10)
+    # One dispatch per delivery date: the unconfirmed ones go on the following days.
+    draft_day = delivery + datetime.timedelta(days=1)
+    saved_day = delivery + datetime.timedelta(days=2)
+    _add_dispatch_line(db_session, seed, draft_day, DispatchStatus.draft, qty=99)
+    _add_dispatch_line(db_session, seed, saved_day, DispatchStatus.saved, qty=99)
     _add_sale(db_session, seed, datetime.datetime(2026, 6, 17, 9, tzinfo=UTC))
     db_session.flush()
 
@@ -502,9 +536,146 @@ def test_monthly_client_dimension(client, seed, db_session) -> None:
     rows = {r["key_id"]: r for r in resp.json()["rows"]}
     assert seed.client_id in rows
     row = rows[seed.client_id]
+    assert row["key_name"] == "ZZTEST-client"
+    assert row["fridge_count"] == 1
     assert row["fee_share"] == "100.00"  # 1200 / 12
-    # food_margin = 10 x (10.60/1.06 - 4.00) = 10 x 6.00 = 60.00
+    # Only the dispatched line counts: 10 x (10.60/1.06 - 4.00) = 10 x 6.00 = 60.00
     assert row["food_margin"] == "60.00"
+    assert row["sales"] == "10.60"
+    assert row["sales_ex_vat"] == "10.00"
+
+
+def _add_dispatch_line(
+    session: Session,
+    seed: Seed,
+    delivery: datetime.date,
+    status: DispatchStatus,
+    qty: int,
+) -> None:
+    iso_date = delivery.isocalendar()
+    confirmed = status in (DispatchStatus.dispatched, DispatchStatus.reconciled)
+    dispatch = Dispatch(
+        delivery_date=delivery,
+        iso_week=iso_date.week,
+        weekday=iso_date.weekday,
+        status=status,
+        confirmed_at=datetime.datetime.now(UTC) if confirmed else None,
+    )
+    session.add(dispatch)
+    session.flush()
+    session.add(
+        DispatchLine(
+            dispatch_id=dispatch.id,
+            fridge_id=seed.fridge_id,
+            product_id=seed.product_id,
+            delivery_date=delivery,  # denormalised partition key
+            qty=qty,
+            unit_purchase_price=400,   # cents (EUR 4.00)
+            unit_sales_price=1060,     # cents (EUR 10.60)
+            vat_rate=Decimal("0.06"),
+        )
+    )
+
+
+def _active_fridge_count(session: Session) -> int:
+    return session.execute(
+        select(func.count()).select_from(Fridge).where(
+            Fridge.is_active.is_(True),
+            Fridge.local_status.is_(None),
+        )
+    ).scalar_one()
+
+
+def test_monthly_logistics_prorated_over_month_weeks(client, seed, db_session) -> None:
+    # March 2027: ISO W9..W12 lie fully inside it, W13 (29 Mar - 4 Apr) has 3 days in it.
+    weekly_logistics_cents = 7000  # EUR 70.00 per week
+    for iso_year, iso_week in ((2027, 12), (2027, 13), (2027, 14), (2027, 30)):
+        db_session.add(
+            WeeklyFinancial(
+                year=iso_year,
+                iso_week=iso_week,
+                logistics_cost=weekly_logistics_cents,
+            )
+        )
+    db_session.flush()
+
+    resp = client.get("/api/v1/finance/monthly?dimension=client&month=2027-03")
+    assert resp.status_code == 200, resp.text
+    rows = {r["key_id"]: r for r in resp.json()["rows"]}
+
+    month_logistics_cents = Decimal(7000) + Decimal(7000) * 3 / 7  # EUR 100.00
+    expected_share = to_cents(month_logistics_cents / _active_fridge_count(db_session))
+    assert rows[seed.client_id]["logistics_share"] == cents_to_euro_str(expected_share)
+
+
+def test_monthly_fridge_dimension_splits_client_charges(client, seed, db_session) -> None:
+    second_fridge = Fridge(
+        husky_id="ZZTEST-F2",
+        friendly_name="ZZTEST-Fridge2",
+        client_id=seed.client_id,
+    )
+    unassigned_fridge = Fridge(husky_id="ZZTEST-F3", friendly_name="ZZTEST-Fridge3")
+    db_session.add_all([second_fridge, unassigned_fridge])
+    db_session.add(
+        ClientFee(
+            client_id=seed.client_id,
+            yearly_fee=120000,  # EUR 1200.00 -> 100.00 / month
+            contract_start=datetime.date(2027, 1, 1),
+            contract_end=None,
+        )
+    )
+    db_session.flush()
+    db_session.add(
+        SalesEvent(
+            husky_ref="ZZTEST-S-unassigned",
+            fridge_id=unassigned_fridge.id,
+            product_id=seed.product_id,
+            sold_at=datetime.datetime(2027, 3, 10, 9, tzinfo=UTC),
+            unit_price=1060,
+            is_refunded=False,
+        )
+    )
+    db_session.flush()
+
+    by_fridge = client.get("/api/v1/finance/monthly?dimension=fridge&month=2027-03")
+    assert by_fridge.status_code == 200, by_fridge.text
+    fridge_rows = {r["key_id"]: r for r in by_fridge.json()["rows"]}
+    assert fridge_rows[seed.fridge_id]["fee_share"] == "50.00"
+    assert fridge_rows[second_fridge.id]["fee_share"] == "50.00"
+    assert fridge_rows[seed.fridge_id]["client_name"] == "ZZTEST-client"
+    assert fridge_rows[unassigned_fridge.id]["client_name"] == "No client"
+    assert fridge_rows[unassigned_fridge.id]["fee_share"] == "0.00"
+    assert fridge_rows[unassigned_fridge.id]["sales"] == "10.60"
+
+    by_client = client.get("/api/v1/finance/monthly?dimension=client&month=2027-03")
+    client_rows = {r["key_id"]: r for r in by_client.json()["rows"]}
+    assert client_rows[seed.client_id]["fridge_count"] == 2
+    assert client_rows[seed.client_id]["fee_share"] == "100.00"
+    assert client_rows[None]["key_name"] == "No client"
+    assert by_client.json()["rows"][-1]["key_name"] == "No client"
+
+
+def test_weekly_window_uses_brussels_days(client, seed, db_session) -> None:
+    # 2027-01-10 is the Sunday ending ISO week 1 of 2027. Brussels is UTC+1 in January.
+    sunday_late_evening = datetime.datetime(2027, 1, 10, 22, 30, tzinfo=UTC)  # 23:30 local
+    next_monday_early = datetime.datetime(2027, 1, 10, 23, 30, tzinfo=UTC)  # 00:30 local
+    _add_sale(db_session, seed, sunday_late_evening)
+    _add_sale(db_session, seed, next_monday_early)
+    db_session.flush()
+
+    week_1 = client.get("/api/v1/finance/weekly/2027/1").json()
+    week_2 = client.get("/api/v1/finance/weekly/2027/2").json()
+    assert week_1["gross_sales"] == "10.60"
+    assert week_2["gross_sales"] == "10.60"
+    assert week_1["in_progress"] is False
+
+
+def test_weekly_current_week_is_in_progress(client) -> None:
+    today = datetime.datetime.now(LOCAL_TIMEZONE).date()
+    iso_today = today.isocalendar()
+    resp = client.get(f"/api/v1/finance/weekly/{iso_today.year}/{iso_today.week}")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["in_progress"] is True
 
 
 def test_monthly_bad_dimension_422(client) -> None:
@@ -529,7 +700,50 @@ def test_fridge_gsv_report(client, seed, db_session) -> None:
     assert body["added_qty"] == 2
     assert body["food_cost"] == "8.00"
     assert body["revenue"] == "21.20"      # 2 x 10.60
-    assert body["margin"] == "12.00"       # 21.20/1.06 - 8.00
+    assert body["revenue_ex_vat"] == "20.00"  # 21.20/1.06
+    assert body["margin"] == "12.00"       # 20.00 - 8.00
+
+
+def test_all_fridges_report_rows_totals_and_export(client, seed, db_session) -> None:
+    day = datetime.datetime.combine(SYNTHETIC_DAY, datetime.time(9), tzinfo=UTC)
+    _add_sale(db_session, seed, day)
+    _add_sale(db_session, seed, day.replace(hour=10))
+    _add_restock(db_session, seed, day, TagStatus.valid, 2)
+    db_session.flush()
+    report_range = {"from": SYNTHETIC_DAY.isoformat(), "to": SYNTHETIC_DAY.isoformat()}
+
+    resp = client.get("/api/v1/finance/all-fridges-report", params=report_range)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    rows = {row["fridge_id"]: row for row in body["rows"]}
+    row = rows[seed.fridge_id]
+    assert row["fridge_name"] == "ZZTEST-Fridge1"
+    assert row["client_name"] == "ZZTEST-client"
+    assert row["added_qty"] == 2
+    assert row["food_cost"] == "8.00"
+    assert row["revenue"] == "21.20"
+    assert row["revenue_ex_vat"] == "20.00"
+    assert row["margin"] == "12.00"
+    assert row["margin_pct"] == "0.6000"
+    total_added_qty = sum(fridge_row["added_qty"] for fridge_row in body["rows"])
+    assert body["totals"]["added_qty"] == total_added_qty
+
+    export = client.get("/api/v1/finance/all-fridges-report/export.xlsx", params=report_range)
+    assert export.status_code == 200, export.text
+    assert "all-fridges-report_" in export.headers["content-disposition"]
+    worksheet = load_workbook(io.BytesIO(export.content))["All Fridges Report"]
+    assert worksheet["A1"].value == "All Fridges Report"
+    assert worksheet["A11"].value == "Fridge"
+    exported_fridges = [cell.value for cell in worksheet["A"][11:]]
+    assert "ZZTEST-Fridge1" in exported_fridges
+
+
+def test_all_fridges_report_rejects_inverted_range(client) -> None:
+    resp = client.get(
+        "/api/v1/finance/all-fridges-report",
+        params={"from": "2027-01-10", "to": "2027-01-01"},
+    )
+    assert resp.status_code == 422
 
 
 # ===========================================================================

@@ -34,7 +34,7 @@ from app.models.operations import (
 )
 from app.models.planning import ForecastRun, WeeklyMenu
 from app.schemas.masters import api_error
-from app.services import menu_service
+from app.services import fridge_stock_service, menu_service
 from app.services.alerts_service import OffendingLine, raise_stock_blocked_alert
 from app.services.menu_allocation_service import compute_allocation
 from app.services.stock_service import (
@@ -779,23 +779,27 @@ def withdrawal_list(
 ) -> list[WithdrawalItem]:
     """Products a driver must PULL from each fridge on this delivery day (slide 5).
 
-    For every fridge with a delivery config on this weekday, the coverage window
-    ends at the next delivery (``delivery_date + days_to_fill``). Any in-fridge
-    unit whose captured expiry falls BEFORE that date will not survive the window
-    and is listed for withdrawal. This is the exact complement of the forecast's
-    residual-stock deduction (which keeps units expiring on/after the window).
+    For every fridge with a delivery config on this weekday, any in-fridge unit
+    whose captured expiry falls BEFORE the coverage end (next delivery, or the first
+    closed day before it) is listed for withdrawal. This is the exact complement of
+    the forecast's residual-stock deduction (fridge_stock_service).
     """
     delivery_date = resolve_delivery_date(year, week, day_name)
-    weekday = delivery_date.isoweekday()
-    configs = session.execute(
-        select(FridgeDeliveryConfig.fridge_id, FridgeDeliveryConfig.days_to_fill).where(
-            FridgeDeliveryConfig.weekday == weekday
-        )
-    ).all()
+    delivering_fridge_ids = list(
+        session.execute(
+            select(FridgeDeliveryConfig.fridge_id).where(
+                FridgeDeliveryConfig.weekday == delivery_date.isoweekday()
+            )
+        ).scalars()
+    )
+    coverage_end_by_fridge = fridge_stock_service.load_coverage_ends(
+        delivery_date=delivery_date,
+        fridge_ids=delivering_fridge_ids,
+        session=session,
+    )
 
     items: list[WithdrawalItem] = []
-    for fridge_id, days_to_fill in configs:
-        window_end = delivery_date + datetime.timedelta(days=days_to_fill)
+    for fridge_id, window_end in coverage_end_by_fridge.items():
         rows = session.execute(
             text(
                 "SELECT fs.product_id AS product_id, fs.product_code AS product_code, "

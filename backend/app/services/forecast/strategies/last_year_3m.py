@@ -17,5 +17,10 @@ class LastYear3Months(ForecastStrategy):
     code = "last_year_3m"
     label = "Last year, same 3 months"
 
-    def sales_window(self, delivery_date: datetime.date) -> SalesWindow:
+    def sales_window(
+        self,
+        delivery_date: datetime.date,
+        sales_until: datetime.date,
+    ) -> SalesWindow:
+        # A year back is always complete history, so ``sales_until`` never cuts it.
         return window_ending_before(same_weekday_last_year(delivery_date), THIRTEEN_WEEKS_DAYS)

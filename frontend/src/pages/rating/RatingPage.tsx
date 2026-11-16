@@ -30,7 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { toast } from '@/components/ui/sonner'
+import { toast } from '@/components/ui/toast'
 import { useCategorySupplierFilter } from '@/hooks/useCategorySupplierFilter'
 import { api, ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'

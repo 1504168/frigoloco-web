@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { InfoHint, type Hint } from '@/components/shared/InfoHint'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -28,6 +29,8 @@ export interface FieldProps {
   htmlFor?: string
   error?: string | null
   hint?: React.ReactNode
+  /** Explanation plus example behind an "i" icon next to the label. */
+  info?: Hint
   required?: boolean
   className?: string
   children: React.ReactNode
@@ -38,15 +41,17 @@ export function Field({
   htmlFor,
   error,
   hint,
+  info,
   required,
   className,
   children,
 }: FieldProps) {
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>
-      <Label htmlFor={htmlFor}>
+      <Label htmlFor={htmlFor} className="inline-flex items-center gap-1">
         {label}
-        {required ? <span className="ml-0.5 text-critical">*</span> : null}
+        {required ? <span className="text-critical">*</span> : null}
+        {info ? <InfoHint {...info} /> : null}
       </Label>
       {children}
       {error ? (

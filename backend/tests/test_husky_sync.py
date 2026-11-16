@@ -31,6 +31,7 @@ from app.husky import sync as husky_sync
 from app.husky.sync import (
     FRIDGE_HUSKY_OWNED,
     FRIDGE_PRODUCT_PRICE_HUSKY_OWNED,
+    HUSKY_LIVE_FRIDGE_STATUS,
     PRODUCT_HUSKY_OWNED,
     JobOutcome,
     SyncContractError,
@@ -53,7 +54,7 @@ from app.husky.sync import (
 )
 from app.main import app
 from app.models import Category, Client, Fridge, FridgeProductPrice, FridgeStock, Product
-from app.services.menu_allocation_service import _fridge_stock_readings
+from app.services.menu_allocation_service import load_fridge_stock_readings
 
 PREFIX = "/api/v1"
 TAG = "ZZTEST-"
@@ -87,6 +88,21 @@ def test_guarded_update_set_rejects_local_only_columns() -> None:
     # delivery_* are local-owned on fridges - sync must never write them.
     with pytest.raises(SyncContractError):
         _guarded_update_set("fridges", {"delivery_address": "somewhere"})
+
+
+@pytest.mark.parametrize(
+    "local_column",
+    [
+        "modem_number",
+        "sim_card_number",
+        "active_on_weekends",
+    ],
+)
+def test_guarded_update_set_rejects_fridge_hardware_and_weekend_columns(
+    local_column: str,
+) -> None:
+    with pytest.raises(SyncContractError):
+        _guarded_update_set("fridges", {local_column: "x"})
 
 
 # ===========================================================================
@@ -404,6 +420,7 @@ def test_trigger_sync_returns_run_id_without_network(ctx, monkeypatch) -> None:
 
     calls: dict[str, int] = {}
     monkeypatch.setattr(sync_router, "create_sync_run", lambda *a, **k: 4242)
+    monkeypatch.setattr(sync_router, "is_husky_configured", lambda: True)
 
     def _fake_catalogue(run_id=None):
         calls["run_id"] = run_id
@@ -612,7 +629,7 @@ def test_snapshot_stock_partial_payload_keeps_unreported_fridge_and_flags_it(
     assert unreported_rows[code_a][1] == old_generation
 
     # ... and the allocation reader flags exactly that fridge as stale.
-    readings = _fridge_stock_readings([reported.id, unreported.id], session)
+    readings = load_fridge_stock_readings([reported.id, unreported.id], session)
     now = datetime.datetime.now(datetime.timezone.utc)
     assert readings.is_stale(reported.id, now) is False
     assert readings.is_stale(unreported.id, now) is True
@@ -678,6 +695,7 @@ def _husky_fridge(husky_id: str, facility: str | None) -> SimpleNamespace:
         description=None,
         friendlyName=f"{husky_id}-name",
         facility=facility,
+        status=HUSKY_LIVE_FRIDGE_STATUS,
     )
 
 

@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import datetime
 from decimal import Decimal
-from typing import Annotated, Generic, TypeVar
+from typing import Annotated, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, StringConstraints
 
-from app.models.enums import PoStatus
+from app.models.enums import PoDiscrepancyKind, PoDiscrepancyReason, PoStatus
 from app.money import MoneyIn, MoneyStr
 
 # --- Shared serialization primitives ---------------------------------------
@@ -35,6 +35,12 @@ RateStr = Annotated[
 ]
 
 ItemT = TypeVar("ItemT")
+
+RECEIPT_COMMENT_MAX_LENGTH = 2000
+ReceiptComment = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, max_length=RECEIPT_COMMENT_MAX_LENGTH),
+]
 
 
 class Page(BaseModel, Generic[ItemT]):
@@ -92,6 +98,20 @@ class PoReceiveLine(BaseModel):
 class PoReceiveRequest(BaseModel):
     received: list[PoReceiveLine] = Field(min_length=1)
     acknowledge_over_receipt: bool = False
+    # Issues seen at delivery ("2 boxes broken", "arrived a day late"); blank means none.
+    comment: ReceiptComment | None = None
+
+
+class PoCloseShortLine(BaseModel):
+    po_line_id: int
+    reason: PoDiscrepancyReason | None = None
+    comment: ReceiptComment | None = None
+
+
+class PoCloseShortRequest(BaseModel):
+    """Close a pending PO with the quantities received so far; short lines may carry a note."""
+
+    lines: list[PoCloseShortLine] = Field(default_factory=list)
 
 
 # --- Purchase-order response schemas ---------------------------------------
@@ -150,7 +170,92 @@ class PoReceiveResult(BaseModel):
     movements: list[StockMovementRead]
 
 
+class PoReceiptLineRead(BaseModel):
+    product_code: str
+    product_name: str
+    qty_received: int
+
+
+class PoReceiptRead(BaseModel):
+    """One "Receive goods" action: who, when, what came in, and the comment."""
+
+    id: int
+    comment: str | None
+    created_by_name: str | None
+    created_at: datetime.datetime
+    lines: list[PoReceiptLineRead]
+
+
 class PoCancelResult(BaseModel):
     order: PurchaseOrderRead
     previous_status: PoStatus
     reversal_movements: list[StockMovementRead]
+
+
+class PoDiscrepancyRead(BaseModel):
+    """One line of the "Not received" log: a shortfall at short-close or an over-receipt."""
+
+    id: int
+    po_id: int
+    order_no: str
+    supplier_id: int
+    supplier_name: str
+    product_code: str
+    product_name: str
+    kind: PoDiscrepancyKind
+    qty_ordered: int
+    qty_received: int
+    qty_difference: int
+    reason: PoDiscrepancyReason | None
+    comment: str | None
+    created_by_name: str | None
+    created_at: datetime.datetime
+
+
+PoHistoryAction = Literal["created", "edited", "received", "closed_short", "cancelled"]
+
+
+class PoHistoryLine(BaseModel):
+    """One detail row of a history event, e.g. ("Chicken wrap", "received 10")."""
+
+    label: str
+    detail: str
+
+
+class PoHistoryEvent(BaseModel):
+    action: PoHistoryAction
+    at: datetime.datetime
+    user_name: str | None
+    comment: str | None
+    lines: list[PoHistoryLine]
+
+
+class MenuOrderPlanLine(BaseModel):
+    product_id: int
+    product_code: str
+    product_name: str
+    need_qty: int
+    in_stock_qty: int
+    on_order_qty: int
+    to_order_qty: int
+    unit_price: MoneyStr
+    vat_rate: RateStr
+
+
+class MenuOrderPlanSupplier(BaseModel):
+    supplier_id: int
+    supplier_name: str
+    lines: list[MenuOrderPlanLine]
+
+
+class MenuOrderPlan(BaseModel):
+    """Per-supplier order proposal for the saved menus of one week's chosen delivery days."""
+
+    year: int
+    week: int
+    day_names: list[str]
+    days_without_menu: list[str]
+    expected_delivery_date: datetime.date
+    suppliers: list[MenuOrderPlanSupplier]
+    # Menu products with no supplier: they cannot be ordered until one is set.
+    lines_without_supplier: list[MenuOrderPlanLine]

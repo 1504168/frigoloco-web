@@ -5,7 +5,7 @@ export interface UnsavedChangesDialogProps {
   guard: UnsavedChangesGuard
 }
 
-/** Stay / Leave prompt driven by {@link useUnsavedChangesGuard}. */
+/** Discard-edits prompt driven by {@link useUnsavedChangesGuard}; wording comes from the guard. */
 export function UnsavedChangesDialog({ guard }: UnsavedChangesDialogProps) {
   return (
     <ConfirmDialog
@@ -13,9 +13,9 @@ export function UnsavedChangesDialog({ guard }: UnsavedChangesDialogProps) {
       onClose={guard.stay}
       onConfirm={guard.leave}
       title="Unsaved changes"
-      description="You have unsaved changes. Leave this page and lose them?"
-      cancelLabel="Stay"
-      confirmLabel="Leave"
+      description={guard.prompt.description}
+      cancelLabel={guard.prompt.cancelLabel}
+      confirmLabel={guard.prompt.confirmLabel}
       destructive
     />
   )

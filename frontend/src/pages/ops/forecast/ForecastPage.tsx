@@ -1,9 +1,10 @@
 import * as React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, Play, TrendingUp } from 'lucide-react'
+import { CalendarDays, CalendarRange, Download, Play, TrendingUp } from 'lucide-react'
 import { SaveIconButton } from '@/components/shared/SaveIconButton'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { InfoHint, WithInfoHint } from '@/components/shared/InfoHint'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { Toolbar } from '@/components/shared/Toolbar'
 import { UnsavedChangesDialog } from '@/components/shared/UnsavedChangesDialog'
@@ -15,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { toast } from '@/components/ui/sonner'
+import { toast } from '@/components/ui/toast'
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import { api, ApiError } from '@/lib/api'
 import { WeekDayPicker } from '@/pages/ops/components/WeekDayPicker'
@@ -32,8 +33,24 @@ import type {
   ForecastRun,
   ForecastSaveRequest,
 } from '@/pages/ops/lib/types'
+import { BankHolidaysPanel } from './BankHolidaysPanel'
+import { CompareWithPicker } from './CompareWithPicker'
 import { ForecastGrid } from './ForecastGrid'
 import { ForecastNotices } from './ForecastNotices'
+import {
+  BANK_HOLIDAYS_HINT,
+  COMPARE_WITH_HINT,
+  FORECAST_WEEK_HINT,
+  HISTORIC_CATEGORIES_HINT,
+  LOAD_HINT,
+  PER_WEEK_AVERAGE_HINT,
+  RUN_HINT,
+  SAVED_LIST_HINT,
+} from './forecastHints'
+import { SAVED_LIST_KEY } from './forecastQueries'
+import { compareWindowFor, NO_COMPARE, type CompareSelection } from './forecastWeeks'
+import { SavedForecastsSelect } from './SavedForecastsSelect'
+import { WholeWeekDialog } from './WholeWeekDialog'
 import {
   cellsFromDraft,
   countInvalidCells,
@@ -48,6 +65,7 @@ import {
 const DEFAULT_MODEL = 'moving_average_3w'
 const SAVED_FORECAST_KEY = ['ops', 'forecast', 'saved'] as const
 const ACTUALS_STALE_MS = 60_000
+const ACTUALS_URL = '/api/v1/forecasts/actuals'
 
 /** True when a run belongs to the currently selected pipeline key. */
 function runMatchesKey(run: ForecastRun | null, key: WeekDayKey): run is ForecastRun {
@@ -71,6 +89,10 @@ export function ForecastPage() {
   const [draft, setDraft] = React.useState<ForecastDraft>({})
   const [showHiddenCategories, setShowHiddenCategories] = React.useState(false)
   const [overwriteOpen, setOverwriteOpen] = React.useState(false)
+  const [compareSelection, setCompareSelection] = React.useState<CompareSelection>(NO_COMPARE)
+  const [perWeekAverage, setPerWeekAverage] = React.useState(false)
+  const [holidaysOpen, setHolidaysOpen] = React.useState(false)
+  const [wholeWeekOpen, setWholeWeekOpen] = React.useState(false)
 
   const fridgeMapQuery = useFridgeMap()
   const categoriesQuery = useCategories()
@@ -103,7 +125,7 @@ export function ForecastPage() {
   const actualsQuery = useQuery({
     queryKey: ['ops', 'forecast', 'actuals', key.year, key.week, key.dayName, shownRun?.model],
     queryFn: ({ signal }) =>
-      api.get<ForecastActuals>('/api/v1/forecasts/actuals', {
+      api.get<ForecastActuals>(ACTUALS_URL, {
         params: {
           year: key.year,
           week: key.week,
@@ -113,6 +135,25 @@ export function ForecastPage() {
         signal,
       }),
     enabled: shownRun !== null,
+    staleTime: ACTUALS_STALE_MS,
+  })
+
+  const compareWindow = compareWindowFor(compareSelection, key)
+  const compareActualsQuery = useQuery({
+    queryKey: ['ops', 'forecast', 'actuals-compare', key.year, key.week, key.dayName, compareWindow],
+    queryFn: ({ signal }) =>
+      api.get<ForecastActuals>(ACTUALS_URL, {
+        params: {
+          year: key.year,
+          week: key.week,
+          day_name: key.dayName,
+          start: compareWindow?.start,
+          end: compareWindow?.end,
+          weekdays: compareWindow?.weekdays?.join(','),
+        },
+        signal,
+      }),
+    enabled: shownRun !== null && compareWindow !== null,
     staleTime: ACTUALS_STALE_MS,
   })
 
@@ -183,6 +224,7 @@ export function ForecastPage() {
       showForecast(result)
       setOverwriteOpen(false)
       queryClient.invalidateQueries({ queryKey: SAVED_FORECAST_KEY })
+      queryClient.invalidateQueries({ queryKey: SAVED_LIST_KEY })
       toast.success(`Forecast saved for ${weekKeyLabel(key)}`)
     },
     onError: (error) => {
@@ -213,6 +255,13 @@ export function ForecastPage() {
 
   function roundAllCells(mode: RoundMode) {
     setDraft((current) => roundDraft(current, mode))
+  }
+
+  function showSavedAfterWholeWeek() {
+    // The week run replaced this day's unsaved run: drop it so the saved one loads.
+    setRun(null)
+    queryClient.invalidateQueries({ queryKey: SAVED_FORECAST_KEY })
+    queryClient.invalidateQueries({ queryKey: SAVED_LIST_KEY })
   }
 
   const hiddenCategoryIds = new Set(shownRun?.hidden_category_ids ?? [])
@@ -271,26 +320,54 @@ export function ForecastPage() {
         }
         right={
           <>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9"
-              title="Load the saved forecast for this day"
-              onClick={() => guard.confirmDiscard(() => loadSavedMutation.mutate())}
-              disabled={loadSavedMutation.isPending}
-            >
-              <Download className="h-4 w-4" />
-              {loadSavedMutation.isPending ? 'Loading…' : 'Load'}
-            </Button>
-            <Button
-              size="sm"
-              className="h-9"
-              onClick={() => guard.confirmDiscard(() => runMutation.mutate())}
-              disabled={runMutation.isPending}
-            >
-              <Play className="h-4 w-4" />
-              {runMutation.isPending ? 'Running…' : 'Run'}
-            </Button>
+            <WithInfoHint hint={SAVED_LIST_HINT}>
+              <SavedForecastsSelect onPick={changeKey} />
+            </WithInfoHint>
+            <WithInfoHint hint={BANK_HOLIDAYS_HINT}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9"
+                onClick={() => setHolidaysOpen(true)}
+              >
+                <CalendarDays className="h-4 w-4" />
+                Bank holidays
+              </Button>
+            </WithInfoHint>
+            <WithInfoHint hint={FORECAST_WEEK_HINT}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9"
+                onClick={() => guard.confirmDiscard(() => setWholeWeekOpen(true))}
+              >
+                <CalendarRange className="h-4 w-4" />
+                Forecast week
+              </Button>
+            </WithInfoHint>
+            <WithInfoHint hint={LOAD_HINT}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9"
+                onClick={() => guard.confirmDiscard(() => loadSavedMutation.mutate())}
+                disabled={loadSavedMutation.isPending}
+              >
+                <Download className="h-4 w-4" />
+                {loadSavedMutation.isPending ? 'Loading…' : 'Load'}
+              </Button>
+            </WithInfoHint>
+            <WithInfoHint hint={RUN_HINT}>
+              <Button
+                size="sm"
+                className="h-9"
+                onClick={() => guard.confirmDiscard(() => runMutation.mutate())}
+                disabled={runMutation.isPending}
+              >
+                <Play className="h-4 w-4" />
+                {runMutation.isPending ? 'Running…' : 'Run'}
+              </Button>
+            </WithInfoHint>
             <SaveIconButton
               label="Save forecast"
               variant="secondary"
@@ -314,16 +391,41 @@ export function ForecastPage() {
                 run={current}
                 modelLabel={modelLabel(current.model)}
                 viewOptions={
-                  hiddenCategoryIds.size > 0 && (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <WithInfoHint hint={COMPARE_WITH_HINT}>
+                      <CompareWithPicker
+                        weekKey={key}
+                        value={compareSelection}
+                        onChange={setCompareSelection}
+                      />
+                    </WithInfoHint>
+                    {compareActualsQuery.isError && (
+                      <span className="text-xs text-critical">
+                        Compare not loaded:{' '}
+                        {errorMessage(compareActualsQuery.error, 'unexpected error')}
+                      </span>
+                    )}
                     <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <input
                         type="checkbox"
-                        checked={showHiddenCategories}
-                        onChange={(event) => setShowHiddenCategories(event.target.checked)}
+                        checked={perWeekAverage}
+                        onChange={(event) => setPerWeekAverage(event.target.checked)}
                       />
-                      Show hidden categories ({hiddenCategoryIds.size})
+                      Per week average
+                      <InfoHint {...PER_WEEK_AVERAGE_HINT} />
                     </label>
-                  )
+                    {hiddenCategoryIds.size > 0 && (
+                      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={showHiddenCategories}
+                          onChange={(event) => setShowHiddenCategories(event.target.checked)}
+                        />
+                        Show historic categories ({hiddenCategoryIds.size})
+                        <InfoHint {...HISTORIC_CATEGORIES_HINT} />
+                      </label>
+                    )}
+                  </div>
                 }
               />
               {hasInvalidCells && <p className="text-xs text-critical">{invalidCellsMessage}</p>}
@@ -332,6 +434,9 @@ export function ForecastPage() {
                 draft={draft}
                 onCellChange={updateCell}
                 actuals={actualsQuery.data ?? null}
+                compareActuals={compareWindow === null ? null : (compareActualsQuery.data ?? null)}
+                compareLabel={compareWindow?.label ?? null}
+                perWeekAverage={perWeekAverage}
                 fridgeName={fridgeName}
                 categoryIds={visibleCategoryIds}
                 categoryName={categoryName}
@@ -350,6 +455,19 @@ export function ForecastPage() {
         confirmLabel="Overwrite"
         destructive
         pending={saveMutation.isPending}
+      />
+      <BankHolidaysPanel
+        open={holidaysOpen}
+        onClose={() => setHolidaysOpen(false)}
+        initialYear={key.year}
+      />
+      <WholeWeekDialog
+        open={wholeWeekOpen}
+        onClose={() => setWholeWeekOpen(false)}
+        weekKey={key}
+        model={model}
+        modelLabel={modelLabel(model)}
+        onFinished={showSavedAfterWholeWeek}
       />
       <UnsavedChangesDialog guard={guard} />
     </div>

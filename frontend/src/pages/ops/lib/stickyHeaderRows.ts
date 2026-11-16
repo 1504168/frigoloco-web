@@ -3,6 +3,13 @@ import * as React from 'react'
 /** Height of the grid box: the screen minus the page toolbar and summary above it. */
 export const STICKY_GRID_BOX_CLASS = 'max-h-[calc(100vh-13rem)] overflow-auto'
 
+/** Zebra-striped fridge row of the planning and forecast grids. */
+export const FRIDGE_ROW_CLASS = 'group even:bg-muted hover:bg-accent'
+/** Sticky cells are opaque so scrolled cells do not show through; they repeat the row shade. */
+export const FRIDGE_ROW_STICKY_CELL_CLASS = 'group-even:bg-muted group-hover:bg-accent'
+/** Marks a fridge name that carries a site-preferences hover note. */
+export const FRIDGE_PREFERENCES_HINT_CLASS = 'cursor-help underline decoration-dotted'
+
 /**
  * Keeps several table header rows stuck to the top of the grid's scroll box.
  * Each row sticks just below the rows above it, so it needs their live heights

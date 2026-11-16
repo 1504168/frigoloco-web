@@ -3,23 +3,53 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { InfoHint, type Hint } from '@/components/shared/InfoHint'
 import { StatusChip } from '@/components/shared/StatusChip'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { toast } from '@/components/ui/sonner'
+import { toast } from '@/components/ui/toast'
 import { api, ApiError, type Page } from '@/lib/api'
 import { EMPTY_PLACEHOLDER } from '@/lib/format'
 import { Dialog } from './components/Dialog'
+import { DialogTabs, type DialogTab } from './components/DialogTabs'
 import { Field, Textarea, fieldErrorsFromApiError, generalErrorMessage } from './components/form'
+import { SupplierAgreementsTab } from './components/SupplierAgreementsTab'
+import { SupplierScheduleTab } from './components/SupplierScheduleTab'
 import type { Supplier, SupplierCreate } from './types'
 
 const PAGE_SIZE = 25
+const PAYMENT_TERMS_HINT: Hint = {
+  text: 'How many days after the invoice the supplier must be paid. Leave empty when unknown.',
+  example: '30: an invoice of 10 March is due on 9 April.',
+}
+const END_OF_MONTH_HINT: Hint = {
+  text: 'The payment days start at the end of the invoice month instead of the invoice date.',
+  example: '30 days end of month: an invoice of 10 March is due on 30 April.',
+}
+const WHOLE_NUMBER_PATTERN = /^\d+$/
+
+type SupplierDialogTab = 'details' | 'agreements' | 'schedule'
+
+const EDIT_DIALOG_TABS: DialogTab<SupplierDialogTab>[] = [
+  { id: 'details', label: 'Details' },
+  { id: 'agreements', label: 'Agreements' },
+  { id: 'schedule', label: 'Schedule' },
+]
+
+type SupplierPayload = SupplierCreate & {
+  payment_terms_days: number | null
+  payment_terms_end_of_month: boolean
+}
 
 interface SupplierForm {
   name: string
   email: string
   warehouse_address: string
+  contact_name: string
+  contact_phone: string
+  payment_terms_days: string
+  payment_terms_end_of_month: boolean
   is_active: boolean
 }
 
@@ -27,16 +57,46 @@ const EMPTY_FORM: SupplierForm = {
   name: '',
   email: '',
   warehouse_address: '',
+  contact_name: '',
+  contact_phone: '',
+  payment_terms_days: '',
+  payment_terms_end_of_month: false,
   is_active: true,
 }
 
-function toCreatePayload(form: SupplierForm): SupplierCreate {
+function toCreatePayload(form: SupplierForm): SupplierPayload {
+  const paymentTermsText = form.payment_terms_days.trim()
   return {
     name: form.name.trim(),
     email: form.email.trim() || null,
     warehouse_address: form.warehouse_address.trim() || null,
+    contact_name: form.contact_name.trim() || null,
+    contact_phone: form.contact_phone.trim() || null,
+    payment_terms_days: paymentTermsText === '' ? null : Number(paymentTermsText),
+    payment_terms_end_of_month: form.payment_terms_end_of_month,
     is_active: form.is_active,
   }
+}
+
+function toSupplierForm(supplier: Supplier): SupplierForm {
+  return {
+    name: supplier.name,
+    email: supplier.email ?? '',
+    warehouse_address: supplier.warehouse_address ?? '',
+    contact_name: supplier.contact_name ?? '',
+    contact_phone: supplier.contact_phone ?? '',
+    payment_terms_days:
+      supplier.payment_terms_days === null ? '' : String(supplier.payment_terms_days),
+    payment_terms_end_of_month: supplier.payment_terms_end_of_month,
+    is_active: supplier.is_active,
+  }
+}
+
+/** "30 days", "60 days end of month", or the placeholder when not recorded. */
+function formatPaymentTerms(supplier: Supplier): string {
+  if (supplier.payment_terms_days === null) return EMPTY_PLACEHOLDER
+  const days = `${supplier.payment_terms_days} days`
+  return supplier.payment_terms_end_of_month ? `${days} end of month` : days
 }
 
 export function SuppliersPage() {
@@ -76,11 +136,24 @@ export function SuppliersPage() {
         sortValue: (row) => row.email ?? '',
       },
       {
+        id: 'contact',
+        header: 'Contact person',
+        cell: (row) => <SupplierContactCell supplier={row} />,
+        sortValue: (row) => row.contact_name ?? '',
+      },
+      {
         id: 'warehouse',
         header: 'Warehouse address',
         cell: (row) => (
           <span className="text-muted-foreground">{row.warehouse_address ?? EMPTY_PLACEHOLDER}</span>
         ),
+        sortValue: (row) => row.warehouse_address ?? '',
+      },
+      {
+        id: 'payment_terms',
+        header: 'Payment terms',
+        cell: (row) => <span className="text-muted-foreground">{formatPaymentTerms(row)}</span>,
+        sortValue: (row) => row.payment_terms_days ?? -1,
       },
       {
         id: 'status',
@@ -169,12 +242,8 @@ export function SuppliersPage() {
       {editing ? (
         <SupplierFormDialog
           title={`Edit ${editing.name}`}
-          initial={{
-            name: editing.name,
-            email: editing.email ?? '',
-            warehouse_address: editing.warehouse_address ?? '',
-            is_active: editing.is_active,
-          }}
+          supplierId={editing.id}
+          initial={toSupplierForm(editing)}
           submitLabel="Save changes"
           onClose={() => setEditing(null)}
           onSubmit={(form) =>
@@ -205,6 +274,8 @@ export function SuppliersPage() {
 
 interface SupplierFormDialogProps {
   title: string
+  /** Set when editing: adds the Agreements and Schedule tabs. */
+  supplierId?: number
   initial: SupplierForm
   submitLabel: string
   onClose: () => void
@@ -214,6 +285,7 @@ interface SupplierFormDialogProps {
 
 function SupplierFormDialog({
   title,
+  supplierId,
   initial,
   submitLabel,
   onClose,
@@ -221,6 +293,7 @@ function SupplierFormDialog({
   onSuccess,
 }: SupplierFormDialogProps) {
   const [form, setForm] = React.useState<SupplierForm>(initial)
+  const [activeTab, setActiveTab] = React.useState<SupplierDialogTab>('details')
 
   const mutation = useMutation({
     mutationFn: () => onSubmit(form),
@@ -238,23 +311,44 @@ function SupplierFormDialog({
       ? generalErrorMessage(mutation.error)
       : null
 
+  const paymentTermsText = form.payment_terms_days.trim()
+  const hasInvalidPaymentTerms =
+    paymentTermsText !== '' && !WHOLE_NUMBER_PATTERN.test(paymentTermsText)
+  const canSave = form.name.trim() !== '' && !hasInvalidPaymentTerms
+  const detailsFooter = (
+    <>
+      <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
+        Cancel
+      </Button>
+      <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !canSave}>
+        {mutation.isPending ? 'Saving…' : submitLabel}
+      </Button>
+    </>
+  )
+  const closeFooter = (
+    <Button variant="outline" onClick={onClose}>
+      Close
+    </Button>
+  )
+
   return (
     <Dialog
       open
       onClose={onClose}
       title={title}
-      footer={
-        <>
-          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
-            Cancel
-          </Button>
-          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.name.trim()}>
-            {mutation.isPending ? 'Saving…' : submitLabel}
-          </Button>
-        </>
-      }
+      widthClassName={supplierId === undefined ? undefined : 'max-w-3xl'}
+      footer={activeTab === 'details' ? detailsFooter : closeFooter}
     >
-      <div className="space-y-4">
+      {supplierId === undefined ? null : (
+        <DialogTabs tabs={EDIT_DIALOG_TABS} activeTab={activeTab} onChange={setActiveTab} />
+      )}
+      {supplierId !== undefined && activeTab === 'agreements' ? (
+        <SupplierAgreementsTab supplierId={supplierId} />
+      ) : null}
+      {supplierId !== undefined && activeTab === 'schedule' ? (
+        <SupplierScheduleTab supplierId={supplierId} />
+      ) : null}
+      <div className={activeTab === 'details' ? 'space-y-4' : 'hidden'}>
         {generalError ? (
           <div className="rounded-md border border-critical/40 bg-critical/5 px-3 py-2 text-sm text-critical">
             {generalError}
@@ -276,6 +370,62 @@ function SupplierFormDialog({
             placeholder="orders@supplier.example"
           />
         </Field>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field
+            label="Contact person"
+            hint="Who to call when goods do not arrive"
+            error={fieldErrors.contact_name}
+          >
+            <Input
+              value={form.contact_name}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, contact_name: event.target.value }))
+              }
+              placeholder="Full name"
+            />
+          </Field>
+          <Field label="Contact phone" error={fieldErrors.contact_phone}>
+            <Input
+              type="tel"
+              value={form.contact_phone}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, contact_phone: event.target.value }))
+              }
+              placeholder="+32 …"
+            />
+          </Field>
+        </div>
+        <div className="grid grid-cols-1 items-end gap-4 sm:grid-cols-2">
+          <Field
+            label="Payment terms (days)"
+            info={PAYMENT_TERMS_HINT}
+            error={
+              hasInvalidPaymentTerms
+                ? 'Enter a whole number of days, or leave empty.'
+                : fieldErrors.payment_terms_days
+            }
+          >
+            <Input
+              inputMode="numeric"
+              value={form.payment_terms_days}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, payment_terms_days: event.target.value }))
+              }
+              placeholder="30"
+            />
+          </Field>
+          <label className="flex items-center justify-between gap-3 pb-6">
+            <span className="flex items-center gap-1 text-sm font-medium text-foreground">
+              Counted from end of month <InfoHint {...END_OF_MONTH_HINT} />
+            </span>
+            <Switch
+              checked={form.payment_terms_end_of_month}
+              onCheckedChange={(checked) =>
+                setForm((prev) => ({ ...prev, payment_terms_end_of_month: checked }))
+              }
+            />
+          </label>
+        </div>
         <Field label="Warehouse address" error={fieldErrors.warehouse_address}>
           <Textarea
             value={form.warehouse_address}
@@ -294,6 +444,25 @@ function SupplierFormDialog({
         </label>
       </div>
     </Dialog>
+  )
+}
+
+function SupplierContactCell({ supplier }: { supplier: Supplier }) {
+  if (!supplier.contact_name && !supplier.contact_phone) {
+    return <span className="text-muted-foreground">{EMPTY_PLACEHOLDER}</span>
+  }
+  return (
+    <div className="leading-tight">
+      <div>{supplier.contact_name ?? EMPTY_PLACEHOLDER}</div>
+      {supplier.contact_phone ? (
+        <a
+          href={`tel:${supplier.contact_phone}`}
+          className="text-xs text-muted-foreground hover:underline"
+        >
+          {supplier.contact_phone}
+        </a>
+      ) : null}
+    </div>
   )
 }
 

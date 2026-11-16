@@ -111,6 +111,7 @@ class StockBalancesQuery:
     search: str | None = None
     category_id: int | None = None
     supplier_id: int | None = None
+    include_inactive: bool = False
 
 
 _BALANCES_FROM = """
@@ -118,7 +119,26 @@ _BALANCES_FROM = """
     JOIN products product ON product.id = balance.product_id
     JOIN categories category ON category.id = product.category_id
     LEFT JOIN suppliers supplier ON supplier.id = product.supplier_id
+    LEFT JOIN (
+        SELECT product_id, SUM(units) AS fridge_units
+        FROM fridge_stock
+        WHERE product_id IS NOT NULL
+        GROUP BY product_id
+    ) fridge ON fridge.product_id = balance.product_id
 """
+
+# Effective status 'active': no local override and active in Husky (see effective_status).
+_PRODUCT_IS_ACTIVE_SQL = "(product.local_status IS NULL AND product.is_active)"
+
+# Historical backfills created inactive stubs under old short codes that share a name with
+# today's EAN product; hiding them stops users opening the stub and seeing no stock.
+# An inactive product still holding or awaiting any stock stays visible.
+_HIDE_EMPTY_INACTIVE_SQL = (
+    f"({_PRODUCT_IS_ACTIVE_SQL} "
+    "OR balance.physical_qty <> 0 "
+    "OR balance.on_order_qty <> 0 "
+    "OR fridge.fridge_units > 0)"
+)
 
 # Category screen order (Uncategorised carries the highest display_order), then supplier
 # name with no-supplier rows last, then product name.
@@ -150,6 +170,8 @@ def list_balances(
     if query.supplier_id is not None:
         conditions.append("product.supplier_id = :supplier_id")
         params["supplier_id"] = query.supplier_id
+    if not query.include_inactive:
+        conditions.append(_HIDE_EMPTY_INACTIVE_SQL)
     where = ""
     if conditions:
         where = " WHERE " + " AND ".join(conditions)
@@ -163,7 +185,10 @@ def list_balances(
         "SELECT balance.product_id, balance.product_code, balance.product_name, "
         "balance.physical_qty, balance.on_order_qty, balance.available_qty, "
         "category.id AS category_id, category.name AS category_name, "
-        "supplier.id AS supplier_id, supplier.name AS supplier_name"
+        "supplier.id AS supplier_id, supplier.name AS supplier_name, "
+        "product.min_stock_qty, "
+        "COALESCE(fridge.fridge_units, 0) AS fridge_units, "
+        f"{_PRODUCT_IS_ACTIVE_SQL} AS is_active"
         f"{_BALANCES_FROM}{where}{_BALANCES_ORDER_BY}"
         "LIMIT :limit OFFSET :offset"
     )
@@ -269,24 +294,24 @@ def record_opening_stock(
 def list_movements(
     *,
     product_id: int | None,
-    after_id: int | None,
+    before_id: int | None,
     limit: int,
     session: Session,
 ) -> tuple[list[StockMovement], int | None]:
-    """Keyset page of the movements ledger ordered by ascending id.
+    """Keyset page of the movements ledger, newest first.
 
-    Returns the rows and the ``next_after_id`` cursor (None when exhausted).
+    Returns the rows and the ``next_before_id`` cursor (None when exhausted).
     """
     stmt = select(StockMovement)
     if product_id is not None:
         stmt = stmt.where(StockMovement.product_id == product_id)
-    if after_id is not None:
-        stmt = stmt.where(StockMovement.id > after_id)
-    stmt = stmt.order_by(StockMovement.id).limit(limit + 1)
+    if before_id is not None:
+        stmt = stmt.where(StockMovement.id < before_id)
+    stmt = stmt.order_by(StockMovement.id.desc()).limit(limit + 1)
 
     rows = list(session.execute(stmt).scalars().all())
-    next_after_id: int | None = None
+    next_before_id: int | None = None
     if len(rows) > limit:
         rows = rows[:limit]
-        next_after_id = rows[-1].id
-    return rows, next_after_id
+        next_before_id = rows[-1].id
+    return rows, next_before_id

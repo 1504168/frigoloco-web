@@ -85,6 +85,12 @@ logger = logging.getLogger("husky.sync")
 # ===========================================================================
 
 
+def is_husky_configured() -> bool:
+    """True when this server has the Husky API username and password."""
+    settings = get_settings()
+    return bool(settings.frigoloco_api_username and settings.frigoloco_api_password)
+
+
 def utcnow() -> datetime.datetime:
     """Timezone-aware UTC now (all event timestamps are ``TIMESTAMPTZ``)."""
     return datetime.datetime.now(datetime.timezone.utc)
@@ -145,20 +151,32 @@ PRODUCT_HUSKY_OWNED: tuple[str, ...] = (
     "price_ex_surcharges",
 )
 PRODUCT_SYNC_MANAGED: tuple[str, ...] = ("is_active", "husky_synced_at", "updated_at")
-PRODUCT_LOCAL_OWNED: tuple[str, ...] = ("local_status",)
+PRODUCT_LOCAL_OWNED: tuple[str, ...] = ("local_status", "min_stock_qty", "print_order")
 
 FRIDGE_HUSKY_OWNED: tuple[str, ...] = (
     "husky_id",
     "husky_name",
     "friendly_name",
     "client_id",
+    "husky_status",
 )
 FRIDGE_SYNC_MANAGED: tuple[str, ...] = ("is_active", "updated_at")
 FRIDGE_LOCAL_OWNED: tuple[str, ...] = (
     "local_status",
     "delivery_address",
     "delivery_instructions",
+    "modem_number",
+    "sim_card_number",
+    "active_on_weekends",
+    "preferences",
+    "delivery_time_from",
+    "delivery_time_to",
+    "night_delivery_ok",
 )
+
+HUSKY_NOT_CONFIGURED_MESSAGE = "Husky API not configured on this server"
+# Only a LIVE fridge is selling; SHIPPED, READY_TO_USE, END_OF_LIFE, ... are not.
+HUSKY_LIVE_FRIDGE_STATUS = "LIVE"
 
 FRIDGE_PRODUCT_PRICE_HUSKY_OWNED: tuple[str, ...] = (
     "sales_price",
@@ -205,6 +223,7 @@ def _guarded_update_set(table_name: str, update_set: dict) -> dict:
 # ===========================================================================
 
 _STATUS_VALUES = ("active", "inactive", "cancelled", "all")
+EFFECTIVE_STATUS_ACTIVE = "active"
 
 
 def effective_status(local_status: str | None, is_active: bool) -> str:
@@ -425,6 +444,13 @@ def category_display_order(category_name: str) -> int:
     if number_prefix is None:
         return UNNUMBERED_CATEGORY_DISPLAY_ORDER
     return int(number_prefix.group(1))
+
+
+def _is_live_fridge(husky_status: str | None) -> bool:
+    """Husky may omit the optional status: a fridge listed without one stays active."""
+    if husky_status is None:
+        return True
+    return husky_status == HUSKY_LIVE_FRIDGE_STATUS
 
 
 def effective_product_code(product_code: str | None, *tag_identity: str | None) -> str | None:
@@ -760,7 +786,8 @@ def _apply_fridges(session: Session, fridges: list[FridgeItem], outcome: JobOutc
             "husky_name": fridge.description,
             "friendly_name": fridge.friendlyName or fridge.name,
             "client_id": client_ids_by_name.get(fridge.facility),
-            "is_active": True,  # present in the feed -> Husky-active
+            "husky_status": fridge.status,
+            "is_active": _is_live_fridge(fridge.status),
         }
     copy_upsert(
         session,
@@ -931,6 +958,7 @@ def _fridge_update_set(upsert: Insert) -> dict:
             "husky_name": upsert.excluded.husky_name,
             "friendly_name": upsert.excluded.friendly_name,
             "client_id": func.coalesce(Fridge.client_id, upsert.excluded.client_id),
+            "husky_status": upsert.excluded.husky_status,
             "is_active": upsert.excluded.is_active,
             "updated_at": func.now(),
         },

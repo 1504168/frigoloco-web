@@ -74,6 +74,13 @@ CREATE TABLE IF NOT EXISTS suppliers (
     name               TEXT         NOT NULL UNIQUE,
     email              TEXT,
     warehouse_address  TEXT,
+    -- Person to call when goods do not arrive (migration 0018). Local-only.
+    contact_name       TEXT,
+    contact_phone      TEXT,
+    -- Payment conditions: days after invoice, optionally from end of month (migration 0026).
+    payment_terms_days          INTEGER  CONSTRAINT chk_suppliers_payment_terms_days_nonneg
+                                         CHECK (payment_terms_days >= 0),
+    payment_terms_end_of_month  BOOLEAN  NOT NULL DEFAULT FALSE,
     is_active          BOOLEAN      NOT NULL DEFAULT TRUE,
     created_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at         TIMESTAMPTZ  NOT NULL DEFAULT now()
@@ -114,6 +121,11 @@ CREATE TABLE IF NOT EXISTS products (
     -- Manual status override (D5): NULL follows Husky (is_active), a non-NULL
     -- value is user-forced and wins over sync. Sync NEVER writes this column.
     local_status     TEXT           CHECK (local_status IN ('inactive', 'cancelled')),
+    -- Warehouse minimum: below it the hourly job opens a low_stock alert (migration 0025).
+    min_stock_qty    INTEGER        CONSTRAINT chk_products_min_stock_qty_nonneg
+                                    CHECK (min_stock_qty >= 0),
+    -- Position on the printed dispatch sheet inside its category (migration 0025).
+    print_order      INTEGER,
     husky_synced_at  TIMESTAMPTZ,
     created_at       TIMESTAMPTZ    NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ    NOT NULL DEFAULT now()
@@ -143,8 +155,36 @@ CREATE TABLE IF NOT EXISTS fridges (
     -- Manual status override (D5): NULL follows Husky (is_active), a non-NULL
     -- value is user-forced and wins over sync. Sync NEVER writes this column.
     local_status           TEXT         CHECK (local_status IN ('inactive', 'cancelled')),
+    -- 4G/5G connection identifiers for support calls (migration 0020). Local-only.
+    modem_number           TEXT,
+    sim_card_number        TEXT,
+    -- FALSE = closed Saturday/Sunday: the forecast skips weekend days (migration 0020).
+    active_on_weekends     BOOLEAN      NOT NULL DEFAULT TRUE,
+    -- Raw Husky fridge status (LIVE, SHIPPED, END_OF_LIFE, ...); sync sets
+    -- is_active = (husky_status = 'LIVE') (migration 0025).
+    husky_status           TEXT,
+    -- Free-text site preferences shown in the planning grids (migration 0025). Local-only.
+    preferences            TEXT,
+    -- Delivery window; from > to = across midnight (migration 0026). Local-only.
+    delivery_time_from     TIME,
+    delivery_time_to       TIME,
+    night_delivery_ok      BOOLEAN      NOT NULL DEFAULT FALSE,
     created_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at             TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+-- Up to three contacts per client, one per role (migration 0019).
+CREATE TABLE IF NOT EXISTS client_contacts (
+    client_id   INTEGER      NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    role        TEXT         NOT NULL,
+    name        TEXT,
+    job_title   TEXT,
+    phone       TEXT,
+    email       TEXT,
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (client_id, role),
+    CONSTRAINT chk_client_contacts_role
+        CHECK (role IN ('account_finance', 'operations', 'it'))
 );
 
 -- Per-fridge sales-price overrides (briefing slide 24).
@@ -217,6 +257,99 @@ CREATE TABLE IF NOT EXISTS menu_product_caps (
     PRIMARY KEY (fridge_id, product_id)
 );
 
+-- Supplier terms, product tags, client rules, equipment register (migration 0026).
+CREATE TABLE IF NOT EXISTS supplier_agreements (
+    id            INTEGER       GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    supplier_id   INTEGER       NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    year          INTEGER       NOT NULL,
+    -- A percentage, 2.5 = 2.5 %.
+    discount_pct  NUMERIC(5,2)  NOT NULL
+                                CONSTRAINT chk_supplier_agreements_discount_pct_range
+                                CHECK (discount_pct >= 0 AND discount_pct <= 100),
+    basis         TEXT          NOT NULL
+                                CONSTRAINT chk_supplier_agreements_basis
+                                CHECK (basis IN ('year_end_rebate', 'price_discount')),
+    review_date   DATE,
+    notes         TEXT,
+    created_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS supplier_delivery_schedules (
+    supplier_id       INTEGER   NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    delivery_weekday  SMALLINT  NOT NULL
+                                CONSTRAINT chk_supplier_delivery_schedules_delivery_weekday_iso
+                                CHECK (delivery_weekday BETWEEN 1 AND 7),
+    -- Same weekday as the delivery = order the same day before cutoff_time.
+    cutoff_weekday    SMALLINT  NOT NULL
+                                CONSTRAINT chk_supplier_delivery_schedules_cutoff_weekday_iso
+                                CHECK (cutoff_weekday BETWEEN 1 AND 7),
+    cutoff_time       TIME      NOT NULL,
+    PRIMARY KEY (supplier_id, delivery_weekday)
+);
+
+CREATE TABLE IF NOT EXISTS product_tags (
+    product_id  INTEGER  NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    tag         TEXT     NOT NULL
+                         CONSTRAINT chk_product_tags_tag_format
+                         CHECK (tag ~ '^[a-z0-9_]+$'),
+    PRIMARY KEY (product_id, tag)
+);
+
+CREATE TABLE IF NOT EXISTS client_rules (
+    id          INTEGER      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    client_id   INTEGER      NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    -- NULL = the rule applies to every fridge of the client.
+    fridge_id   INTEGER      REFERENCES fridges(id) ON DELETE CASCADE,
+    rule_type   TEXT         NOT NULL
+                             CONSTRAINT chk_client_rules_rule_type
+                             CHECK (rule_type IN ('exclude_tag', 'note')),
+    tag         TEXT,
+    note        TEXT,
+    valid_from  DATE,
+    valid_to    DATE,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    CONSTRAINT chk_client_rules_exclude_tag_has_tag
+        CHECK (rule_type <> 'exclude_tag' OR tag IS NOT NULL),
+    CONSTRAINT chk_client_rules_valid_range
+        CHECK (valid_to IS NULL OR valid_from IS NULL OR valid_to >= valid_from)
+);
+
+CREATE TABLE IF NOT EXISTS equipment (
+    id                       INTEGER       GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    machine_type             TEXT          NOT NULL,
+    equipment_category       TEXT          NOT NULL
+                                           CONSTRAINT chk_equipment_category
+                                           CHECK (equipment_category IN
+                                               ('coffee', 'water_filter', 'vending', 'fridge', 'other')),
+    machine_code             TEXT          NOT NULL UNIQUE,
+    supplier_id              INTEGER       REFERENCES suppliers(id),
+    client_id                INTEGER       REFERENCES clients(id),
+    fridge_id                INTEGER       REFERENCES fridges(id),
+    ownership                TEXT          NOT NULL
+                                           CONSTRAINT chk_equipment_ownership
+                                           CHECK (ownership IN ('bought', 'rent')),
+    purchase_price_cents     BIGINT        CONSTRAINT chk_equipment_purchase_price_nonneg
+                                           CHECK (purchase_price_cents >= 0),
+    -- What we pay the supplier each month for a rented machine.
+    monthly_rent_cost_cents  BIGINT        CONSTRAINT chk_equipment_monthly_rent_cost_nonneg
+                                           CHECK (monthly_rent_cost_cents >= 0),
+    -- What we charge the client each month for this machine.
+    monthly_fee_cents        BIGINT        CONSTRAINT chk_equipment_monthly_fee_nonneg
+                                           CHECK (monthly_fee_cents >= 0),
+    purchase_date            DATE,
+    financing_years          INTEGER       CONSTRAINT chk_equipment_financing_years_positive
+                                           CHECK (financing_years > 0),
+    -- A fraction, 0.04 = 4 %.
+    financing_rate           NUMERIC(6,4)  CONSTRAINT chk_equipment_financing_rate_fraction
+                                           CHECK (financing_rate >= 0 AND financing_rate < 1),
+    financed_by              TEXT,
+    is_active                BOOLEAN       NOT NULL DEFAULT TRUE,
+    notes                    TEXT,
+    created_at               TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ   NOT NULL DEFAULT now()
+);
+
 -- ============================================================================
 -- SECTION 3 - PURCHASE ORDERS & PER-YEAR ORDER NUMBERING (R4, R5)
 -- ============================================================================
@@ -257,7 +390,7 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
     supplier_id              INTEGER        NOT NULL REFERENCES suppliers(id),
     status                   TEXT           NOT NULL DEFAULT 'pending'
                                             CONSTRAINT chk_purchase_orders_status
-                                            CHECK (status IN ('pending', 'received', 'cancelled')),
+                                            CHECK (status IN ('pending', 'received', 'closed_short', 'cancelled')),
     order_date               DATE           NOT NULL DEFAULT CURRENT_DATE,
     expected_delivery_date   DATE           NOT NULL,
     delivery_address         TEXT,
@@ -286,6 +419,42 @@ CREATE TABLE IF NOT EXISTS purchase_order_lines (
     UNIQUE (po_id, product_id)
 );
 
+-- One row per "Receive goods" action, carrying the receipt comment (issues such
+-- as broken or delayed goods). Its po_receipt stock movements point back at it
+-- via stock_movements.receipt_id (migration 0021).
+CREATE TABLE IF NOT EXISTS purchase_order_receipts (
+    id          INTEGER      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    po_id       INTEGER      NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+    comment     TEXT,
+    created_by  INTEGER      REFERENCES users(id),
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+-- One row per PO line whose received units differ from the ordered units
+-- (migration 0023): kind 'short' when the PO is closed with the received
+-- quantities, kind 'over' when an acknowledged over-receipt is booked.
+-- qty_difference is the positive shortfall or excess.
+CREATE TABLE IF NOT EXISTS purchase_order_discrepancies (
+    id              INTEGER      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    po_id           INTEGER      NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+    po_line_id      INTEGER      NOT NULL REFERENCES purchase_order_lines(id) ON DELETE CASCADE,
+    receipt_id      INTEGER      REFERENCES purchase_order_receipts(id) ON DELETE CASCADE,
+    kind            TEXT         NOT NULL
+                                 CONSTRAINT chk_po_discrepancies_kind
+                                 CHECK (kind IN ('short', 'over')),
+    qty_ordered     INTEGER      NOT NULL,
+    qty_received    INTEGER      NOT NULL,
+    qty_difference  INTEGER      NOT NULL
+                                 CONSTRAINT chk_po_discrepancies_difference_positive
+                                 CHECK (qty_difference > 0),
+    reason          TEXT
+                                 CONSTRAINT chk_po_discrepancies_reason
+                                 CHECK (reason IS NULL OR reason IN ('missing', 'damaged', 'wrong_product', 'other')),
+    comment         TEXT,
+    created_by      INTEGER      REFERENCES users(id),
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
 -- ============================================================================
 -- SECTION 4 - MENUS, FORECASTS, SCORES (R1, R2, R3)
 -- ============================================================================
@@ -293,6 +462,9 @@ CREATE TABLE IF NOT EXISTS purchase_order_lines (
 -- day_name (ISO weekday name) completes the (year, iso_week, day_name) natural
 -- key the Forecast->Menu->Dispatch pipeline keys on (migration 0005, D2). The
 -- '' default keeps the legacy week-level create path unique.
+-- The day_name = '' row IS the week menu (spec 0008): its menu_products are the
+-- week's product list, shared by every day menu of that ISO week. Migration
+-- 0022 backfilled week rows + lists from the day menus saved before it.
 CREATE TABLE IF NOT EXISTS weekly_menus (
     id              INTEGER      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     year            INTEGER      NOT NULL CHECK (year BETWEEN 2020 AND 2100),
@@ -366,7 +538,17 @@ CREATE TABLE IF NOT EXISTS forecast_results (
     forecast_qty  NUMERIC(10,2)  NOT NULL CHECK (forecast_qty >= 0),
     valid_days    INTEGER        NOT NULL DEFAULT 0 CHECK (valid_days >= 0),
     holiday_days  INTEGER        NOT NULL DEFAULT 0 CHECK (holiday_days >= 0),
+    -- Forecast before the in-fridge stock deduction, and the units deducted (migration 0024).
+    -- NULL on runs computed before 0024.
+    gross_qty      NUMERIC(10,2)  CHECK (gross_qty >= 0),
+    residual_units INTEGER        CHECK (residual_units >= 0),
     UNIQUE (run_id, fridge_id, category_id)
+);
+
+-- Belgian public holidays (migration 0024): not selling days for the forecast.
+CREATE TABLE IF NOT EXISTS bank_holidays (
+    holiday_date  DATE  PRIMARY KEY,
+    label         TEXT  NOT NULL CHECK (btrim(label) <> '')
 );
 
 CREATE TABLE IF NOT EXISTS product_scores (
@@ -496,6 +678,8 @@ CREATE TABLE IF NOT EXISTS stock_movements (
     -- the application; the id value is still stored for joins.
     dispatch_line_id  INTEGER,
     reason            TEXT,
+    -- The receive action a po_receipt belongs to; NULL before migration 0021.
+    receipt_id        INTEGER              REFERENCES purchase_order_receipts(id),
     created_by        INTEGER              REFERENCES users(id),
     created_at        TIMESTAMPTZ          NOT NULL DEFAULT now(),
     -- Sign conventions: receipts add, dispatches remove, cancellation
@@ -761,11 +945,16 @@ CREATE TABLE IF NOT EXISTS fridge_stock (
     units        INTEGER      NOT NULL
                               CONSTRAINT chk_fridge_stock_units_nonneg
                               CHECK (units >= 0),
+    -- Per-unit expiry timestamps captured from Husky CurrentTag.expiryDate (migration 0012).
+    expiry_dates TIMESTAMPTZ[],
     taken_at     TIMESTAMPTZ  NOT NULL,
     PRIMARY KEY (fridge_id, product_code)
 );
 
 CREATE INDEX IF NOT EXISTS ix_fridge_stock_product ON fridge_stock (product_id);
+
+COMMENT ON COLUMN fridge_stock.expiry_dates IS
+    'Per-unit expiry timestamps from Husky CurrentTag.expiryDate; units stays the authoritative count. Feeds the forecast residual-stock deduction and the withdrawal list.';
 
 -- ============================================================================
 -- NOTE (2026-07-28): Restock verification (legacy R9) removed. Dispatched-vs-added
@@ -902,11 +1091,29 @@ CREATE INDEX IF NOT EXISTS ix_purchase_orders_status_delivery
     ON purchase_orders (status, expected_delivery_date);
 CREATE INDEX IF NOT EXISTS ix_purchase_order_lines_product
     ON purchase_order_lines (product_id);
+CREATE INDEX IF NOT EXISTS ix_purchase_order_receipts_po
+    ON purchase_order_receipts (po_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_purchase_order_discrepancies_po
+    ON purchase_order_discrepancies (po_id);
+CREATE INDEX IF NOT EXISTS ix_purchase_order_discrepancies_created
+    ON purchase_order_discrepancies (created_at);
+CREATE INDEX IF NOT EXISTS ix_stock_movements_receipt
+    ON stock_movements (receipt_id)
+    WHERE receipt_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS ix_products_category
     ON products (category_id);
 CREATE INDEX IF NOT EXISTS ix_products_supplier
     ON products (supplier_id);
+
+CREATE INDEX IF NOT EXISTS ix_supplier_agreements_supplier
+    ON supplier_agreements (supplier_id, year);
+CREATE INDEX IF NOT EXISTS ix_product_tags_tag
+    ON product_tags (tag);
+CREATE INDEX IF NOT EXISTS ix_client_rules_client
+    ON client_rules (client_id);
+CREATE INDEX IF NOT EXISTS ix_equipment_client
+    ON equipment (client_id);
 
 CREATE INDEX IF NOT EXISTS ix_product_reviews_product_reviewed_at
     ON product_reviews (product_id, reviewed_at);
@@ -935,9 +1142,16 @@ COMMENT ON TABLE client_service_charges     IS 'Replaces the Service Additionals
 COMMENT ON TABLE client_interventions       IS 'New (slide 13): intervention log per fridge - no Excel equivalent existed.';
 COMMENT ON TABLE product_targets            IS 'Replaces the Snacks & Drinks Target Map sheet (3,522 rows): target-based replenishment quantities per fridge x product (R3).';
 COMMENT ON TABLE menu_product_caps          IS 'New (slide 8): max units of a product per fridge per dispatch.';
+COMMENT ON TABLE supplier_agreements        IS 'New (ERP V2 comments #28): yearly negotiated supplier discount (year-end rebate or price discount). Reference data only.';
+COMMENT ON TABLE supplier_delivery_schedules IS 'New (ERP V2 comments #30/#31): supplier delivery weekdays with the order cutoff weekday and time.';
+COMMENT ON TABLE product_tags               IS 'New (ERP V2 comments #36-#38): dietary / content tags per product, matched by client_rules exclude_tag.';
+COMMENT ON TABLE client_rules               IS 'New (ERP V2 comments #36-#38): per client or per fridge rules (exclude a product tag, or a note). Menu warns, never blocks.';
+COMMENT ON TABLE equipment                  IS 'New (ERP V2 comments #41-#50): equipment register (coffee, water filter, vending). Reference data only, no finance effect yet.';
 COMMENT ON TABLE order_no_counters          IS 'Helper for next_order_no(): per-year sequence behind the YYYY-NNNNN order numbers (R4). Replaces the max-existing-order-number scan in Create Purchase Order.osts.';
 COMMENT ON TABLE purchase_orders            IS 'Replaces OrdersSummaryTable (Order View / Order History) in the Forecasting workbook.';
 COMMENT ON TABLE purchase_order_lines       IS 'Replaces OrdersLineItemsTable in the Forecasting workbook.';
+COMMENT ON TABLE purchase_order_receipts    IS 'One row per Receive goods action on a purchase order, with the free-text receipt comment (issues such as broken or delayed goods).';
+COMMENT ON TABLE purchase_order_discrepancies IS 'One row per PO line whose received units differ from the ordered units: kind short (written when the PO is closed with received quantities, optional reason + comment) or over (written when an acknowledged over-receipt is booked). qty_difference is the positive shortfall or excess.';
 COMMENT ON TABLE weekly_menus               IS 'Replaces the weekly Menu sheet tabs (slide 6) in the Forecasting workbook.';
 COMMENT ON TABLE menu_products              IS 'Replaces the Menu sheet product columns: which products are on a given week''s menu.';
 COMMENT ON TABLE forecast_runs              IS 'Replaces each execution of Update Forecast.osts - a stored, reproducible run with its parameter snapshot.';
@@ -959,7 +1173,7 @@ COMMENT ON TABLE alerts                     IS 'Replaces the Power Automate aler
 COMMENT ON TABLE audit_log                  IS 'New (slide 23): user + timestamp + before/after for every mutating action - Excel had no audit trail on saves.';
 
 COMMENT ON VIEW v_stock_balances IS
-    'Warehouse stock per product: physical_qty = SUM(ledger), on_order_qty = pending PO remainder, available_qty = on_order + physical (Excel Stock & Ordered rule, R6).';
+    'Warehouse stock per product: physical_qty = SUM(ledger), on_order_qty = pending PO remainder (closed_short and cancelled orders are not on order), available_qty = on_order + physical (Excel Stock & Ordered rule, R6).';
 COMMENT ON FUNCTION next_order_no() IS
     'Concurrency-safe YYYY-NNNNN order number from a row-locked per-year counter (R4).';
 COMMENT ON FUNCTION create_event_partitions_for_month(DATE) IS

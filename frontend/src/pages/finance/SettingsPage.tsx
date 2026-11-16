@@ -8,9 +8,9 @@ import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { toast } from '@/components/ui/sonner'
+import { toast } from '@/components/ui/toast'
 import { api, ApiError } from '@/lib/api'
-import { formatDateTime } from '@/lib/format'
+import { formatDateTime12Hour } from '@/lib/format'
 import type { Setting } from '@/pages/finance/types'
 import { SectionCard } from '@/pages/finance/components'
 import { useCategories } from '@/pages/ops/lib/reference'
@@ -209,7 +209,7 @@ function SettingRow({ setting }: { setting: Setting }) {
         <div className="text-sm font-semibold text-foreground">{label}</div>
         {help ? <p className="mt-0.5 text-xs text-muted-foreground">{help}</p> : null}
         <p className="mt-1 text-[11px] text-muted-foreground">
-          Updated {formatDateTime(setting.updated_at)}
+          Updated {formatDateTime12Hour(setting.updated_at)}
         </p>
       </div>
       <div className="flex flex-col gap-1 sm:min-w-[320px]">

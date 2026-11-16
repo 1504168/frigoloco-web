@@ -1,14 +1,18 @@
 import {
   Bell,
   Boxes,
+  Coffee,
   ClipboardList,
+  FileBarChart,
   LayoutGrid,
   Package,
+  PackageMinus,
   RefreshCw,
   Refrigerator,
   Settings,
   Snowflake,
   Star,
+  Target,
   TrendingUp,
   Truck,
   UserCog,
@@ -45,6 +49,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Forecast', path: '/forecast', icon: TrendingUp },
       { label: 'Menu', path: '/menu', icon: LayoutGrid },
+      { label: 'Snack & drink targets', path: '/targets', icon: Target },
       { label: 'Product Rating', path: '/rating', icon: Star },
     ],
   },
@@ -62,12 +67,20 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [{ label: 'Finance', path: '/finance', icon: Wallet }],
   },
   {
+    title: 'Reports',
+    items: [
+      { label: 'Restock Report', path: '/reports/restock', icon: FileBarChart },
+      { label: 'Loss Report', path: '/reports/loss', icon: PackageMinus },
+    ],
+  },
+  {
     title: 'Masters',
     items: [
       { label: 'Products', path: '/masters/products', icon: Package },
       { label: 'Suppliers', path: '/masters/suppliers', icon: Refrigerator },
       { label: 'Clients', path: '/masters/clients', icon: Users },
       { label: 'Fridges', path: '/masters/fridges', icon: Snowflake },
+      { label: 'Equipment', path: '/masters/equipment', icon: Coffee },
       { label: 'Sync', path: '/masters/sync', icon: RefreshCw },
     ],
   },

@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.db import engine, get_db
 from app.main import app
+from app.services import forecast_service
 from tests import ensure_test_admin_user
 
 PREFIX = "/api/v1"
@@ -36,6 +37,12 @@ TAG = "ZZWF-"
 YEAR, WEEK, DAY_NAME = 2027, 2, "Wednesday"
 DELIVERY_DATE = datetime.date.fromisocalendar(YEAR, WEEK, 3)  # 2027-01-13
 DELIVERY_WEEKDAY = DELIVERY_DATE.isoweekday()
+
+
+@pytest.fixture(autouse=True)
+def today_is_delivery_day(monkeypatch):
+    """Recent-sales windows end at today: pin today so they end at the delivery date."""
+    monkeypatch.setattr(forecast_service, "_local_today", lambda: DELIVERY_DATE)
 
 
 @pytest.fixture()
@@ -263,7 +270,7 @@ def test_full_workflow_pipeline_2027_w2(ctx):
         params={"year": YEAR, "week": WEEK, "day_name": DAY_NAME},
     )
     assert imp.status_code == 200, imp.text
-    assert len(imp.json()["cells"]) >= 1  # forecast allocated across category products
+    assert len(imp.json()["grid"]["cells"]) >= 1  # forecast split over the products
 
     # 5) edit + save menu with an explicit, deterministic grid.
     menu_save = {

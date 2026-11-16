@@ -4,6 +4,7 @@ import { AppLayout } from '@/components/layout/AppLayout'
 import Login from '@/pages/Login'
 import { PlaceholderPage } from '@/pages/_shared/PlaceholderPage'
 import { ProductsPage } from '@/pages/masters/ProductsPage'
+import { EquipmentPage } from '@/pages/masters/EquipmentPage'
 import { SyncPage } from '@/pages/masters/SyncPage'
 import { AlertsPage } from '@/pages/alerts/AlertsPage'
 import { UsersPage } from '@/pages/Users'
@@ -11,12 +12,14 @@ import { opsRoutes } from '@/pages/ops/routes'
 import { supplyRoutes } from '@/pages/supply/routes'
 import { financeRoutes } from '@/pages/finance/routes'
 import { ratingRoutes } from '@/pages/rating/routes'
+import { reportsRoutes } from '@/pages/reports/routes'
 
 /**
  * REAL foundation pages (fetch live backend data). Owned by the foundation.
  */
 const foundationRoutes: RouteObject[] = [
   { path: '/masters/products', element: <ProductsPage /> },
+  { path: '/masters/equipment', element: <EquipmentPage /> },
   { path: '/masters/sync', element: <SyncPage /> },
   { path: '/alerts', element: <AlertsPage /> },
   { path: '/users', element: <UsersPage /> },
@@ -50,6 +53,7 @@ export const routes: RouteObject[] = [
           ...supplyRoutes,
           ...financeRoutes,
           ...ratingRoutes,
+          ...reportsRoutes,
           ...placeholderRoutes,
           { path: '*', element: <PlaceholderPage title="Page not found" description="The page you are looking for does not exist." /> },
         ],

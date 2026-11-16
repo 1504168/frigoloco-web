@@ -6,7 +6,7 @@ import datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from app.schemas.masters import ApiModel, Money
 from app.services.forecast.strategies import DEFAULT_STRATEGY_CODE
@@ -51,9 +51,18 @@ class ForecastModelOut(ApiModel):
 class ForecastResultOut(ApiModel):
     fridge_id: int
     category_id: int
+    # Net: gross_qty minus residual_units, never below zero.
     forecast_qty: Money
+    # Null on runs computed before migration 0024.
+    gross_qty: Money | None
+    residual_units: int | None
     valid_days: int
     holiday_days: int
+
+
+class FridgeWindowSalesOut(ApiModel):
+    fridge_id: int
+    sold_units: int
 
 
 class ForecastRunOut(ApiModel):
@@ -71,10 +80,25 @@ class ForecastRunOut(ApiModel):
     window_end: datetime.date  # exclusive
     # Units sold in the window by the run's fridges; 0 means the window has no data.
     window_sales_units: int
+    window_sales_by_fridge: list[FridgeWindowSalesOut]
     # Categories with no active product and no sales in the window.
     hidden_category_ids: list[int]
     # False when the delivery date is not the next one, so current fridge stock was not deducted.
     residual_applied: bool
+    # Holiday label when the delivery date is a bank holiday.
+    delivery_bank_holiday: str | None
+
+
+class SavedForecastOut(ApiModel):
+    """One row of the saved-forecasts list."""
+
+    run_id: int
+    delivery_date: datetime.date
+    iso_year: int
+    week_no: int
+    day_name: str
+    model: str
+    run_at: datetime.datetime
 
 
 class ForecastActualCell(ApiModel):
@@ -97,7 +121,27 @@ class ForecastActualsOut(ApiModel):
     delivery_date: datetime.date
     window_start: datetime.date
     window_end: datetime.date  # exclusive
+    # ISO weekdays (1-7) the window was narrowed to; null = every day.
+    weekdays: list[int] | None
     cells: list[ForecastActualCell]
+
+
+class BankHolidayIn(ApiModel):
+    holiday_date: datetime.date
+    label: str = Field(min_length=1, max_length=100)
+
+    @field_validator("label")
+    @classmethod
+    def strip_label(cls, label: str) -> str:
+        stripped = label.strip()
+        if not stripped:
+            raise ValueError("label must not be blank")
+        return stripped
+
+
+class BankHolidayOut(ApiModel):
+    holiday_date: datetime.date
+    label: str
 
 
 class ScoreRecomputeRequest(ApiModel):

@@ -49,8 +49,12 @@ export interface ForecastModel {
 export interface ForecastResult {
   fridge_id: number
   category_id: number
-  /** Decimal string, e.g. "12.50". */
+  /** Net decimal string, e.g. "12.50": gross_qty minus residual_units, never below 0. */
   forecast_qty: string
+  /** Before the in-fridge stock deduction; null on runs older than migration 0024. */
+  gross_qty: string | null
+  /** Good in-fridge stock units deducted; null on runs older than migration 0024. */
+  residual_units: number | null
   valid_days: number
   holiday_days: number
 }
@@ -58,7 +62,34 @@ export interface ForecastResult {
 /** Per-fridge config echoed inside a run's params.fridge_config. */
 export interface FridgeConfig {
   min_daily_qty: number
+  /** Calendar days until the next delivery. */
   days_to_fill: number
+  /** Selling days the delivery covers (weekends and bank holidays left out); absent on old runs. */
+  selling_days_to_fill?: number
+  active_on_weekends?: boolean
+}
+
+/** Units one fridge sold in the run's sales window (schema: FridgeWindowSalesOut). */
+export interface FridgeWindowSales {
+  fridge_id: number
+  sold_units: number
+}
+
+/** GET /api/v1/forecasts/saved-list item (schema: SavedForecastOut). */
+export interface SavedForecast {
+  run_id: number
+  delivery_date: string
+  iso_year: number
+  week_no: number
+  day_name: string
+  model: string
+  run_at: string
+}
+
+/** GET/POST /api/v1/forecasts/bank-holidays item (schema: BankHolidayOut). */
+export interface BankHoliday {
+  holiday_date: string
+  label: string
 }
 
 /** One fridge×category actuals cell (schema: ForecastActualCell). */
@@ -78,7 +109,10 @@ export interface ForecastActuals {
   day_name: string
   delivery_date: string
   window_start: string
+  /** Exclusive. */
   window_end: string
+  /** ISO weekdays (1-7) the window was narrowed to; null = every day. */
+  weekdays: number[] | null
   cells: ForecastActualCell[]
 }
 
@@ -94,6 +128,7 @@ export interface ForecastRun {
   is_saved: boolean
   params: {
     fridge_config?: Record<string, FridgeConfig>
+    excluded_bank_holidays?: string[]
     [key: string]: unknown
   }
   results: ForecastResult[]
@@ -101,8 +136,11 @@ export interface ForecastRun {
   /** Exclusive: the day after the last sales day in the window. */
   window_end: string
   window_sales_units: number
+  window_sales_by_fridge: FridgeWindowSales[]
   hidden_category_ids: number[]
   residual_applied: boolean
+  /** Holiday label when the delivery date is a bank holiday. */
+  delivery_bank_holiday: string | null
 }
 
 // ── Shared grid shape (MenuGridOut and DispatchMatrix are structurally equal) ─
@@ -140,6 +178,102 @@ export interface MenuGrid {
   products: GridProduct[]
   categories: GridCategory[]
   cells: GridCell[]
+}
+
+/** POST /api/v1/menus/import-from-forecast body (schema: MenuImportRequest). */
+export interface MenuImportRequest {
+  /** The products on screen; omit to use the saved week menu. */
+  product_ids?: number[]
+  sold_first: boolean
+  /** Give each product only what it needs beyond its good units in the fridge. */
+  use_fridge_stock: boolean
+  /** Scale a fridge x category up or down by how fast it sells against its last forecast. */
+  sales_speed: boolean
+  /** Cut each product to the physical warehouse stock, proportionally per fridge. */
+  fit_to_stock?: boolean
+}
+
+/** A product the fridges asked more of than the warehouse holds (schema: WarehouseStockCutOut). */
+export interface WarehouseStockCut {
+  product_id: number
+  requested: number
+  in_stock: number
+  cut: number
+}
+
+/** Good units a product already has in a fridge and how much they cut its import. */
+export interface MenuStockCut {
+  fridge_id: number
+  product_id: number
+  in_fridge_units: number
+  reduced_by: number
+}
+
+/** Whose hourly sales shaped a sales-speed profile. */
+export type SalesProfileSource = 'fridge' | 'category' | 'linear'
+
+/** A fridge x category forecast scaled by its sales speed (decimals arrive as strings). */
+export interface SalesSpeedAdjustment {
+  fridge_id: number
+  category_id: number
+  /** The previous delivery's forecast for the time until the next delivery. */
+  forecast_units: string
+  sold_units: number
+  /** Forecast units still expected until the next delivery. */
+  remaining_units: string
+  pace: string
+  factor: string
+  profile_source: SalesProfileSource
+}
+
+/** A product a sales-speed raise skipped because it would expire before the coverage end. */
+export interface ShelfLifeHold {
+  fridge_id: number
+  product_id: number
+  raised_qty: number
+  kept_qty: number
+  shelf_life_days: number
+  coverage_days: number
+}
+
+/** POST /api/v1/menus/import-from-forecast response (schema: MenuImportOut). */
+export interface MenuImport {
+  grid: MenuGrid
+  /** True when nothing was chosen for the imported scope, so products came from ratings. */
+  used_rating_suggestion: boolean
+  categories_without_products: number[]
+  sold_first: boolean
+  /** False when the switch was off or the delivery is not the next one. */
+  fridge_stock_applied: boolean
+  /** Fridges whose stock reading is missing or older than 2 hours. */
+  stale_stock_fridge_ids: number[]
+  stock_cuts: MenuStockCut[]
+  sales_speed_adjustments: SalesSpeedAdjustment[]
+  shelf_life_holds: ShelfLifeHold[]
+  /** Products without a score that got units, split with their category's mean score. */
+  default_score_product_ids: number[]
+  warehouse_stock_cuts: WarehouseStockCut[]
+  /** Fridges whose Snacks and Drinks were refilled to their targets. */
+  target_refill_fridge_ids: number[]
+  /** Imported cells whose client excludes one of the product's tags: a warning, never a block. */
+  rule_violations: ClientRuleViolation[]
+}
+
+/** A product on a fridge whose client excludes one of its tags (schema: ClientRuleViolation). */
+export interface ClientRuleViolation {
+  fridge_id: number
+  product_id: number
+  rule_id: number
+  tag: string
+  note: string | null
+}
+
+/** GET /api/v1/menus/week: the products chosen for an ISO week (schema: WeekMenuOut). */
+export interface WeekMenu {
+  menu_id: number | null
+  year: number
+  week: number
+  categories: GridCategory[]
 }
 
 /** One line in a menu/dispatch save body (schema: MenuLineItem / DispatchLineItem). */

@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { InfoHint, type Hint } from '@/components/shared/InfoHint'
 import { cn } from '@/lib/utils'
 
 /**
@@ -53,6 +54,7 @@ export function KpiTile({ label, value, caption, tone = 'default', hero, classNa
 export interface SegmentTab<T extends string> {
   value: T
   label: React.ReactNode
+  hint?: Hint
 }
 
 export interface SegmentTabsProps<T extends string> {
@@ -81,13 +83,14 @@ export function SegmentTabs<T extends string>({
             aria-selected={active}
             onClick={() => onChange(tab.value)}
             className={cn(
-              '-mb-px border-b-2 px-4 py-2 text-sm font-semibold transition-colors',
+              '-mb-px inline-flex items-center gap-1 border-b-2 px-4 py-2 text-sm font-semibold transition-colors',
               active
                 ? 'border-primary text-foreground'
                 : 'border-transparent text-muted-foreground hover:text-foreground',
             )}
           >
             {tab.label}
+            {tab.hint ? <InfoHint {...tab.hint} /> : null}
           </button>
         )
       })}

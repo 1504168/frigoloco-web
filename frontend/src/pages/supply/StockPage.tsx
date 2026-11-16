@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { SlidersHorizontal } from 'lucide-react'
 import { CategoryFilter } from '@/components/filters/CategoryFilter'
 import { FilterBar } from '@/components/filters/FilterBar'
@@ -11,26 +11,40 @@ import { ErrorState } from '@/components/shared/ErrorState'
 import { StatusChip } from '@/components/shared/StatusChip'
 import { Toolbar } from '@/components/shared/Toolbar'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
-import { toast } from '@/components/ui/sonner'
+import { Switch } from '@/components/ui/switch'
 import { useCategorySupplierFilter } from '@/hooks/useCategorySupplierFilter'
-import { api, ApiError, type Page } from '@/lib/api'
-import { EMPTY_PLACEHOLDER, formatDateTime } from '@/lib/format'
+import { api, type Page } from '@/lib/api'
+import { EMPTY_PLACEHOLDER, formatDateTime12Hour } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { Dialog } from './components/Dialog'
-import { Field, Textarea, fieldErrorsFromApiError } from './components/form'
-import { ProductPicker } from './components/ProductPicker'
+import { InfoHint, WithInfoHint, type Hint } from '@/components/shared/InfoHint'
+import { ProductLocationsPanel } from './components/ProductLocationsPanel'
+import {
+  StockAdjustmentDialog,
+  type AdjustableProduct,
+  type AdjustmentMode,
+} from './components/StockAdjustmentDialog'
 import type {
   MovementsPage,
-  ProductLite,
   StockBalance,
-  StockMovement,
   StockMovementType,
 } from './types'
 
 const PAGE_SIZE = 25
 const MOVEMENTS_LIMIT = 20
+
+const INCLUDE_INACTIVE_HINT: Hint = {
+  text:
+    'Also lists inactive products with no stock, such as old short codes from the sales ' +
+    'history.',
+  example:
+    '"Cantonese Rice" has the live code 0000042047681 and old codes 2016 and 4326; only the ' +
+    'live code holds fridge stock.',
+}
+const MANUAL_ADJUSTMENT_HINT: Hint = {
+  text: 'Records a warehouse stock change by hand: a signed change or the quantity you counted.',
+  example: '3 salads thrown away: change by -3, reason "expired".',
+}
 
 const MOVEMENT_LABELS: Record<StockMovementType, string> = {
   po_receipt: 'PO receipt',
@@ -46,10 +60,23 @@ function QtyCell({ value }: { value: number }) {
   )
 }
 
-function StockStatusChip({ availableQty }: { availableQty: number }) {
-  if (availableQty < 0) return <StatusChip status="critical" label="Negative" />
-  if (availableQty === 0) return <StatusChip status="warning" label="Empty" />
+function StockStatusChip({ balance }: { balance: StockBalance }) {
+  if (!balance.is_active) return <StatusChip status="inactive" label="Inactive" />
+  if (balance.available_qty < 0) return <StatusChip status="critical" label="Negative" />
+  if (balance.is_low_stock) {
+    return (
+      <span title={`Fewer than the minimum of ${balance.min_stock_qty} in the warehouse`}>
+        <StatusChip status="warning" label={`Low stock (min ${balance.min_stock_qty})`} />
+      </span>
+    )
+  }
+  if (balance.available_qty === 0) return <StatusChip status="warning" label="Empty" />
   return <StatusChip status="active" label="In stock" />
+}
+
+interface AdjustmentRequest {
+  product: AdjustableProduct | null
+  mode: AdjustmentMode
 }
 
 const STOCK_COLUMNS: DataTableColumn<StockBalance>[] = [
@@ -101,9 +128,27 @@ const STOCK_COLUMNS: DataTableColumn<StockBalance>[] = [
     sortValue: (row) => row.available_qty,
   },
   {
+    id: 'fridges',
+    header: 'In fridges',
+    align: 'right',
+    cell: (row) => <QtyCell value={row.fridge_units} />,
+    sortValue: (row) => row.fridge_units,
+  },
+  {
+    id: 'minimum',
+    header: 'Minimum',
+    align: 'right',
+    cell: (row) => (
+      <span className="tabular-nums text-muted-foreground">
+        {row.min_stock_qty ?? EMPTY_PLACEHOLDER}
+      </span>
+    ),
+    sortValue: (row) => row.min_stock_qty,
+  },
+  {
     id: 'status',
     header: 'Status',
-    cell: (row) => <StockStatusChip availableQty={row.available_qty} />,
+    cell: (row) => <StockStatusChip balance={row} />,
     sortValue: (row) => row.available_qty,
   },
 ]
@@ -118,21 +163,27 @@ export function StockPage() {
   } = useCategorySupplierFilter()
   const [search, setSearch] = React.useState('')
   const [offset, setOffset] = React.useState(0)
-  const [selected, setSelected] = React.useState<StockBalance | null>(null)
-  const [adjusting, setAdjusting] = React.useState(false)
+  const [includeInactive, setIncludeInactive] = React.useState(false)
+  const [clickedRow, setClickedRow] = React.useState<StockBalance | null>(null)
+  const [adjustment, setAdjustment] = React.useState<AdjustmentRequest | null>(null)
 
   React.useEffect(() => {
     setOffset(0)
-  }, [search, categoryId, supplierId])
+  }, [search, categoryId, supplierId, includeInactive])
 
   const balancesQuery = useQuery({
-    queryKey: ['supply', 'stock-balances', { search, categoryId, supplierId, offset }],
+    queryKey: [
+      'supply',
+      'stock-balances',
+      { search, categoryId, supplierId, includeInactive, offset },
+    ],
     queryFn: ({ signal }) =>
       api.get<Page<StockBalance>>('/api/v1/stock/balances', {
         params: {
           search: search || undefined,
           category_id: categoryId,
           supplier_id: supplierId,
+          include_inactive: includeInactive || undefined,
           limit: PAGE_SIZE,
           offset,
         },
@@ -141,6 +192,12 @@ export function StockPage() {
     placeholderData: keepPreviousData,
     enabled: isSupplierSettled,
   })
+
+  // Re-read the clicked row from the latest page so a saved minimum or adjustment shows at once.
+  const refreshedRow = balancesQuery.data?.items.find(
+    (row) => row.product_id === clickedRow?.product_id,
+  )
+  const selected = refreshedRow ?? clickedRow
 
   return (
     <div className="space-y-3">
@@ -157,19 +214,31 @@ export function StockPage() {
               categoryId={categoryId}
             />
             <ProductSearchInput onSearchChange={setSearch} />
+            <label
+              className="flex items-center gap-2 whitespace-nowrap text-xs text-muted-foreground"
+            >
+              <Switch
+                checked={includeInactive}
+                onCheckedChange={setIncludeInactive}
+              />
+              Show inactive
+              <InfoHint {...INCLUDE_INACTIVE_HINT} />
+            </label>
           </FilterBar>
         }
         right={
-          <Button
-            variant="outline"
-            onClick={() => setAdjusting(true)}
-          >
-            <SlidersHorizontal className="h-4 w-4" /> Manual adjustment
-          </Button>
+          <WithInfoHint hint={MANUAL_ADJUSTMENT_HINT}>
+            <Button
+              variant="outline"
+              onClick={() => setAdjustment({ product: null, mode: 'delta' })}
+            >
+              <SlidersHorizontal className="h-4 w-4" /> Manual adjustment
+            </Button>
+          </WithInfoHint>
         }
       />
 
-      <div className="grid flex-1 grid-cols-1 gap-6 xl:grid-cols-[1.4fr_1fr]">
+      <div className="grid flex-1 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <div className="flex flex-col">
           <DataTable
             columns={STOCK_COLUMNS}
@@ -182,7 +251,7 @@ export function StockPage() {
             offset={offset}
             onOffsetChange={setOffset}
             getRowId={(row) => row.product_id}
-            onRowClick={(row) => setSelected(row)}
+            onRowClick={(row) => setClickedRow(row)}
             emptyState={
               <EmptyState
                 title="No stock rows"
@@ -192,79 +261,81 @@ export function StockPage() {
           />
         </div>
 
-        <MovementsPanel selected={selected} />
+        <div className="flex min-w-0 flex-col gap-6 self-start">
+          {selected ? (
+            <ProductLocationsPanel
+              selected={selected}
+              onAdjustStock={() =>
+                setAdjustment({ product: toAdjustableProduct(selected), mode: 'counted' })
+              }
+            />
+          ) : null}
+          <MovementsPanel selected={selected} />
+        </div>
       </div>
 
-      {adjusting ? (
-        <AdjustmentDialog
-          onClose={() => setAdjusting(false)}
-          onDone={() => {
-            balancesQuery.refetch()
-            setAdjusting(false)
-          }}
+      {adjustment ? (
+        <StockAdjustmentDialog
+          initialProduct={adjustment.product}
+          initialMode={adjustment.mode}
+          onClose={() => setAdjustment(null)}
+          onDone={() => setAdjustment(null)}
         />
       ) : null}
     </div>
   )
 }
 
+function toAdjustableProduct(balance: StockBalance): AdjustableProduct {
+  return {
+    id: balance.product_id,
+    code: balance.product_code,
+    name: balance.product_name,
+  }
+}
+
 function MovementsPanel({ selected }: { selected: StockBalance | null }) {
-  const [afterId, setAfterId] = React.useState<number | null>(null)
-  const [accumulated, setAccumulated] = React.useState<StockMovement[]>([])
-
-  // Reset the keyset cursor whenever the selected product changes.
-  React.useEffect(() => {
-    setAfterId(null)
-    setAccumulated([])
-  }, [selected?.product_id])
-
-  const movementsQuery = useQuery({
-    queryKey: ['supply', 'stock-movements', { productId: selected?.product_id ?? null, afterId }],
-    queryFn: ({ signal }) =>
+  const productId = selected?.product_id ?? null
+  // An infinite query refetches every loaded page on invalidation, so a new adjustment
+  // appears at the top straight away.
+  const movementsQuery = useInfiniteQuery({
+    queryKey: ['supply', 'stock-movements', { productId }],
+    queryFn: ({ pageParam, signal }) =>
       api.get<MovementsPage>('/api/v1/stock/movements', {
         params: {
-          product_id: selected?.product_id,
-          after_id: afterId ?? undefined,
+          product_id: productId,
+          before_id: pageParam ?? undefined,
           limit: MOVEMENTS_LIMIT,
         },
         signal,
       }),
-    placeholderData: keepPreviousData,
+    initialPageParam: null as number | null,
+    getNextPageParam: (lastPage) => lastPage.next_before_id,
+    enabled: productId !== null,
   })
 
-  // Append each freshly-loaded keyset page to the running list.
-  React.useEffect(() => {
-    const data = movementsQuery.data
-    if (!data) return
-    setAccumulated((prev) => {
-      const seen = new Set(prev.map((movement) => movement.id))
-      const fresh = data.items.filter((movement) => !seen.has(movement.id))
-      return [...prev, ...fresh]
-    })
-  }, [movementsQuery.data])
-
-  const nextAfterId = movementsQuery.data?.next_after_id ?? null
+  const movements = movementsQuery.data?.pages.flatMap((page) => page.items) ?? []
 
   return (
-    <Card className="flex flex-col self-start p-5">
+    <Card className="flex flex-col p-5">
       <h3 className="text-sm font-semibold text-foreground">
         Movement history
         {selected ? <span className="ml-1 text-muted-foreground">- {selected.product_name}</span> : null}
       </h3>
       <p className="mt-0.5 text-xs text-muted-foreground">
         {selected
-          ? `Code ${selected.product_code} · every change traces to a PO, dispatch or adjustment.`
+          ? `Code ${selected.product_code} · newest first; every change traces to a PO, dispatch or adjustment.`
           : 'Select a product on the left to view its movements.'}
       </p>
 
       <div className="mt-4">
         {!selected ? (
           <EmptyState title="No product selected" description="Pick a product to inspect its movements." />
-        ) : movementsQuery.isLoading && accumulated.length === 0 ? (
+        ) : movementsQuery.isLoading ? (
           <p className="py-6 text-center text-sm text-muted-foreground">Loading movements…</p>
         ) : movementsQuery.isError ? (
           <ErrorState error={movementsQuery.error} onRetry={() => movementsQuery.refetch()} />
-        ) : accumulated.length === 0 ? (
+        ) : movements.length === 0 ? (
           <EmptyState title="No movements" description="This product has no recorded stock movements." />
         ) : (
           <>
@@ -279,10 +350,10 @@ function MovementsPanel({ selected }: { selected: StockBalance | null }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {accumulated.map((movement) => (
+                  {movements.map((movement) => (
                     <tr key={movement.id} className="border-t border-border">
                       <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
-                        {formatDateTime(movement.created_at)}
+                        {formatDateTime12Hour(movement.created_at)}
                       </td>
                       <td className="px-3 py-2">{MOVEMENT_LABELS[movement.movement_type]}</td>
                       <td
@@ -299,15 +370,16 @@ function MovementsPanel({ selected }: { selected: StockBalance | null }) {
                 </tbody>
               </table>
             </div>
-            {nextAfterId !== null ? (
+            {movementsQuery.hasNextPage ? (
               <div className="mt-3 flex justify-center">
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={movementsQuery.isFetching}
-                  onClick={() => setAfterId(nextAfterId)}
+                  title="Load older movements"
+                  disabled={movementsQuery.isFetchingNextPage}
+                  onClick={() => movementsQuery.fetchNextPage()}
                 >
-                  {movementsQuery.isFetching ? 'Loading…' : 'Load more'}
+                  {movementsQuery.isFetchingNextPage ? 'Loading…' : 'Load older'}
                 </Button>
               </div>
             ) : null}
@@ -315,110 +387,6 @@ function MovementsPanel({ selected }: { selected: StockBalance | null }) {
         )}
       </div>
     </Card>
-  )
-}
-
-function AdjustmentDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const queryClient = useQueryClient()
-  const [product, setProduct] = React.useState<ProductLite | null>(null)
-  const [qty, setQty] = React.useState('')
-  const [reason, setReason] = React.useState('')
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      api.post<StockMovement>('/api/v1/stock/adjustments', {
-        product_id: product?.id,
-        qty: Number(qty),
-        reason: reason.trim(),
-      }),
-    onSuccess: () => {
-      toast.success('Stock adjustment recorded')
-      queryClient.invalidateQueries({ queryKey: ['supply', 'stock-balances'] })
-      queryClient.invalidateQueries({ queryKey: ['supply', 'stock-movements'] })
-      onDone()
-    },
-  })
-
-  const fieldErrors = fieldErrorsFromApiError(mutation.error)
-  // stock_blocked (409) is a business error, surfaced inline rather than as a field error.
-  const blockedError =
-    mutation.error instanceof ApiError && mutation.error.code === 'stock_blocked'
-      ? mutation.error.message
-      : null
-  const otherError =
-    mutation.error instanceof ApiError &&
-    mutation.error.code !== 'validation_error' &&
-    mutation.error.code !== 'stock_blocked'
-      ? mutation.error.message
-      : null
-
-  const qtyNumber = Number(qty)
-  const canSubmit = product !== null && qty.trim() !== '' && !Number.isNaN(qtyNumber) && reason.trim() !== ''
-
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      title="Manual stock adjustment"
-      description="Positive quantity adds stock, negative removes it. A reason is required for the audit log."
-      footer={
-        <>
-          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
-            Cancel
-          </Button>
-          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !canSubmit}>
-            {mutation.isPending ? 'Saving…' : 'Record adjustment'}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        {blockedError ? (
-          <div className="rounded-md border border-critical/40 bg-critical/5 px-3 py-2 text-sm text-critical">
-            {blockedError}
-          </div>
-        ) : null}
-        {otherError ? (
-          <div className="rounded-md border border-critical/40 bg-critical/5 px-3 py-2 text-sm text-critical">
-            {otherError}
-          </div>
-        ) : null}
-
-        <Field label="Product" required error={fieldErrors.product_id}>
-          {product ? (
-            <div className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm">
-              <span>
-                <span className="font-medium">{product.name}</span>
-                <span className="ml-2 font-mono text-xs text-muted-foreground">{product.code}</span>
-              </span>
-              <Button variant="ghost" size="sm" onClick={() => setProduct(null)}>
-                Change
-              </Button>
-            </div>
-          ) : (
-            <ProductPicker onSelect={setProduct} />
-          )}
-        </Field>
-
-        <Field label="Quantity (±)" required error={fieldErrors.qty} hint="e.g. 12 to add, -3 to remove">
-          <Input
-            type="number"
-            step={1}
-            value={qty}
-            onChange={(event) => setQty(event.target.value)}
-            placeholder="0"
-          />
-        </Field>
-
-        <Field label="Reason" required error={fieldErrors.reason}>
-          <Textarea
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            placeholder="Stock count correction, breakage, …"
-          />
-        </Field>
-      </div>
-    </Dialog>
   )
 }
 

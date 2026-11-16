@@ -22,7 +22,7 @@ import { EMPTY_PLACEHOLDER, formatEuro } from '@/lib/format'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { MonthlyAnalysis, MonthlyAnalysisRow, MonthlyDimension } from '@/pages/finance/types'
-import { SectionCard, SegmentTabs } from '@/pages/finance/components'
+import { SectionCard, SegmentTabs, type SegmentTab } from '@/pages/finance/components'
 import { MarginBarChart, type MarginBar } from '@/pages/finance/charts/MarginBarChart'
 import { columnsForDimension, NAME_HEADER } from '@/pages/finance/monthlyColumns'
 import {
@@ -38,8 +38,29 @@ const CHART_MAX_ROWS = 12
 
 type CompareMode = 'none' | 'prev' | 'yoy'
 
-const DIMENSION_TABS: { value: MonthlyDimension; label: string }[] = [
-  { value: 'client', label: 'By client (fridge)' },
+const CLIENT_COST_DIMENSIONS: MonthlyDimension[] = ['client', 'fridge']
+
+const DIMENSION_TABS: SegmentTab<MonthlyDimension>[] = [
+  {
+    value: 'client',
+    label: 'By client',
+    hint: {
+      text:
+        'One row per client, all its fridges together. Fridges without a client are grouped ' +
+        'under "No client".',
+      example: 'A client with 3 fridges shows one row with the sales of all 3.',
+    },
+  },
+  {
+    value: 'fridge',
+    label: 'By fridge',
+    hint: {
+      text:
+        "One row per fridge. The client's fee and service charges are split equally over its " +
+        "active fridges.",
+      example: 'A €300 client fee over 3 active fridges puts €100 on each fridge.',
+    },
+  },
   { value: 'supplier', label: 'By supplier' },
   { value: 'category', label: 'By category' },
 ]
@@ -143,10 +164,14 @@ export function MonthlyView() {
         </div>
       </div>
 
-      {dimension === 'client' ? (
+      {CLIENT_COST_DIMENSIONS.includes(dimension) ? (
         <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-foreground">
-          <b>Cost basis, monthly by-fridge:</b> food cost uses the <b>DISPATCHED</b> value,
+          <b>Cost basis, monthly by client / fridge:</b> food margin uses the <b>DISPATCHED</b>{' '}
+          value of dispatched and reconciled dispatches delivered in the calendar month,
           intentionally different from the Weekly view (which uses <b>ADDED / restock</b> value).
+          Logistics is the weekly logistics cost of the weeks overlapping the month, prorated by
+          day and split equally over active fridges. In the fridge view the client fee and service
+          charges are split equally over the client&apos;s active fridges.
         </div>
       ) : null}
 
@@ -175,7 +200,7 @@ export function MonthlyView() {
                   <TableRow>
                     <TableHead>{NAME_HEADER[dimension]}</TableHead>
                     {columns.map((column) => (
-                      <TableHead key={column.id} className="text-right">
+                      <TableHead key={column.id} className={column.alignLeft ? 'text-left' : 'text-right'}>
                         {column.header}
                       </TableHead>
                     ))}
@@ -196,7 +221,7 @@ export function MonthlyView() {
                             <TableCell
                               key={column.id}
                               className={cn(
-                                'text-right tabular-nums',
+                                column.alignLeft ? 'text-left' : 'text-right tabular-nums',
                                 column.signed && value !== null && signedClass(value),
                               )}
                             >

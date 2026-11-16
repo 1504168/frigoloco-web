@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { toast } from '@/components/ui/sonner'
+import { toast } from '@/components/ui/toast'
 import { api, ApiError, type Page } from '@/lib/api'
 import type { Alert } from '@/lib/types'
 import { EMPTY_PLACEHOLDER, formatDateTime12Hour } from '@/lib/format'
@@ -40,6 +40,17 @@ const ACK_PARAM: Record<AckFilter, boolean | undefined> = {
   acknowledged: true,
   all: undefined,
 }
+
+const ACK_FILTER_LABELS: Record<AckFilter, string> = {
+  unacknowledged: 'To handle',
+  acknowledged: 'Handled',
+  all: 'All',
+}
+
+const ACK_FILTER_OPTIONS = Object.keys(ACK_FILTER_LABELS) as AckFilter[]
+
+const ACK_FILTER_HINT =
+  'Mark an alert handled once you have dealt with it; it then moves from "To handle" to "Handled".'
 
 /** "low_stock" -> "Low stock"; a type the backend adds later still reads as words. */
 function alertTypeLabel(alertType: string): string {
@@ -115,12 +126,12 @@ export function AlertsPage() {
   const ackMutation = useMutation({
     mutationFn: (alertId: number) => api.put<Alert>(`/api/v1/alerts/${alertId}/ack`),
     onSuccess: (updated) => {
-      toast.success(`Alert #${updated.id} acknowledged`)
+      toast.success(`Alert #${updated.id} marked handled`)
       queryClient.invalidateQueries({ queryKey: ['alerts'] })
       queryClient.invalidateQueries({ queryKey: ALERTS_COUNT_KEY })
     },
     onError: (error) => {
-      const message = error instanceof ApiError ? error.message : 'Failed to acknowledge alert'
+      const message = error instanceof ApiError ? error.message : 'Failed to mark alert handled'
       toast.error(message)
     },
   })
@@ -172,7 +183,7 @@ export function AlertsPage() {
           if (isAcknowledged) {
             return (
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                <Check className="h-3.5 w-3.5" /> Acknowledged
+                <Check className="h-3.5 w-3.5" /> Handled
               </span>
             )
           }
@@ -183,7 +194,7 @@ export function AlertsPage() {
               disabled={ackMutation.isPending && ackMutation.variables === row.id}
               onClick={() => ackMutation.mutate(row.id)}
             >
-              Acknowledge
+              Mark handled
             </Button>
           )
         },
@@ -196,22 +207,27 @@ export function AlertsPage() {
     <div className="space-y-3">
       <Toolbar
         left={
-          <Select
-            value={ackFilter}
-            onValueChange={(value) => setAckFilter(value as AckFilter)}
-          >
-            <SelectTrigger
-              className="w-44"
-              aria-label="Acknowledgement status"
+          <div className="flex items-center gap-3">
+            <Select
+              value={ackFilter}
+              onValueChange={(value) => setAckFilter(value as AckFilter)}
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="unacknowledged">Unacknowledged</SelectItem>
-              <SelectItem value="acknowledged">Acknowledged</SelectItem>
-              <SelectItem value="all">All alerts</SelectItem>
-            </SelectContent>
-          </Select>
+              <SelectTrigger
+                className="w-36"
+                aria-label="Show alerts"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ACK_FILTER_OPTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {ACK_FILTER_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{ACK_FILTER_HINT}</p>
+          </div>
         }
       />
 

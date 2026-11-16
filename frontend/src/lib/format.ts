@@ -68,17 +68,11 @@ const TIME_12_HOUR_FORMAT = new Intl.DateTimeFormat('en-US', {
   hour12: true,
 })
 
-/** Format an ISO datetime string as a short locale date-time; placeholder if empty. */
-export function formatDateTime(value: string | null | undefined): string {
+/** Format an ISO datetime string as a local date only, e.g. "31 Aug 2027"; placeholder if empty. */
+export function formatDate(value: string | null | undefined): string {
   const date = parseDateTime(value)
   if (!date) return EMPTY_PLACEHOLDER
-  return date.toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return DATE_PART_FORMAT.format(date)
 }
 
 /**

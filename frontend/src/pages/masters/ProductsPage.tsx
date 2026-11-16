@@ -1,5 +1,6 @@
 import * as React from 'react'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Pencil } from 'lucide-react'
 import { CategoryFilter } from '@/components/filters/CategoryFilter'
 import { FilterBar } from '@/components/filters/FilterBar'
 import { ProductSearchInput } from '@/components/filters/ProductSearchInput'
@@ -8,6 +9,8 @@ import { DataTable, type DataTableColumn } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { MoneyCell } from '@/components/shared/MoneyCell'
 import { Toolbar } from '@/components/shared/Toolbar'
+import { Button } from '@/components/ui/button'
+import { toast } from '@/components/ui/toast'
 import { api, type Page } from '@/lib/api'
 import { EMPTY_PLACEHOLDER } from '@/lib/format'
 import { REFERENCE_CATEGORIES_KEY } from '@/lib/query-keys'
@@ -19,6 +22,7 @@ import {
   StatusFilterSelect,
 } from '@/pages/masters/sync/components'
 import type { StatusFilter } from '@/pages/masters/sync/types'
+import { ProductSettingsDialog } from './ProductSettingsDialog'
 
 const PAGE_SIZE = 25
 
@@ -43,6 +47,8 @@ export function ProductsPage() {
   const [search, setSearch] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>('active')
   const [offset, setOffset] = React.useState(0)
+  const [editing, setEditing] = React.useState<Product | null>(null)
+  const queryClient = useQueryClient()
 
   React.useEffect(() => {
     setOffset(0)
@@ -146,6 +152,36 @@ export function ProductsPage() {
         cell: (row) => <EffectiveStatusBadge status={row.effective_status} />,
         sortValue: (row) => row.effective_status,
       },
+      {
+        id: 'min_stock',
+        header: 'Min stock',
+        align: 'right',
+        cell: (row) => <OptionalNumberCell value={row.min_stock_qty} />,
+        sortValue: (row) => row.min_stock_qty,
+      },
+      {
+        id: 'print_order',
+        header: 'Print order',
+        align: 'right',
+        cell: (row) => <OptionalNumberCell value={row.print_order} />,
+        sortValue: (row) => row.print_order,
+      },
+      {
+        id: 'actions',
+        header: '',
+        align: 'right',
+        cell: (row) => (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            aria-label={`Edit settings of ${row.name}`}
+            onClick={() => setEditing(row)}
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+        ),
+      },
     ],
     [categoryName],
   )
@@ -199,8 +235,25 @@ export function ProductsPage() {
           />
         }
       />
+
+      {editing ? (
+        <ProductSettingsDialog
+          product={editing}
+          onClose={() => setEditing(null)}
+          onSuccess={(updated) => {
+            toast.success(`Product “${updated.name}” updated`)
+            queryClient.invalidateQueries({ queryKey: PRODUCTS_QUERY_KEY })
+            setEditing(null)
+          }}
+        />
+      ) : null}
     </div>
   )
+}
+
+function OptionalNumberCell({ value }: { value: number | null }) {
+  if (value === null) return <span className="text-muted-foreground">{EMPTY_PLACEHOLDER}</span>
+  return <span className="tabular-nums">{value}</span>
 }
 
 export default ProductsPage

@@ -723,7 +723,7 @@ List endpoints accept `?limit=` (default 50, max 500) and `?offset=`, and return
 { "items": [ ... ], "total": 1234, "limit": 50, "offset": 0 }
 ```
 
-High-volume event/movement endpoints (`/stock/movements`, reconciliation raw lines) additionally support keyset pagination via `?after_id=` for stable deep scrolling; the matrix and balances endpoints are unpaginated by design (bounded by fridges × products, virtualized client-side).
+High-volume event/movement endpoints (`/stock/movements`, reconciliation raw lines) additionally support keyset pagination (`/stock/movements`: newest first, pass `next_before_id` back as `?before_id=` for older rows); the matrix and balances endpoints are unpaginated by design (bounded by fridges × products, virtualized client-side).
 
 ---
 

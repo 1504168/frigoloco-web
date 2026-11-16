@@ -1,3 +1,8 @@
+// Plain var() colors make Tailwind drop opacity modifiers (bg-muted/40 generates no CSS);
+// <alpha-value> lets bg-x/NN, border-x/NN etc. work on CSS-variable tokens.
+const cssVarColor = (name) =>
+  `color-mix(in srgb, var(--${name}) calc(<alpha-value> * 100%), transparent)`
+
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: 'class',
@@ -6,57 +11,57 @@ export default {
     extend: {
       colors: {
         // shadcn semantic tokens (mapped to FrigoLoco mockup CSS variables)
-        border: 'var(--border)',
-        input: 'var(--input)',
-        ring: 'var(--ring)',
-        background: 'var(--background)',
-        foreground: 'var(--foreground)',
+        border: cssVarColor('border'),
+        input: cssVarColor('input'),
+        ring: cssVarColor('ring'),
+        background: cssVarColor('background'),
+        foreground: cssVarColor('foreground'),
         primary: {
-          DEFAULT: 'var(--primary)',
-          foreground: 'var(--primary-foreground)',
+          DEFAULT: cssVarColor('primary'),
+          foreground: cssVarColor('primary-foreground'),
         },
         secondary: {
-          DEFAULT: 'var(--secondary)',
-          foreground: 'var(--secondary-foreground)',
+          DEFAULT: cssVarColor('secondary'),
+          foreground: cssVarColor('secondary-foreground'),
         },
         destructive: {
-          DEFAULT: 'var(--destructive)',
-          foreground: 'var(--destructive-foreground)',
+          DEFAULT: cssVarColor('destructive'),
+          foreground: cssVarColor('destructive-foreground'),
         },
         muted: {
-          DEFAULT: 'var(--muted)',
-          foreground: 'var(--muted-foreground)',
+          DEFAULT: cssVarColor('muted'),
+          foreground: cssVarColor('muted-foreground'),
         },
         accent: {
-          DEFAULT: 'var(--accent)',
-          foreground: 'var(--accent-foreground)',
+          DEFAULT: cssVarColor('accent'),
+          foreground: cssVarColor('accent-foreground'),
         },
         popover: {
-          DEFAULT: 'var(--popover)',
-          foreground: 'var(--popover-foreground)',
+          DEFAULT: cssVarColor('popover'),
+          foreground: cssVarColor('popover-foreground'),
         },
         card: {
-          DEFAULT: 'var(--card)',
-          foreground: 'var(--card-foreground)',
+          DEFAULT: cssVarColor('card'),
+          foreground: cssVarColor('card-foreground'),
         },
         // FrigoLoco brand tokens (from the canonical mockup)
         sidebar: {
-          DEFAULT: 'var(--sidebar-bg)',
-          ink: 'var(--sidebar-ink)',
+          DEFAULT: cssVarColor('sidebar-bg'),
+          ink: cssVarColor('sidebar-ink'),
         },
         series: {
-          1: 'var(--series-1)',
-          2: 'var(--series-2)',
-          3: 'var(--series-3)',
+          1: cssVarColor('series-1'),
+          2: cssVarColor('series-2'),
+          3: cssVarColor('series-3'),
         },
-        good: 'var(--good)',
-        'good-text': 'var(--good-text)',
-        warning: 'var(--warning)',
-        critical: 'var(--critical)',
-        teal: 'var(--teal)',
+        good: cssVarColor('good'),
+        'good-text': cssVarColor('good-text'),
+        warning: cssVarColor('warning'),
+        critical: cssVarColor('critical'),
+        teal: cssVarColor('teal'),
       },
       borderRadius: {
-        lg: 'var(--radius)',
+        lg: cssVarColor('radius'),
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
       },

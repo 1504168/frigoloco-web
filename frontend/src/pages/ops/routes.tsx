@@ -2,6 +2,7 @@ import type { RouteObject } from 'react-router-dom'
 import { ForecastPage } from '@/pages/ops/forecast/ForecastPage'
 import { MenuPage } from '@/pages/ops/menu/MenuPage'
 import { DispatchPage } from '@/pages/ops/dispatch/DispatchPage'
+import { TargetsPage } from '@/pages/ops/targets/TargetsPage'
 
 /**
  * Operations / Planning domain routes (Forecast → Menu → Dispatch).
@@ -16,4 +17,5 @@ export const opsRoutes: RouteObject[] = [
   { path: '/forecast', element: <ForecastPage /> },
   { path: '/menu', element: <MenuPage /> },
   { path: '/dispatch', element: <DispatchPage /> },
+  { path: '/targets', element: <TargetsPage /> },
 ]

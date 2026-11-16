@@ -6,25 +6,19 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { toast } from '@/components/ui/sonner'
+import { toast } from '@/components/ui/toast'
 import { api, ApiError, type Page } from '@/lib/api'
-import { EMPTY_PLACEHOLDER, formatEuro, formatDateTime } from '@/lib/format'
-import { cn } from '@/lib/utils'
+import { EMPTY_PLACEHOLDER, formatEuro } from '@/lib/format'
+import { ClientContactsTab } from './components/ClientContactsTab'
+import { ClientEquipmentTab } from './components/ClientEquipmentTab'
+import { ClientRulesTab } from './components/ClientRulesTab'
 import { Dialog } from './components/Dialog'
+import { DialogTabs, type DialogTab } from './components/DialogTabs'
 import { Field, Textarea, fieldErrorsFromApiError, generalErrorMessage } from './components/form'
 import type {
   Client,
   ClientCreate,
   ClientFee,
-  ClientIntervention,
-  Fridge,
 } from './types'
 
 const PAGE_SIZE = 25
@@ -143,7 +137,7 @@ export function ClientsPage() {
         emptyState={
           <EmptyState
             title="No clients yet"
-            description="Add your first client to start tracking fees and interventions."
+            description="Add your first client to start tracking fees and contacts."
             action={
               <Button onClick={() => setCreating(true)}>
                 <Plus className="h-4 w-4" /> New client
@@ -340,40 +334,27 @@ function DeleteClientDialog({
 
 // ─────────────────────── Client detail (tabs) ───────────────────────
 
-type DetailTab = 'details' | 'fees' | 'interventions'
+type DetailTab = 'details' | 'contacts' | 'fees' | 'rules' | 'equipment'
+
+const DETAIL_TABS: DialogTab<DetailTab>[] = [
+  { id: 'details', label: 'Details' },
+  { id: 'contacts', label: 'Contacts' },
+  { id: 'fees', label: 'Fees' },
+  { id: 'rules', label: 'Rules' },
+  { id: 'equipment', label: 'Equipment' },
+]
 
 function ClientDetailDialog({ client, onClose }: { client: Client; onClose: () => void }) {
   const [tab, setTab] = React.useState<DetailTab>('details')
 
-  const tabs: Array<{ id: DetailTab; label: string }> = [
-    { id: 'details', label: 'Details' },
-    { id: 'fees', label: 'Fees' },
-    { id: 'interventions', label: 'Interventions' },
-  ]
-
   return (
-    <Dialog open onClose={onClose} title={client.name} widthClassName="max-w-2xl">
-      <div className="mb-4 flex gap-1 border-b border-border">
-        {tabs.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setTab(item.id)}
-            className={cn(
-              '-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-              tab === item.id
-                ? 'border-primary text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-
+    <Dialog open onClose={onClose} title={client.name} widthClassName="max-w-3xl">
+      <DialogTabs tabs={DETAIL_TABS} activeTab={tab} onChange={setTab} />
       {tab === 'details' ? <ClientDetailsTab client={client} /> : null}
+      {tab === 'contacts' ? <ClientContactsTab clientId={client.id} /> : null}
       {tab === 'fees' ? <ClientFeesTab clientId={client.id} /> : null}
-      {tab === 'interventions' ? <ClientInterventionsTab clientId={client.id} /> : null}
+      {tab === 'rules' ? <ClientRulesTab clientId={client.id} /> : null}
+      {tab === 'equipment' ? <ClientEquipmentTab clientId={client.id} /> : null}
     </Dialog>
   )
 }
@@ -496,135 +477,6 @@ function ClientFeesTab({ clientId }: { clientId: number }) {
             disabled={addMutation.isPending || !canSubmit}
           >
             {addMutation.isPending ? 'Adding…' : 'Add fee'}
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ClientInterventionsTab({ clientId }: { clientId: number }) {
-  const queryClient = useQueryClient()
-  const [fridgeId, setFridgeId] = React.useState<string>('')
-  const [type, setType] = React.useState('')
-  const [description, setDescription] = React.useState('')
-  const [occurredAt, setOccurredAt] = React.useState('')
-
-  const interventionsQuery = useQuery({
-    queryKey: ['supply', 'client-interventions', clientId],
-    queryFn: ({ signal }) =>
-      api.get<ClientIntervention[]>(`/api/v1/clients/${clientId}/interventions`, { signal }),
-  })
-
-  // Fridges belonging to this client, used to pick which fridge an intervention hit.
-  const fridgesQuery = useQuery({
-    queryKey: ['supply', 'fridges', 'for-client', clientId],
-    queryFn: ({ signal }) =>
-      api.get<Page<Fridge>>('/api/v1/fridges', { params: { limit: 200, offset: 0 }, signal }),
-    select: (page) => page.items.filter((fridge) => fridge.client_id === clientId),
-  })
-
-  const addMutation = useMutation({
-    mutationFn: () =>
-      api.post<ClientIntervention>(`/api/v1/clients/${clientId}/interventions`, {
-        fridge_id: Number(fridgeId),
-        intervention_type: type.trim(),
-        description: description.trim() || null,
-        occurred_at: new Date(occurredAt).toISOString(),
-      }),
-    onSuccess: () => {
-      toast.success('Intervention logged')
-      setFridgeId('')
-      setType('')
-      setDescription('')
-      setOccurredAt('')
-      queryClient.invalidateQueries({ queryKey: ['supply', 'client-interventions', clientId] })
-    },
-    onError: (error) => {
-      toast.error(error instanceof ApiError ? error.message : 'Failed to log intervention')
-    },
-  })
-
-  const fieldErrors = fieldErrorsFromApiError(addMutation.error)
-  const fridgeName = (id: number) =>
-    fridgesQuery.data?.find((fridge) => fridge.id === id)?.friendly_name ?? `#${id}`
-  const canSubmit = fridgeId !== '' && type.trim() !== '' && occurredAt !== ''
-
-  return (
-    <div className="space-y-4">
-      {interventionsQuery.isLoading ? (
-        <p className="py-4 text-center text-sm text-muted-foreground">Loading interventions…</p>
-      ) : interventionsQuery.isError ? (
-        <ErrorState error={interventionsQuery.error} onRetry={() => interventionsQuery.refetch()} />
-      ) : interventionsQuery.data && interventionsQuery.data.length > 0 ? (
-        <div className="space-y-2">
-          {interventionsQuery.data.map((item) => (
-            <div key={item.id} className="rounded-lg border border-border p-3 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium">{item.intervention_type}</span>
-                <span className="text-xs text-muted-foreground">
-                  {formatDateTime(item.occurred_at)}
-                </span>
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground">{fridgeName(item.fridge_id)}</div>
-              {item.description ? <p className="mt-1 text-muted-foreground">{item.description}</p> : null}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <EmptyState title="No interventions" description="No interventions logged for this client." />
-      )}
-
-      <div className="rounded-lg border border-border p-4">
-        <h4 className="mb-3 text-sm font-semibold">Log intervention</h4>
-        {fridgesQuery.data && fridgesQuery.data.length === 0 ? (
-          <p className="mb-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[#8a6100] dark:text-warning">
-            This client has no fridges. Assign a fridge to this client before logging interventions.
-          </p>
-        ) : null}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Fridge" required error={fieldErrors.fridge_id}>
-            <Select value={fridgeId} onValueChange={setFridgeId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select fridge" />
-              </SelectTrigger>
-              <SelectContent>
-                {(fridgesQuery.data ?? []).map((fridge) => (
-                  <SelectItem key={fridge.id} value={String(fridge.id)}>
-                    {fridge.friendly_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="Type" required error={fieldErrors.intervention_type}>
-            <Input
-              value={type}
-              onChange={(event) => setType(event.target.value)}
-              placeholder="maintenance, cleaning…"
-            />
-          </Field>
-          <Field label="Occurred at" required error={fieldErrors.occurred_at}>
-            <Input
-              type="datetime-local"
-              value={occurredAt}
-              onChange={(event) => setOccurredAt(event.target.value)}
-            />
-          </Field>
-          <Field label="Description" error={fieldErrors.description}>
-            <Input
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-            />
-          </Field>
-        </div>
-        <div className="mt-3 flex justify-end">
-          <Button
-            size="sm"
-            onClick={() => addMutation.mutate()}
-            disabled={addMutation.isPending || !canSubmit}
-          >
-            {addMutation.isPending ? 'Logging…' : 'Log intervention'}
           </Button>
         </div>
       </div>

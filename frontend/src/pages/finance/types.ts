@@ -41,6 +41,8 @@ export interface WeeklyPnl {
   year: number
   iso_week: number
   week_start: string
+  /** True while the (Brussels-time) week is still running: figures are partial. */
+  in_progress: boolean
   inputs: WeeklyInputs
   gross_sales: string
   refunds: string
@@ -57,21 +59,27 @@ export interface WeeklyPnl {
 }
 
 /** Monthly P&L dimension. */
-export type MonthlyDimension = 'client' | 'supplier' | 'category'
+export type MonthlyDimension = 'client' | 'fridge' | 'supplier' | 'category'
 
 /**
  * One P&L row (schema: MonthlyAnalysisRow). Which optional columns are
  * populated depends on the dimension:
- *   - client:   sales, pos_fee, fee_share, service_additionals, logistics_share
+ *   - client:   sales, sales_ex_vat, pos_fee, fee_share, service_additionals,
+ *               logistics_share, fridge_count
+ *   - fridge:   same money columns as client, plus client_name
  *   - supplier: rfid_fee (sales/pos_fee are null)
  *   - category: rfid_fee (sales/pos_fee are null)
  */
 export interface MonthlyAnalysisRow {
   key_id: number | null
   key_name: string
+  client_name: string | null
+  fridge_count: number | null
   food_margin: string
   rfid_fee: string | null
+  /** Incl. VAT. */
   sales: string | null
+  sales_ex_vat: string | null
   pos_fee: string | null
   fee_share: string | null
   service_additionals: string | null
@@ -105,11 +113,35 @@ export interface FridgeReport {
   date_to: string
   added_qty: number
   food_cost: string
+  /** Incl. VAT, as rung up at the fridge. */
   revenue: string
+  revenue_ex_vat: string
+  /** revenue_ex_vat - food_cost. */
   margin: string
   /** Food margin as a 0..1 fraction string, e.g. "0.6000". Null when there is no ex-VAT revenue to divide by. */
   margin_pct: string | null
   rows: FridgeReportRow[]
+}
+
+/** One fridge (or the totals row, fridge_id null) of the all-fridges report. */
+export interface AllFridgesReportRow {
+  fridge_id: number | null
+  fridge_name: string
+  client_name: string | null
+  added_qty: number
+  food_cost: string
+  revenue: string
+  revenue_ex_vat: string
+  margin: string
+  margin_pct: string | null
+}
+
+/** GET /api/v1/finance/all-fridges-report (schema: AllFridgesReportRead). */
+export interface AllFridgesReport {
+  date_from: string
+  date_to: string
+  rows: AllFridgesReportRow[]
+  totals: AllFridgesReportRow
 }
 
 // NOTE (2026-07-28): Restock verification (legacy R9) removed. The

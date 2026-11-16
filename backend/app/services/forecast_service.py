@@ -7,14 +7,24 @@ Formula (IMPLEMENTATION-BRIEF §formulas):
 * The forecast method (``app.services.forecast.strategies``) picks the sales window;
   the formula is the same for every method. Fridges are those with a
   ``fridge_delivery_config`` row on the delivery weekday.
+* A recent-sales window (last 3 weeks / 3 months) ends yesterday at the latest:
+  for a delivery further ahead, days that have not happened yet would count as
+  no-info days and shrink the average.
 * A window day is a *holiday* (excluded from ``valid_days``) when the fridge's
   total units sold that day is ``<= min_daily_qty``.
 * Days in the window with no sales rows at all are *no-info* days; they stay in
   the denominator so sparse history degrades the average gracefully (a zero
   denominator yields a zero forecast).
+* A fridge with ``active_on_weekends = false`` sells only Monday to Friday:
+  Saturdays and Sundays are dropped from the sales window (they are neither
+  valid, holiday nor no-info days) and from the days the delivery must cover,
+  so ``days_to_fill`` becomes the number of weekdays until the next delivery.
+* Bank holidays (``bank_holidays`` table) are never selling days: they leave
+  the sales window and the days to fill the same way weekends do.
 * Current fridge stock still good through the coverage window is deducted only
   when the delivery is the next one for its weekday: ``fridge_stock`` holds the
   latest reading only, so it says nothing about stock on a later delivery date.
+  The good-unit rule lives in :mod:`app.services.fridge_stock_service`.
 * Reads local ``sales_events`` only - never the Husky live API.
 """
 
@@ -30,15 +40,18 @@ from sqlalchemy import Integer, Numeric, column, delete, select, text, update, v
 from sqlalchemy.orm import Session
 
 from app.husky.sync import effective_status_clause
-from app.models.master import Category, FridgeDeliveryConfig, Product, Setting
+from app.models.master import Category, Fridge, FridgeDeliveryConfig, Product, Setting
 from app.models.planning import ForecastResult, ForecastRun
 from app.schemas.forecasts import ForecastCellEdit
 from app.schemas.masters import api_error
+from app.services import fridge_stock_service
+from app.services.forecast.bank_holidays import load_bank_holiday_labels
 from app.services.forecast.strategies import (
     DEFAULT_STRATEGY_CODE,
     SalesWindow,
     get_strategy,
 )
+from app.services.selling_days import count_selling_days, is_selling_day
 from app.services.stock_service import day_name_for_date, record_audit
 
 _LOCAL_TZ = "Europe/Brussels"
@@ -48,13 +61,18 @@ _MARGINS_SETTING_KEY = "forecast_margins"
 # A delivery within this many days of today is the next one on its weekday.
 _NEXT_DELIVERY_HORIZON_DAYS = 7
 _PRODUCT_STATUS_ACTIVE = "active"
+_SAVED_RUNS_LIMIT = 200
 
 
 @dataclass(frozen=True)
 class ForecastCell:
     fridge_id: int
     category_id: int
+    # Net quantity to deliver: gross_qty minus residual_units, never below zero.
     forecast_qty: Decimal
+    gross_qty: Decimal
+    # Good in-fridge stock units deducted (0 when the residual rule did not apply).
+    residual_units: int
     valid_days: int
     holiday_days: int
     no_info_days: int
@@ -66,8 +84,11 @@ class RunSummary:
 
     window: SalesWindow
     window_sales_units: int
+    sold_units_by_fridge: dict[int, int]
     hidden_category_ids: list[int]
     residual_applied: bool
+    # Label when the delivery date itself is a bank holiday.
+    delivery_bank_holiday: str | None
 
 
 @dataclass(frozen=True)
@@ -92,6 +113,15 @@ class _FridgeConfig:
     fridge_id: int
     min_daily_qty: int
     days_to_fill: int
+    active_on_weekends: bool
+
+
+@dataclass(frozen=True)
+class _SellingCalendar:
+    """What makes a day a selling day for one fridge."""
+
+    active_on_weekends: bool
+    bank_holidays: frozenset[datetime.date]
 
 
 @dataclass(frozen=True)
@@ -221,11 +251,21 @@ def summarize_run(
     session: Session,
 ) -> RunSummary:
     """Sales window, its sales volume and the categories worth hiding for a run."""
-    window = get_strategy(run.model).sales_window(run.delivery_date)
+    window = _run_window(run)
     fridge_ids = sorted({result.fridge_id for result in results})
     category_ids = sorted({result.category_id for result in results})
-    sold_by_category = _sold_units_by_category(fridge_ids, window, session)
+    sold_by_key = _sold_units_by_fridge_category(fridge_ids, window, session)
+    sold_by_category: dict[int, int] = {}
+    sold_by_fridge: dict[int, int] = {}
+    for (fridge_id, category_id), units in sold_by_key.items():
+        sold_by_category[category_id] = sold_by_category.get(category_id, 0) + units
+        sold_by_fridge[fridge_id] = sold_by_fridge.get(fridge_id, 0) + units
     active_category_ids = _categories_with_active_products(session)
+    delivery_holiday_labels = load_bank_holiday_labels(
+        run.delivery_date,
+        run.delivery_date,
+        session,
+    )
 
     hidden_category_ids = []
     for category_id in category_ids:
@@ -236,9 +276,11 @@ def summarize_run(
     return RunSummary(
         window=window,
         window_sales_units=sum(sold_by_category.values()),
+        sold_units_by_fridge=sold_by_fridge,
         hidden_category_ids=hidden_category_ids,
         # Runs created before the residual feature carry no flag: nothing was deducted.
         residual_applied=bool(run.params.get("residual_deduction", False)),
+        delivery_bank_holiday=delivery_holiday_labels.get(run.delivery_date),
     )
 
 
@@ -250,6 +292,22 @@ def get_saved_run(delivery_date: datetime.date, session: Session) -> ForecastRun
             ForecastRun.is_saved.is_(True),
         )
     ).scalar_one_or_none()
+
+
+def list_saved_runs(year: int | None, session: Session) -> list[ForecastRun]:
+    """Saved forecasts (of delivery ``year`` when given), latest delivery date first."""
+    stmt = (
+        select(ForecastRun)
+        .where(ForecastRun.is_saved.is_(True))
+        .order_by(ForecastRun.delivery_date.desc())
+        .limit(_SAVED_RUNS_LIMIT)
+    )
+    if year is not None:
+        stmt = stmt.where(
+            ForecastRun.delivery_date >= datetime.date(year, 1, 1),
+            ForecastRun.delivery_date <= datetime.date(year, 12, 31),
+        )
+    return list(session.execute(stmt).scalars().all())
 
 
 def get_run(run_id: int, session: Session) -> ForecastRun | None:
@@ -273,17 +331,21 @@ def get_actuals(
     delivery_date: datetime.date,
     model: str,
     fridge_ids: list[int] | None,
+    compare_window: SalesWindow | None = None,
+    weekdays: list[int] | None = None,
     session: Session,
 ) -> ActualsReport:
     """Actual added vs sold per fridge x category over the method's sales window.
 
-    Same window and delivery-weekday fridge set the forecast run uses.
-    ``added_qty`` counts VALID ADDED ``restock_events``; ``sold_qty`` counts
-    non-refunded ``sales_events``. ``ratio`` = sold/added (None when nothing was
-    added). Returns only cells with any activity; the caller treats missing keys
-    as 0/0. No fridge configured for the weekday gives no cells.
+    Same window and delivery-weekday fridge set the forecast run uses, unless
+    ``compare_window`` replaces the window; ``weekdays`` (ISO 1-7) keeps only
+    those days of it. ``added_qty`` counts VALID ADDED ``restock_events``;
+    ``sold_qty`` counts non-refunded ``sales_events``. ``ratio`` = sold/added
+    (None when nothing was added). Returns only cells with any activity; the
+    caller treats missing keys as 0/0. No fridge configured for the weekday
+    gives no cells.
     """
-    window = get_strategy(model).sales_window(delivery_date)
+    window = compare_window or _sales_window(model, delivery_date)
     configs = _target_configs(delivery_date.isoweekday(), fridge_ids, session)
     target_fridge_ids = [config.fridge_id for config in configs]
 
@@ -292,6 +354,7 @@ def get_actuals(
         timestamp_col="occurred_at",
         fridge_ids=target_fridge_ids,
         window=window,
+        weekdays=weekdays,
         extra_where="e.action = 'added' AND e.tag_status = 'valid'",
         session=session,
     )
@@ -300,6 +363,7 @@ def get_actuals(
         timestamp_col="sold_at",
         fridge_ids=target_fridge_ids,
         window=window,
+        weekdays=weekdays,
         extra_where="e.is_refunded = false",
         session=session,
     )
@@ -334,6 +398,21 @@ def get_latest_run(
     return session.execute(stmt).scalars().first()
 
 
+def _sales_window(model: str, delivery_date: datetime.date) -> SalesWindow:
+    return get_strategy(model).sales_window(delivery_date, sales_until=_local_today())
+
+
+def _run_window(run: ForecastRun) -> SalesWindow:
+    """The window the run was computed on; it moves with today, so recomputing could differ."""
+    # Runs imported from the Excel history carry no window in their params.
+    if "window_start" not in run.params:
+        return _sales_window(run.model, run.delivery_date)
+    return SalesWindow(
+        start=datetime.date.fromisoformat(run.params["window_start"]),
+        end=datetime.date.fromisoformat(run.params["window_end"]),
+    )
+
+
 def _compute_run(
     *,
     delivery_date: datetime.date,
@@ -343,7 +422,7 @@ def _compute_run(
     session: Session,
 ) -> _RunComputation:
     """Compute forecast cells for ``delivery_date`` without writing anything."""
-    window = get_strategy(model).sales_window(delivery_date)
+    window = _sales_window(model, delivery_date)
     delivery_weekday = delivery_date.isoweekday()
     configs = _target_configs(delivery_weekday, fridge_ids, session)
     if not configs:
@@ -363,8 +442,20 @@ def _compute_run(
 
     target_fridge_ids = [config.fridge_id for config in configs]
     per_fridge_units = _daily_category_units(target_fridge_ids, window, session)
-    residual_applied = _is_next_delivery(delivery_date)
-    residual = _residual_by_key(configs, delivery_date, session) if residual_applied else {}
+    residual_applied = is_next_delivery(delivery_date)
+    bank_holidays = _bank_holidays_for_run(window, delivery_date, configs, session)
+    residual: dict[tuple[int, int], int] = {}
+    if residual_applied:
+        residual = _residual_by_key(configs, delivery_date, bank_holidays, session)
+    selling_days_to_fill_by_fridge = {
+        config.fridge_id: count_selling_days(
+            delivery_date,
+            config.days_to_fill,
+            config.active_on_weekends,
+            bank_holidays,
+        )
+        for config in configs
+    }
 
     params: dict = {
         "model": model,
@@ -374,11 +465,14 @@ def _compute_run(
         "delivery_weekday": delivery_weekday,
         "triggered_by": "manual",
         "residual_deduction": residual_applied,
+        "excluded_bank_holidays": [holiday.isoformat() for holiday in sorted(bank_holidays)],
         "margins": {str(cid): str(margin) for cid, margin in margins_by_id.items()},
         "fridge_config": {
             str(config.fridge_id): {
                 "min_daily_qty": config.min_daily_qty,
                 "days_to_fill": config.days_to_fill,
+                "selling_days_to_fill": selling_days_to_fill_by_fridge[config.fridge_id],
+                "active_on_weekends": config.active_on_weekends,
             }
             for config in configs
         },
@@ -397,7 +491,12 @@ def _compute_run(
             _compute_cells(
                 config=config,
                 day_cat_units=per_fridge_units.get(config.fridge_id, {}),
-                window_days=window.days,
+                window=window,
+                selling_calendar=_SellingCalendar(
+                    active_on_weekends=config.active_on_weekends,
+                    bank_holidays=bank_holidays,
+                ),
+                selling_days_to_fill=selling_days_to_fill_by_fridge[config.fridge_id],
                 category_ids=category_ids,
                 margins_by_id=margins_by_id,
                 residual_by_category=residual_by_category,
@@ -410,20 +509,33 @@ def _compute_cells(
     *,
     config: _FridgeConfig,
     day_cat_units: dict[tuple[datetime.date, int], int],
-    window_days: int,
+    window: SalesWindow,
+    selling_calendar: _SellingCalendar,
+    selling_days_to_fill: int,
     category_ids: list[int],
     margins_by_id: dict[int, Decimal],
     residual_by_category: dict[int, int],
 ) -> list[ForecastCell]:
     day_totals: dict[datetime.date, int] = {}
     for (day, _category_id), units in day_cat_units.items():
-        day_totals[day] = day_totals.get(day, 0) + units
+        if is_selling_day(
+            day,
+            selling_calendar.active_on_weekends,
+            selling_calendar.bank_holidays,
+        ):
+            day_totals[day] = day_totals.get(day, 0) + units
 
     valid_days = {
         day for day, total in day_totals.items() if total > config.min_daily_qty
     }
     holiday_count = len(day_totals) - len(valid_days)
-    no_info_days = window_days - len(day_totals)
+    window_selling_days = count_selling_days(
+        window.start,
+        window.days,
+        selling_calendar.active_on_weekends,
+        selling_calendar.bank_holidays,
+    )
+    no_info_days = window_selling_days - len(day_totals)
     denominator = len(valid_days) + no_info_days
 
     cells: list[ForecastCell] = []
@@ -437,27 +549,47 @@ def _compute_cells(
             margin = margins_by_id[category_id]
             raw = (
                 (Decimal(cat_sold) / Decimal(denominator))
-                * Decimal(config.days_to_fill)
+                * Decimal(selling_days_to_fill)
                 * (Decimal("1") + margin)
             )
-            forecast_qty = raw.quantize(_TWO_PLACES)
+            gross_qty = raw.quantize(_TWO_PLACES)
         else:
-            forecast_qty = Decimal("0.00")
+            gross_qty = Decimal("0.00")
         # Residual-stock deduction (slide 5): deliver only the net need, never below zero.
-        deductible = residual_by_category.get(category_id, 0)
-        if deductible:
-            forecast_qty = max(Decimal("0.00"), forecast_qty - Decimal(deductible))
+        residual_units = residual_by_category.get(category_id, 0)
+        net_qty = max(Decimal("0.00"), gross_qty - Decimal(residual_units))
         cells.append(
             ForecastCell(
                 fridge_id=config.fridge_id,
                 category_id=category_id,
-                forecast_qty=forecast_qty,
+                forecast_qty=net_qty,
+                gross_qty=gross_qty,
+                residual_units=residual_units,
                 valid_days=len(valid_days),
                 holiday_days=holiday_count,
                 no_info_days=no_info_days,
             )
         )
     return cells
+
+
+def _bank_holidays_for_run(
+    window: SalesWindow,
+    delivery_date: datetime.date,
+    configs: list[_FridgeConfig],
+    session: Session,
+) -> frozenset[datetime.date]:
+    """Bank holidays inside the sales window or inside any fridge's days to fill."""
+    longest_days_to_fill = max(config.days_to_fill for config in configs)
+    last_day_to_fill = delivery_date + datetime.timedelta(days=longest_days_to_fill - 1)
+    holiday_labels = load_bank_holiday_labels(window.start, last_day_to_fill, session)
+    # Last-year windows leave a gap of a year before the delivery date: skip its holidays.
+    relevant_holidays = [
+        holiday
+        for holiday in holiday_labels
+        if window.start <= holiday < window.end or holiday >= delivery_date
+    ]
+    return frozenset(relevant_holidays)
 
 
 def _load_margins(session: Session) -> dict[int, Decimal]:
@@ -474,18 +606,21 @@ def _load_margins(session: Session) -> dict[int, Decimal]:
 def _target_configs(
     delivery_weekday: int, fridge_ids: list[int] | None, session: Session
 ) -> list[_FridgeConfig]:
-    stmt = select(FridgeDeliveryConfig).where(
-        FridgeDeliveryConfig.weekday == delivery_weekday
+    stmt = (
+        select(FridgeDeliveryConfig, Fridge.active_on_weekends)
+        .join(Fridge, Fridge.id == FridgeDeliveryConfig.fridge_id)
+        .where(FridgeDeliveryConfig.weekday == delivery_weekday)
     )
     if fridge_ids is not None:
         stmt = stmt.where(FridgeDeliveryConfig.fridge_id.in_(fridge_ids))
     return [
         _FridgeConfig(
-            fridge_id=row.fridge_id,
-            min_daily_qty=row.min_daily_qty,
-            days_to_fill=row.days_to_fill,
+            fridge_id=row.FridgeDeliveryConfig.fridge_id,
+            min_daily_qty=row.FridgeDeliveryConfig.min_daily_qty,
+            days_to_fill=row.FridgeDeliveryConfig.days_to_fill,
+            active_on_weekends=row.active_on_weekends,
         )
-        for row in session.execute(stmt).scalars().all()
+        for row in session.execute(stmt).all()
     ]
 
 
@@ -518,7 +653,7 @@ def _daily_category_units(
     return per_fridge
 
 
-def _is_next_delivery(delivery_date: datetime.date) -> bool:
+def is_next_delivery(delivery_date: datetime.date) -> bool:
     """True when ``delivery_date`` is today or the next delivery on its weekday."""
     today = _local_today()
     horizon_end = today + datetime.timedelta(days=_NEXT_DELIVERY_HORIZON_DAYS)
@@ -532,34 +667,28 @@ def _local_today() -> datetime.date:
 def _residual_by_key(
     configs: list[_FridgeConfig],
     delivery_date: datetime.date,
+    bank_holidays: frozenset[datetime.date],
     session: Session,
 ) -> dict[tuple[int, int], int]:
-    """Deductible in-fridge units per (fridge, category) from current fridge stock.
-
-    The coverage window ends at the fridge's NEXT delivery
-    (``delivery_date + days_to_fill``). Only units whose captured expiry is on or
-    after that date count: units expiring sooner go on the withdrawal list.
-    Units with no captured expiry are excluded so we never over-deduct.
-    """
-    fridge_ids = [config.fridge_id for config in configs]
-    coverage_ends = [
-        delivery_date + datetime.timedelta(days=config.days_to_fill) for config in configs
-    ]
-    rows = session.execute(
-        text(
-            "SELECT fs.fridge_id AS fridge_id, p.category_id AS category_id, "
-            "count(*) AS good_units "
-            "FROM unnest(CAST(:fridge_ids AS int[]), CAST(:coverage_ends AS date[])) "
-            "AS coverage(fridge_id, coverage_end) "
-            "JOIN fridge_stock fs ON fs.fridge_id = coverage.fridge_id "
-            "JOIN products p ON p.id = fs.product_id "
-            "CROSS JOIN LATERAL unnest(fs.expiry_dates) AS ed(expiry) "
-            "WHERE ed.expiry >= coverage.coverage_end "
-            "GROUP BY fs.fridge_id, p.category_id"
-        ),
-        {"fridge_ids": fridge_ids, "coverage_ends": coverage_ends},
-    ).all()
-    return {(row.fridge_id, row.category_id): int(row.good_units) for row in rows}
+    """Deductible in-fridge units per (fridge, category): stock good until the coverage end."""
+    coverage_end_by_fridge = {
+        config.fridge_id: fridge_stock_service.coverage_end(
+            delivery_date,
+            config.days_to_fill,
+            config.active_on_weekends,
+            bank_holidays,
+        )
+        for config in configs
+    }
+    good_stock = fridge_stock_service.load_good_stock_units(
+        coverage_end_by_fridge=coverage_end_by_fridge,
+        session=session,
+    )
+    residual: dict[tuple[int, int], int] = {}
+    for product_stock in good_stock:
+        key = (product_stock.fridge_id, product_stock.category_id)
+        residual[key] = residual.get(key, 0) + product_stock.good_units
+    return residual
 
 
 def _delete_unsaved_runs(delivery_date: datetime.date, model: str, session: Session) -> None:
@@ -580,6 +709,8 @@ def _insert_results(run_id: int, cells: list[ForecastCell], session: Session) ->
                 fridge_id=cell.fridge_id,
                 category_id=cell.category_id,
                 forecast_qty=cell.forecast_qty,
+                gross_qty=cell.gross_qty,
+                residual_units=cell.residual_units,
                 valid_days=cell.valid_days,
                 holiday_days=cell.holiday_days,
             )
@@ -653,23 +784,20 @@ def _bulk_update_quantities(
     )
 
 
-def _sold_units_by_category(
+def _sold_units_by_fridge_category(
     fridge_ids: list[int],
     window: SalesWindow,
     session: Session,
-) -> dict[int, int]:
-    sold = _event_count_by_fridge_category(
+) -> dict[tuple[int, int], int]:
+    return _event_count_by_fridge_category(
         table="sales_events",
         timestamp_col="sold_at",
         fridge_ids=fridge_ids,
         window=window,
+        weekdays=None,
         extra_where="e.is_refunded = false",
         session=session,
     )
-    units_by_category: dict[int, int] = {}
-    for (_fridge_id, category_id), units in sold.items():
-        units_by_category[category_id] = units_by_category.get(category_id, 0) + units
-    return units_by_category
 
 
 def _categories_with_active_products(session: Session) -> set[int]:
@@ -686,12 +814,18 @@ def _event_count_by_fridge_category(
     timestamp_col: str,
     fridge_ids: list[int],
     window: SalesWindow,
+    weekdays: list[int] | None,
     extra_where: str,
     session: Session,
 ) -> dict[tuple[int, int], int]:
-    """Event counts per (fridge_id, category_id) over the local-day sales window."""
+    """Event counts per (fridge_id, category_id) over the local-day sales window.
+
+    ``weekdays`` (ISO 1-7) keeps only those days of the window; None keeps every day.
+    """
     if not fridge_ids:
         return {}
+    local_day = f"(e.{timestamp_col} AT TIME ZONE '{_LOCAL_TZ}')::date"
+    weekday_filter = f"AND EXTRACT(ISODOW FROM {local_day}) = ANY(:weekdays) " if weekdays else ""
     rows = session.execute(
         text(
             f"SELECT e.fridge_id AS fridge_id, p.category_id AS category_id, "
@@ -699,10 +833,16 @@ def _event_count_by_fridge_category(
             "JOIN products p ON p.id = e.product_id "
             "WHERE e.fridge_id = ANY(:fridge_ids) "
             f"AND {extra_where} "
-            f"AND (e.{timestamp_col} AT TIME ZONE '{_LOCAL_TZ}')::date >= :start "
-            f"AND (e.{timestamp_col} AT TIME ZONE '{_LOCAL_TZ}')::date < :end "
+            f"AND {local_day} >= :start "
+            f"AND {local_day} < :end "
+            f"{weekday_filter}"
             "GROUP BY e.fridge_id, p.category_id"
         ),
-        {"fridge_ids": fridge_ids, "start": window.start, "end": window.end},
+        {
+            "fridge_ids": fridge_ids,
+            "start": window.start,
+            "end": window.end,
+            "weekdays": weekdays,
+        },
     ).all()
     return {(row.fridge_id, row.category_id): int(row.qty) for row in rows}

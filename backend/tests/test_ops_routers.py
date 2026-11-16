@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.db import engine, get_db
 from app.main import app
 from app.models import FridgeStock
-from tests import ensure_dispatches_week_start, ensure_test_admin_user
+from tests import TEST_ADMIN_USER, ensure_dispatches_week_start, ensure_test_admin_user
 
 PREFIX = "/api/v1"
 TAG = "ZZTEST-"
@@ -29,6 +29,7 @@ TAG = "ZZTEST-"
 # A Wednesday (ISO weekday 3) used as the anchor delivery date.
 DELIVERY_DATE = datetime.date(2026, 6, 17)
 DELIVERY_WEEKDAY = DELIVERY_DATE.isoweekday()
+LONG_AGO = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
 
 
 @pytest.fixture()
@@ -224,6 +225,14 @@ def test_supplier_crud_and_error_envelope(ctx):
     upd = ctx.client.put(f"{PREFIX}/suppliers/{sid}", json={"email": "x@y.z"})
     assert upd.status_code == 200 and upd.json()["email"] == "x@y.z"
 
+    contact = ctx.client.put(
+        f"{PREFIX}/suppliers/{sid}",
+        json={"contact_name": "Marc", "contact_phone": "+32 2 000 00 00"},
+    )
+    assert contact.status_code == 200, contact.text
+    assert contact.json()["contact_name"] == "Marc"
+    assert contact.json()["contact_phone"] == "+32 2 000 00 00"
+
     listing = ctx.client.get(f"{PREFIX}/suppliers", params={"limit": 5})
     body = listing.json()
     assert set(body) == {"items", "total", "limit", "offset"} and body["limit"] == 5
@@ -240,6 +249,19 @@ def test_supplier_crud_and_error_envelope(ctx):
     assert missing.json()["error"]["code"] == "not_found"
 
 
+def test_supplier_update_bumps_updated_at(ctx):
+    sid = _create_supplier(ctx.client, f"{TAG}SupTs")
+    ctx.session.execute(
+        text("UPDATE suppliers SET updated_at = :long_ago WHERE id = :id"),
+        {"long_ago": LONG_AGO, "id": sid},
+    )
+
+    updated = ctx.client.put(f"{PREFIX}/suppliers/{sid}", json={"email": "ts@y.z"})
+
+    assert updated.status_code == 200, updated.text
+    assert datetime.datetime.fromisoformat(updated.json()["updated_at"]) > LONG_AGO
+
+
 def test_product_fridge_prices(ctx):
     cats = _category_ids(ctx.session)
     pid = _create_product(ctx.client, code=f"{TAG}P1", category_id=cats["normal"])
@@ -254,7 +276,7 @@ def test_product_fridge_prices(ctx):
     assert prices[0]["sales_price"] == "3.50"
 
 
-def test_client_fees_and_interventions(ctx):
+def test_client_fees_and_contacts(ctx):
     created = ctx.client.post(f"{PREFIX}/clients", json={"name": f"{TAG}Client"})
     cid = created.json()["id"]
 
@@ -264,22 +286,64 @@ def test_client_fees_and_interventions(ctx):
     )
     assert fee.status_code == 201 and fee.json()["yearly_fee"] == "1200.00"
 
-    # Fridge tied to the client, then an intervention on it.
-    fr = ctx.client.post(
-        f"{PREFIX}/fridges",
-        json={"husky_id": f"{TAG}frC", "friendly_name": f"{TAG}frC", "client_id": cid},
-    )
-    fid = fr.json()["id"]
-    iv = ctx.client.post(
-        f"{PREFIX}/clients/{cid}/interventions",
+    contacts = ctx.client.put(
+        f"{PREFIX}/clients/{cid}/contacts",
         json={
-            "fridge_id": fid,
-            "intervention_type": "cleaning",
-            "occurred_at": "2026-06-01T09:00:00+00:00",
+            "items": [
+                {"role": "operations", "name": " Ana ", "phone": "+32 470 00 00 00"},
+                {"role": "it", "name": "  ", "email": ""},
+            ]
         },
     )
-    assert iv.status_code == 201
-    assert len(ctx.client.get(f"{PREFIX}/clients/{cid}/interventions").json()) == 1
+    assert contacts.status_code == 200, contacts.text
+    # The all-blank IT contact is dropped; text is trimmed.
+    assert contacts.json() == [
+        {
+            "role": "operations",
+            "name": "Ana",
+            "job_title": None,
+            "phone": "+32 470 00 00 00",
+            "email": None,
+        }
+    ]
+
+    bad_role = ctx.client.put(
+        f"{PREFIX}/clients/{cid}/contacts",
+        json={"items": [{"role": "ceo", "name": "X"}]},
+    )
+    assert bad_role.status_code == 422
+
+    cleared = ctx.client.put(f"{PREFIX}/clients/{cid}/contacts", json={"items": []})
+    assert cleared.json() == []
+
+
+def test_fridge_interventions_and_local_fields(ctx):
+    fid = _create_fridge(ctx.client, f"{TAG}frI")
+    fridge = ctx.client.get(f"{PREFIX}/fridges/{fid}").json()
+    assert fridge["active_on_weekends"] is True
+
+    upd = ctx.client.put(
+        f"{PREFIX}/fridges/{fid}",
+        json={
+            "modem_number": "MDM-1",
+            "sim_card_number": "8932000000000000001",
+            "active_on_weekends": False,
+        },
+    )
+    assert upd.status_code == 200, upd.text
+    assert upd.json()["modem_number"] == "MDM-1"
+    assert upd.json()["sim_card_number"] == "8932000000000000001"
+    assert upd.json()["active_on_weekends"] is False
+
+    iv = ctx.client.post(
+        f"{PREFIX}/fridges/{fid}/interventions",
+        json={"intervention_type": "cleaning", "occurred_at": "2026-06-01T09:00:00+00:00"},
+    )
+    assert iv.status_code == 201, iv.text
+    assert iv.json()["fridge_id"] == fid
+    assert iv.json()["created_by"] == TEST_ADMIN_USER.id
+    listed = ctx.client.get(f"{PREFIX}/fridges/{fid}/interventions").json()
+    assert [row["intervention_type"] for row in listed] == ["cleaning"]
 
 
 def test_fridge_delivery_config(ctx):

@@ -25,17 +25,36 @@ const PRODUCTS_PAGE_SIZE = 500
 // Scorecard window for the grid's score row: the stored 365-day scores menu allocation uses.
 const ALLOCATION_SCORE_WINDOW_DAYS = 365
 
+function fetchReferenceFridges(signal: AbortSignal) {
+  return api.get<Page<Fridge>>('/api/v1/fridges', {
+    params: { limit: REFERENCE_FRIDGES_LIMIT },
+    signal,
+  })
+}
+
 /** Map of fridge id -> friendly name. Loads all active fridges once. */
 export function useFridgeMap() {
   return useQuery({
     queryKey: REFERENCE_FRIDGES_KEY,
-    queryFn: ({ signal }) =>
-      api.get<Page<Fridge>>('/api/v1/fridges', {
-        params: { limit: REFERENCE_FRIDGES_LIMIT },
-        signal,
-      }),
+    queryFn: ({ signal }) => fetchReferenceFridges(signal),
     staleTime: REFERENCE_STALE_MS,
     select: (page) => new Map(page.items.map((fridge) => [fridge.id, formatFridgeName(fridge)])),
+  })
+}
+
+/** Map of fridge id -> site preferences, only for fridges that have some. Shares the fridge query. */
+export function useFridgePreferences() {
+  return useQuery({
+    queryKey: REFERENCE_FRIDGES_KEY,
+    queryFn: ({ signal }) => fetchReferenceFridges(signal),
+    staleTime: REFERENCE_STALE_MS,
+    select: (page) => {
+      const preferencesById = new Map<number, string>()
+      for (const fridge of page.items) {
+        if (fridge.preferences) preferencesById.set(fridge.id, fridge.preferences)
+      }
+      return preferencesById
+    },
   })
 }
 
