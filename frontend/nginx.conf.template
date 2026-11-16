@@ -1,0 +1,25 @@
+# Rendered by the nginx image's envsubst entrypoint: ${PORT} is filled from the
+# environment (Railway-injected); nginx runtime vars like $uri are preserved.
+server {
+    listen       ${PORT};
+    listen       [::]:${PORT};
+    server_name  _;
+
+    root   /usr/share/nginx/html;
+    index  index.html;
+
+    # SPA fallback: unknown paths resolve to index.html so react-router can
+    # handle client-side routing.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Long-cache hashed build assets; never cache the HTML shell.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+}

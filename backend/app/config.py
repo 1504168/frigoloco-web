@@ -10,6 +10,7 @@ truth per project convention.
 
 from __future__ import annotations
 
+import os
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
@@ -22,8 +23,29 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = REPO_ROOT / ".env"
 
-# Explicitly load the repo-root .env before Settings is constructed.
+# Per-environment overlay files, selected by APP_ENV (production / test). The
+# overlay holds only what DIFFERS from the base .env (typically DB_URL); shared
+# secrets (FRIGOLOCO_API_*, PA_WEBHOOK_*) stay in the base .env and are inherited.
+APP_ENV = os.environ.get("APP_ENV", "").strip().lower()
+_ENV_OVERLAY_FILES = {
+    "production": ".env.production",
+    "prod": ".env.production",
+    "test": ".env.test",
+    "testing": ".env.test",
+}
+OVERLAY_ENV_FILE = (
+    REPO_ROOT / _ENV_OVERLAY_FILES[APP_ENV] if APP_ENV in _ENV_OVERLAY_FILES else None
+)
+
+# Load the overlay FIRST (override=False means first-loaded wins), then the base
+# .env fills in every value the overlay did not set. Real process env vars
+# (e.g. Railway-injected DATABASE_URL) are already in os.environ and always win.
+if OVERLAY_ENV_FILE is not None:
+    load_dotenv(dotenv_path=OVERLAY_ENV_FILE, override=False)
 load_dotenv(dotenv_path=ENV_FILE, override=False)
+
+PRODUCTION_APP_ENVS = {"production", "prod"}
+DEV_ONLY_SECRET_KEY = "dev-only-insecure-change-me"
 
 
 class Settings(BaseSettings):
@@ -67,6 +89,14 @@ class Settings(BaseSettings):
     backfill_from: date | None = Field(default=None, validation_alias="BACKFILL_FROM")
     husky_throttle_rps: float = Field(
         default=1.0, validation_alias="HUSKY_THROTTLE_RPS"
+    )
+
+    # --- Authentication -----------------------------------------------------
+    # SECRET_KEY signs the JWTs. The default is DEV-ONLY; every deployed
+    # environment MUST set its own strong SECRET_KEY (distinct per environment).
+    secret_key: str = Field(default=DEV_ONLY_SECRET_KEY, validation_alias="SECRET_KEY")
+    access_token_expire_minutes: int = Field(
+        default=60 * 24 * 7, validation_alias="ACCESS_TOKEN_EXPIRE_MINUTES"
     )
 
 

@@ -17,26 +17,44 @@ import type {
   Category,
   Fridge,
   ScorecardItem,
-  Setting,
   Supplier,
 } from '@/pages/ops/lib/types'
 
 const REFERENCE_STALE_MS = 5 * 60_000
 const PRODUCTS_PAGE_SIZE = 500
-const MENU_COLUMNS_SETTING_KEY = 'menu_category_columns'
-const DEFAULT_MENU_COLUMNS = 6
+// Scorecard window for the grid's score row: the stored 365-day scores menu allocation uses.
+const ALLOCATION_SCORE_WINDOW_DAYS = 365
+
+function fetchReferenceFridges(signal: AbortSignal) {
+  return api.get<Page<Fridge>>('/api/v1/fridges', {
+    params: { limit: REFERENCE_FRIDGES_LIMIT },
+    signal,
+  })
+}
 
 /** Map of fridge id -> friendly name. Loads all active fridges once. */
 export function useFridgeMap() {
   return useQuery({
     queryKey: REFERENCE_FRIDGES_KEY,
-    queryFn: ({ signal }) =>
-      api.get<Page<Fridge>>('/api/v1/fridges', {
-        params: { limit: REFERENCE_FRIDGES_LIMIT },
-        signal,
-      }),
+    queryFn: ({ signal }) => fetchReferenceFridges(signal),
     staleTime: REFERENCE_STALE_MS,
     select: (page) => new Map(page.items.map((fridge) => [fridge.id, formatFridgeName(fridge)])),
+  })
+}
+
+/** Map of fridge id -> site preferences, only for fridges that have some. Shares the fridge query. */
+export function useFridgePreferences() {
+  return useQuery({
+    queryKey: REFERENCE_FRIDGES_KEY,
+    queryFn: ({ signal }) => fetchReferenceFridges(signal),
+    staleTime: REFERENCE_STALE_MS,
+    select: (page) => {
+      const preferencesById = new Map<number, string>()
+      for (const fridge of page.items) {
+        if (fridge.preferences) preferencesById.set(fridge.id, fridge.preferences)
+      }
+      return preferencesById
+    },
   })
 }
 
@@ -52,6 +70,13 @@ export function useCategories() {
       return { ordered, byId }
     },
   })
+}
+
+/** Display name of a category, or null when no category is given. */
+export function useCategoryName(categoryId: number | null): string | null {
+  const categoriesQuery = useCategories()
+  if (categoryId === null) return null
+  return categoriesQuery.data?.byId.get(categoryId) ?? `Category #${categoryId}`
 }
 
 /** Map of supplier id -> name. Loads all suppliers once. */
@@ -97,7 +122,7 @@ export function useProductCatalogue() {
   })
 }
 
-/** Map of product id -> final score (from the rating scorecard, newest window). */
+/** Map of product id -> stored 365-day final score (the same scores menu allocation uses). */
 export function useScoreMap() {
   return useQuery({
     queryKey: ['ops', 'scores', 'map'],
@@ -107,7 +132,7 @@ export function useScoreMap() {
       let offset = 0
       for (let guard = 0; guard < 50; guard += 1) {
         const page = await api.get<Page<ScorecardItem>>('/api/v1/rating/scorecard', {
-          params: { limit: PRODUCTS_PAGE_SIZE, offset },
+          params: { limit: PRODUCTS_PAGE_SIZE, offset, window_days: ALLOCATION_SCORE_WINDOW_DAYS },
           signal,
         })
         all.push(...page.items)
@@ -119,24 +144,5 @@ export function useScoreMap() {
     // A missing scorecard is non-fatal - the score row simply shows placeholders.
     retry: false,
     select: (items) => new Map(items.map((item) => [item.product_id, item.final_score])),
-  })
-}
-
-/**
- * Configurable minimum column slots per category for the Menu/Dispatch grids.
- * Read from the `menu_category_columns` app setting; falls back to 6 when the
- * setting is absent or non-numeric.
- */
-export function useMenuCategoryColumns() {
-  return useQuery({
-    queryKey: ['ops', 'settings', MENU_COLUMNS_SETTING_KEY],
-    staleTime: REFERENCE_STALE_MS,
-    retry: false,
-    queryFn: ({ signal }) => api.get<Setting[]>('/api/v1/settings', { signal }),
-    select: (settings) => {
-      const setting = settings.find((entry) => entry.key === MENU_COLUMNS_SETTING_KEY)
-      const value = Number(setting?.value)
-      return Number.isFinite(value) && value > 0 ? Math.floor(value) : DEFAULT_MENU_COLUMNS
-    },
   })
 }

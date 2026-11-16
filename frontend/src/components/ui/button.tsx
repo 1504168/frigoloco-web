@@ -41,13 +41,25 @@ export interface ButtonProps
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button'
-    return (
+    const button = (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         {...props}
       />
     )
+    // A disabled button gets no mouse events, so its tooltip would never show; the wrapper carries it.
+    if (props.disabled && props.title) {
+      return (
+        <span
+          title={props.title}
+          className="inline-flex cursor-not-allowed"
+        >
+          {button}
+        </span>
+      )
+    }
+    return button
   },
 )
 Button.displayName = 'Button'

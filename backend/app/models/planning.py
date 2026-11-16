@@ -1,5 +1,5 @@
 """Menus, forecasts, scores - SECTION 4 of schema.sql. Mirrors: weekly_menus,
-menu_products, forecast_runs, forecast_results, product_scores,
+menu_products, forecast_runs, forecast_results, bank_holidays, product_scores,
 fridge_product_scores.
 """
 
@@ -67,7 +67,10 @@ class WeeklyMenu(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
 
@@ -126,7 +129,8 @@ class ForecastRun(Base):
     __tablename__ = "forecast_runs"
     __table_args__ = (
         CheckConstraint(
-            "model IN ('moving_average_3w')", name="chk_forecast_runs_model"
+            "model IN ('moving_average_3w', 'moving_average_3m', 'last_year_3w', 'last_year_3m')",
+            name="chk_forecast_runs_model",
         ),
         # Exactly one SAVED forecast per delivery_date (== per iso year/week/day);
         # ephemeral compute rows (is_saved=false) are unconstrained (migration 0005).
@@ -143,7 +147,7 @@ class ForecastRun(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     delivery_date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
-    # Extensible enum-style model selector (only 'moving_average_3w' today; migration 0005).
+    # Forecast method code (migration 0014); see app/services/forecast/strategies.
     model: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'moving_average_3w'")
     )
@@ -191,17 +195,34 @@ class ForecastResult(Base):
     holiday_days: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
     )
+    # Before the in-fridge stock deduction, and the units deducted (migration 0024).
+    # NULL on runs computed before 0024.
+    gross_qty: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    residual_units: Mapped[int | None] = mapped_column(Integer)
+
+
+class BankHoliday(Base):
+    """A public holiday: not a selling day for the forecast (migration 0024)."""
+
+    __tablename__ = "bank_holidays"
+
+    holiday_date: Mapped[datetime.date] = mapped_column(Date, primary_key=True)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class ProductScore(Base):
-    """Yearly product scorecard (R2), recomputed nightly."""
+    """Product scorecard (R2) per scoring window, recomputed nightly."""
 
     __tablename__ = "product_scores"
     __table_args__ = (
         UniqueConstraint(
-            "product_id", "period_end", name="uq_product_scores_product_period"
+            "product_id",
+            "period_end",
+            "window_days",
+            name="uq_product_scores_product_period_window",
         ),
         CheckConstraint("sample_size >= 0", name="chk_product_scores_sample_size_nonneg"),
+        CheckConstraint("window_days > 0", name="chk_product_scores_window_days"),
     )
 
     id: Mapped[int] = mapped_column(Integer, Identity(always=True), primary_key=True)
@@ -218,6 +239,15 @@ class ProductScore(Base):
     )
     computed_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    window_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("365")
+    )
+    sold_qty: Mapped[int | None] = mapped_column(Integer)
+    positive_reviews: Mapped[int | None] = mapped_column(Integer)
+    negative_reviews: Mapped[int | None] = mapped_column(Integer)
+    uses_new_product_baseline: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
     )
 
 

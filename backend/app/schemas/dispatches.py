@@ -7,6 +7,7 @@ import datetime
 from pydantic import Field
 
 from app.models.enums import DispatchStatus, LineSource
+from app.money import MoneyStr
 from app.schemas.masters import ApiModel
 
 
@@ -68,6 +69,8 @@ class DispatchMatrix(ApiModel):
     products: list[MatrixProduct]
     categories: list[MatrixCategory]
     cells: list[MatrixCell]
+    # Cost at the prices snapshot on dispatch; null until the day is dispatched.
+    dispatched_cost_total: MoneyStr | None = None
 
 
 class DispatchSaveRequest(ApiModel):
@@ -80,20 +83,6 @@ class DispatchSaveRequest(ApiModel):
     overwrite: bool = False
     # When set, only this category's lines are replaced; others stay intact.
     category_id: int | None = None
-
-
-class DispatchCloneRequest(ApiModel):
-    """Copy a saved dispatch day's planned lines onto another day (no stock effect)."""
-
-    source_year: int = Field(ge=2020, le=2100)
-    source_week: int = Field(ge=1, le=53)
-    source_day_name: str
-    target_year: int = Field(ge=2020, le=2100)
-    target_week: int = Field(ge=1, le=53)
-    target_day_name: str
-    # Confirm-overwrite: false -> 409 {code:"exists"} when the target already has a
-    # saved dispatch.
-    overwrite: bool = False
 
 
 class WithdrawalItem(ApiModel):
@@ -123,3 +112,74 @@ class ConfirmResult(ApiModel):
     dispatch_id: int
     status: DispatchStatus
     movements_created: int
+
+
+class StockFitLineItem(ApiModel):
+    fridge_id: int
+    product_id: int
+    qty: int = Field(ge=0)
+
+
+class StockFitRequest(ApiModel):
+    lines: list[StockFitLineItem]
+    # "Include ordered": also count pending purchase orders due on or before this date
+    # (the dispatch delivery date). Null counts only the physical warehouse stock.
+    include_orders_due_by: datetime.date | None = None
+
+
+class WarehouseStockCut(ApiModel):
+    """A product the fridges asked more of than the warehouse holds, and how much was cut."""
+
+    product_id: int
+    requested: int
+    in_stock: int
+    cut: int
+    # Part of in_stock still on a purchase order (0 unless orders were included).
+    on_order: int
+
+
+class ProductOrderUseOut(ApiModel):
+    """Units of a product that only fit because a purchase order is due in time."""
+
+    product_id: int
+    units_from_orders: int
+
+
+class StockFitOut(ApiModel):
+    # The request lines in the same order, cut to the warehouse stock.
+    lines: list[StockFitLineItem]
+    cuts: list[WarehouseStockCut]
+    order_uses: list[ProductOrderUseOut]
+
+
+class WarmDishLineOut(ApiModel):
+    delivery_date: datetime.date
+    fridge_id: int
+    friendly_name: str
+    product_id: int
+    product_name: str
+    category_name: str
+    qty: int
+
+
+class ComparedWeekOut(ApiModel):
+    year: int
+    week: int
+    week_start: datetime.date
+
+
+class CategoryWeekUnitsOut(ApiModel):
+    category_id: int
+    category_name: str
+    this_week_units: int
+    previous_week_units: int
+    last_year_units: int
+
+
+class WeekComparisonOut(ApiModel):
+    """Planned or dispatched units per category for a week and the two weeks it is compared to."""
+
+    this_week: ComparedWeekOut
+    previous_week: ComparedWeekOut
+    same_week_last_year: ComparedWeekOut
+    categories: list[CategoryWeekUnitsOut]

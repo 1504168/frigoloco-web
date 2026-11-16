@@ -1,8 +1,8 @@
 """Schemas for the product rating scorecard (D3).
 
-The scorecard exposes every Excel-equivalent column per product plus the live
-scoring weights in the page envelope, so the UI can render the full rating grid
-and show how the final score is weighted.
+The scorecard shows the stored ``product_scores`` of one window with every
+Excel-equivalent column per product, plus the scoring weights in the page
+envelope, so the UI can render the rating grid and explain the final score.
 """
 
 from __future__ import annotations
@@ -30,29 +30,34 @@ class ScorecardRow(BaseModel):
     name: str
     code: str
     category: str | None
-    brand: str | None  # supplier name
-    supplier_id: int | None
+    supplier_name: str | None
     shelf_life_days: int | None
     buying_price: MoneyStr
     sold_price: MoneyStr
     vat_rate: RateStr
     profit_margin: Money | None  # (sell_ex_vat - buy) / sell_ex_vat, fraction
-    total_sold_qty: int
+    # Counts are None on rows stored before migration 0016 kept them.
+    total_sold_qty: int | None
     total_added_qty: int
     pct_sold: Money | None  # sold / added, fraction
-    positive_reviews: int
-    negative_reviews: int
+    positive_reviews: int | None
+    negative_reviews: int | None
     pct_positive_review: Money | None  # positive / (positive + negative)
     final_score: Money
+    uses_new_product_baseline: bool
 
 
 class ScorecardPage(BaseModel):
-    """Paginated scorecard plus the weights and window it was computed over."""
+    """Paginated stored scores plus the weights and window they were computed over.
+
+    ``period_end`` and ``computed_at`` are None when the window was never computed.
+    """
 
     items: list[ScorecardRow]
     total: int
     limit: int
     offset: int
     window_days: int
-    period_end: datetime.date
+    period_end: datetime.date | None
+    computed_at: datetime.datetime | None
     weights: ScorecardWeights

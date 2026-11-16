@@ -1,8 +1,17 @@
 import * as React from 'react'
-import { FileText } from 'lucide-react'
+import { FileText, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EMPTY_PLACEHOLDER, formatEuro } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { cellKey } from '@/pages/ops/lib/grid'
+import { useFridgePreferences } from '@/pages/ops/lib/reference'
+import {
+  FRIDGE_PREFERENCES_HINT_CLASS,
+  FRIDGE_ROW_CLASS,
+  FRIDGE_ROW_STICKY_CELL_CLASS,
+  STICKY_GRID_BOX_CLASS,
+  useStickyHeaderRows,
+} from '@/pages/ops/lib/stickyHeaderRows'
 import type { GridCategory, GridFridge } from '@/pages/ops/lib/types'
 
 /** Per-product metadata resolved from the catalogue + score map by the parent. */
@@ -20,19 +29,37 @@ export interface ProductMeta {
   supplierName: string
 }
 
-/** Left-border accent cycled per category column group (brand series tokens). */
-const CATEGORY_ACCENTS = [
-  'border-l-series-1',
-  'border-l-teal',
-  'border-l-good',
-  'border-l-warning',
-  'border-l-critical',
+/** A category's left-border accent class and the theme token its bands are tinted with. */
+interface CategoryColor {
+  accent: string
+  token: string
+}
+
+/** Cycled per category column group; the hues stay apart so neighbours never match. */
+const CATEGORY_COLORS: CategoryColor[] = [
+  { accent: 'border-l-series-1', token: 'series-1' },
+  { accent: 'border-l-series-3', token: 'series-3' },
+  { accent: 'border-l-series-2', token: 'series-2' },
+  { accent: 'border-l-critical', token: 'critical' },
+  { accent: 'border-l-teal', token: 'teal' },
 ]
+/** Header bands are sticky, so their tint is mixed into the opaque card colour. */
+const HEADER_TINT_PERCENT = 18
+const CELL_TINT_PERCENT = 6
 
 /** Padding column with no product yet (an "add here" slot). */
 const EMPTY_SLOT_SUPPLIER = -1
 /** A real product that has no supplier linked in the catalogue. */
 const UNASSIGNED_SUPPLIER = -2
+
+const CATEGORY_ROW = 0
+const SUPPLIER_ROW = 1
+const PRODUCT_ROW = 2
+const STICKY_HEADER_ROW_COUNT = 3
+const NO_FRIDGE_PREFERENCES = new Map<number, string>()
+const HEADER_CELL_CLASS = 'sticky z-20 bg-card'
+/** Header cells that also stick sideways (first and total columns) sit above both. */
+const HEADER_CORNER_CLASS = 'sticky z-30 bg-card'
 
 interface FlatColumn {
   key: string
@@ -41,13 +68,14 @@ interface FlatColumn {
   supplierId: number
   supplierName: string
   isCategoryStart: boolean
+  color: CategoryColor
 }
 
 interface CategoryBand {
   categoryId: number
   categoryName: string
   span: number
-  accent: string
+  color: CategoryColor
 }
 
 interface SupplierBand {
@@ -55,12 +83,14 @@ interface SupplierBand {
   supplierId: number
   supplierName: string
   span: number
-  accent: string
+  color: CategoryColor
   isPlaceholder: boolean
 }
 
-function cellKey(fridgeId: number, productId: number): string {
-  return `${fridgeId}:${productId}`
+/** An extra per-product header row a page adds below the standard detail rows. */
+export interface PlanningGridDetailRow {
+  label: string
+  render: (productId: number) => React.ReactNode
 }
 
 export interface PlanningGridProps {
@@ -73,21 +103,24 @@ export interface PlanningGridProps {
   onCellChange: (fridgeId: number, productId: number, rawValue: string) => void
   /** Keys the operator edited this session (highlighted, saved as manual). */
   editedKeys?: Set<string>
-  /** Deprecated: empty "add here" slots were removed; retained for caller compat. */
-  columnsPerCategory?: number
   /** Optional per-supplier action shown in the supplier band (Menu: Draft PO). */
   onDraftPo?: (supplierId: number) => void
   draftPoPendingSupplierId?: number | null
   /** Disable every qty cell (e.g. a dispatched, read-only key). */
   readOnly?: boolean
+  /** Page-specific header rows shown after Shelf life (Menu: In stock, On order). */
+  extraDetailRows?: PlanningGridDetailRow[]
+  /** When set, each product header gets a remove button (Menu: drop it from the week menu). */
+  onRemoveProduct?: (productId: number) => void
+  /** Tooltip per cell key explaining an imported quantity (Menu: stock cuts, sales speed). */
+  cellHints?: Map<string, string>
 }
 
 /**
  * Excel-like planning grid shared by the Menu and Dispatch pages. Products are
  * columns (grouped category → supplier), fridges are rows. The first column is
  * sticky; the whole table lives in a horizontal-scroll container so the page
- * body never scrolls sideways. Column groups pad out to the configured minimum
- * slots-per-category so operators always have empty cells to fill.
+ * body never scrolls sideways.
  */
 export function PlanningGrid({
   fridges,
@@ -99,12 +132,17 @@ export function PlanningGrid({
   onDraftPo,
   draftPoPendingSupplierId,
   readOnly = false,
+  extraDetailRows = [],
+  onRemoveProduct,
+  cellHints,
 }: PlanningGridProps) {
+  const { rowRef, stickyTop } = useStickyHeaderRows(STICKY_HEADER_ROW_COUNT)
+  const fridgePreferences = useFridgePreferences().data ?? NO_FRIDGE_PREFERENCES
   const { columns, categoryBands, supplierBands } = React.useMemo(() => {
     const flat: FlatColumn[] = []
     const catBands: CategoryBand[] = []
     categories.forEach((category, categoryIndex) => {
-      const accent = CATEGORY_ACCENTS[categoryIndex % CATEGORY_ACCENTS.length]
+      const color = CATEGORY_COLORS[categoryIndex % CATEGORY_COLORS.length]
       const startIndex = flat.length
       category.product_ids.forEach((productId, productIndex) => {
         const meta = productMeta(productId)
@@ -115,13 +153,14 @@ export function PlanningGrid({
           supplierId: meta?.supplierId ?? UNASSIGNED_SUPPLIER,
           supplierName: meta?.supplierId ? meta.supplierName : 'Unassigned',
           isCategoryStart: productIndex === 0,
+          color,
         })
       })
       catBands.push({
         categoryId: category.category_id,
         categoryName: category.category_name,
         span: flat.length - startIndex,
-        accent,
+        color,
       })
     })
 
@@ -130,8 +169,6 @@ export function PlanningGrid({
     let cursor = 0
     while (cursor < flat.length) {
       const current = flat[cursor]
-      const accent =
-        catBands.find((band) => band.categoryId === current.categoryId)?.accent ?? CATEGORY_ACCENTS[0]
       let span = 1
       while (
         cursor + span < flat.length &&
@@ -145,7 +182,7 @@ export function PlanningGrid({
         supplierId: current.supplierId,
         supplierName: current.supplierName,
         span,
-        accent,
+        color: current.color,
         isPlaceholder: current.supplierId === EMPTY_SLOT_SUPPLIER,
       })
       cursor += span
@@ -215,33 +252,40 @@ export function PlanningGrid({
   const columnCount = columns.length
 
   return (
-    <div className="overflow-x-auto overflow-y-auto rounded-xl border border-border">
+    <div className={cn(STICKY_GRID_BOX_CLASS, 'rounded-xl border border-border')}>
       <table className="border-separate border-spacing-0 text-xs">
         <thead>
-          {/* Category band */}
-          <tr>
-            <th className={cn(stickyLeft, 'border-b px-3 py-1.5')} />
+          <tr ref={rowRef(CATEGORY_ROW)}>
+            <th
+              className={cn(stickyLeft, HEADER_CORNER_CLASS, 'border-b px-3 py-1.5')}
+              style={stickyTop(CATEGORY_ROW)}
+            />
             {categoryBands.map((band) => (
               <th
                 key={`cat-${band.categoryId}`}
                 colSpan={band.span}
                 className={cn(
+                  HEADER_CELL_CLASS,
                   'border-b border-l-2 border-border px-2 py-1.5 text-center text-[11px] font-bold uppercase tracking-wide text-foreground',
-                  band.accent,
+                  band.color.accent,
                 )}
+                style={{ ...stickyTop(CATEGORY_ROW), ...headerTint(band.color) }}
               >
                 {band.categoryName}
               </th>
             ))}
-            <th className="sticky right-0 z-10 border-b border-l border-border bg-card px-2 py-1.5 text-[11px] font-bold uppercase text-muted-foreground">
+            <th
+              className={cn(HEADER_CORNER_CLASS, 'right-0 border-b border-l border-border px-2 py-1.5 text-[11px] font-bold uppercase text-muted-foreground')}
+              style={stickyTop(CATEGORY_ROW)}
+            >
               Total
             </th>
           </tr>
-          {/* Supplier band */}
-          <tr>
+          <tr ref={rowRef(SUPPLIER_ROW)}>
             <th
               scope="row"
-              className={cn(stickyLeft, 'border-b px-3 py-1 text-[11px] font-medium text-muted-foreground')}
+              className={cn(stickyLeft, HEADER_CORNER_CLASS, 'border-b px-3 py-1 text-[11px] font-medium text-muted-foreground')}
+              style={stickyTop(SUPPLIER_ROW)}
             >
               Supplier
             </th>
@@ -250,9 +294,11 @@ export function PlanningGrid({
                 key={`sup-${band.key}`}
                 colSpan={band.span}
                 className={cn(
+                  HEADER_CELL_CLASS,
                   'border-b border-l-2 border-border px-2 py-1 text-center text-[11px] font-semibold text-muted-foreground',
-                  band.accent,
+                  band.color.accent,
                 )}
+                style={{ ...stickyTop(SUPPLIER_ROW), ...headerTint(band.color) }}
               >
                 {band.isPlaceholder ? (
                   <span className="italic text-muted-foreground/60">Add products…</span>
@@ -276,11 +322,17 @@ export function PlanningGrid({
                 )}
               </th>
             ))}
-            <th className="sticky right-0 z-10 border-b border-l border-border bg-card" />
+            <th
+              className={cn(HEADER_CORNER_CLASS, 'right-0 border-b border-l border-border')}
+              style={stickyTop(SUPPLIER_ROW)}
+            />
           </tr>
-          {/* Product name */}
-          <tr>
-            <th scope="col" className={cn(stickyLeft, 'border-b px-3 py-2 font-semibold text-foreground')}>
+          <tr ref={rowRef(PRODUCT_ROW)}>
+            <th
+              scope="col"
+              className={cn(stickyLeft, HEADER_CORNER_CLASS, 'border-b px-3 py-2 font-semibold text-foreground')}
+              style={stickyTop(PRODUCT_ROW)}
+            >
               Product
             </th>
             {columns.map((column) => {
@@ -289,19 +341,31 @@ export function PlanningGrid({
                 <th
                   key={column.key}
                   className={cn(
+                    HEADER_CELL_CLASS,
                     'min-w-[92px] max-w-[120px] border-b border-l border-border px-2 py-2 text-left align-bottom text-[11px] font-semibold leading-tight text-foreground',
                     column.isCategoryStart && 'border-l-2',
-                    column.productId === null && 'bg-muted/20',
                   )}
+                  style={{ ...stickyTop(PRODUCT_ROW), ...headerTint(column.color) }}
                   title={meta?.productName}
                 >
-                  {meta?.productName ?? ''}
+                  <span className="flex items-start justify-between gap-1">
+                    <span>{meta?.productName ?? ''}</span>
+                    {onRemoveProduct && column.productId !== null ? (
+                      <RemoveProductButton
+                        productId={column.productId}
+                        productName={meta?.productName ?? ''}
+                        onRemove={onRemoveProduct}
+                      />
+                    ) : null}
+                  </span>
                 </th>
               )
             })}
-            <th className="sticky right-0 z-10 border-b border-l border-border bg-card px-2 py-2" />
+            <th
+              className={cn(HEADER_CORNER_CLASS, 'right-0 border-b border-l border-border px-2 py-2')}
+              style={stickyTop(PRODUCT_ROW)}
+            />
           </tr>
-          {/* Detail rows */}
           {detailRow('Code', (column) => productMeta(column.productId!)?.code ?? EMPTY_PLACEHOLDER)}
           {detailRow('Purchase', (column) => formatEuro(productMeta(column.productId!)?.purchasePrice))}
           {detailRow('Sales', (column) => formatEuro(productMeta(column.productId!)?.salesPrice))}
@@ -321,6 +385,11 @@ export function PlanningGrid({
             const days = productMeta(column.productId!)?.shelfLifeDays
             return days === null || days === undefined ? EMPTY_PLACEHOLDER : `${days}d`
           })}
+          {extraDetailRows.map((row) => (
+            <React.Fragment key={row.label}>
+              {detailRow(row.label, (column) => row.render(column.productId!))}
+            </React.Fragment>
+          ))}
           {/* Total qty per product column */}
           <tr>
             <th scope="row" className={cn(detailLabel, 'font-semibold text-foreground')}>
@@ -342,63 +411,81 @@ export function PlanningGrid({
           </tr>
         </thead>
         <tbody>
-          {fridges.map((fridge) => (
-            <tr key={fridge.fridge_id} className="hover:bg-accent/30">
-              <th
-                scope="row"
-                className={cn(
-                  stickyLeft,
-                  'whitespace-nowrap border-b px-3 py-1 font-medium text-foreground',
-                )}
-              >
-                {fridge.friendly_name}
-              </th>
-              {columns.map((column) => {
-                if (column.productId === null) {
+          {fridges.map((fridge) => {
+            const preferences = fridgePreferences.get(fridge.fridge_id)
+            return (
+              <tr key={fridge.fridge_id} className={FRIDGE_ROW_CLASS}>
+                <th
+                  scope="row"
+                  title={preferences}
+                  className={cn(
+                    stickyLeft,
+                    FRIDGE_ROW_STICKY_CELL_CLASS,
+                    'whitespace-nowrap border-b px-3 py-1 font-medium text-foreground',
+                  )}
+                >
+                  <span className={cn(preferences && FRIDGE_PREFERENCES_HINT_CLASS)}>
+                    {fridge.friendly_name}
+                  </span>
+                </th>
+                {columns.map((column) => {
+                  if (column.productId === null) {
+                    return (
+                      <td key={column.key} className="border-b border-border bg-muted/10 p-0" />
+                    )
+                  }
+                  const key = cellKey(fridge.fridge_id, column.productId)
+                  const value = draft.get(key) ?? 0
+                  const isEdited = editedKeys?.has(key) ?? false
+                  const cellHint = cellHints?.get(key)
+                  // A hinted cell keeps its warning tint so the explanation stays visible.
+                  const cellStyle = cellHint === undefined ? cellTint(column.color) : undefined
                   return (
-                    <td key={column.key} className="border-b border-border bg-muted/10 p-0" />
-                  )
-                }
-                const key = cellKey(fridge.fridge_id, column.productId)
-                const value = draft.get(key) ?? 0
-                const isEdited = editedKeys?.has(key) ?? false
-                return (
-                  <td
-                    key={column.key}
-                    className={cn(
-                      'border-b border-l border-border p-0 text-center',
-                      column.isCategoryStart && 'border-l-2',
-                    )}
-                  >
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      disabled={readOnly}
-                      value={value === 0 ? '' : value}
-                      placeholder="0"
-                      aria-label={`${fridge.friendly_name} · ${
-                        productMeta(column.productId)?.productName ?? column.productId
-                      }`}
-                      onChange={(event) =>
-                        onCellChange(fridge.fridge_id, column.productId!, event.target.value)
-                      }
+                    <td
+                      key={column.key}
+                      title={cellHint}
+                      style={cellStyle}
                       className={cn(
-                        'h-8 w-full min-w-[56px] bg-transparent px-2 text-center text-xs tabular-nums outline-none focus:bg-primary/10 disabled:cursor-not-allowed',
-                        isEdited
-                          ? 'font-bold text-series-1'
-                          : value === 0
-                            ? 'text-muted-foreground/40'
-                            : 'text-foreground',
+                        'border-b border-l border-border p-0 text-center',
+                        column.isCategoryStart && 'border-l-2',
+                        cellHint !== undefined && 'bg-warning/10',
                       )}
-                    />
-                  </td>
-                )
-              })}
-              <td className="sticky right-0 z-10 border-b border-l border-border bg-card px-3 py-1 text-right font-semibold tabular-nums text-foreground">
-                {rowTotals.get(fridge.fridge_id) ?? 0}
-              </td>
-            </tr>
-          ))}
+                    >
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        disabled={readOnly}
+                        value={value === 0 ? '' : value}
+                        placeholder="0"
+                        aria-label={`${fridge.friendly_name} · ${
+                          productMeta(column.productId)?.productName ?? column.productId
+                        }`}
+                        onChange={(event) =>
+                          onCellChange(fridge.fridge_id, column.productId!, event.target.value)
+                        }
+                        className={cn(
+                          'h-8 w-full min-w-[56px] bg-transparent px-2 text-center text-xs tabular-nums outline-none focus:bg-primary/10 disabled:cursor-not-allowed',
+                          isEdited
+                            ? 'font-bold text-series-1'
+                            : value === 0
+                              ? 'text-muted-foreground/40'
+                              : 'text-foreground',
+                        )}
+                      />
+                    </td>
+                  )
+                })}
+                <td
+                  className={cn(
+                    'sticky right-0 z-10 border-b border-l border-border bg-card px-3 py-1 text-right font-semibold tabular-nums text-foreground',
+                    FRIDGE_ROW_STICKY_CELL_CLASS,
+                  )}
+                >
+                  {rowTotals.get(fridge.fridge_id) ?? 0}
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
         <tfoot>
           <tr>
@@ -432,5 +519,37 @@ export function PlanningGrid({
         </tfoot>
       </table>
     </div>
+  )
+}
+
+function mixIntoCard(color: CategoryColor, percent: number): string {
+  return `color-mix(in srgb, var(--${color.token}) ${percent}%, var(--card))`
+}
+
+function headerTint(color: CategoryColor): React.CSSProperties {
+  return { backgroundColor: mixIntoCard(color, HEADER_TINT_PERCENT) }
+}
+
+function cellTint(color: CategoryColor): React.CSSProperties {
+  return { backgroundColor: mixIntoCard(color, CELL_TINT_PERCENT) }
+}
+
+interface RemoveProductButtonProps {
+  productId: number
+  productName: string
+  onRemove: (productId: number) => void
+}
+
+function RemoveProductButton({ productId, productName, onRemove }: RemoveProductButtonProps) {
+  return (
+    <button
+      type="button"
+      className="shrink-0 rounded text-muted-foreground hover:bg-critical/10 hover:text-critical"
+      onClick={() => onRemove(productId)}
+      title={`Remove ${productName} from the menu`}
+      aria-label={`Remove ${productName}`}
+    >
+      <X className="h-3 w-3" />
+    </button>
   )
 }

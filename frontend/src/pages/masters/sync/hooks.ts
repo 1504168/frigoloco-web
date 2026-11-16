@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { api, ApiError, type Page } from '@/lib/api'
-import { toast } from '@/components/ui/sonner'
+import { toast } from '@/components/ui/toast'
 import { isRunFinished, type SyncFeed, type SyncRun, type SyncTriggerResponse } from './types'
 
 const POLL_INTERVAL_MS = 3000

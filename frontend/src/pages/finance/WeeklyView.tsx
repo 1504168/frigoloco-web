@@ -1,7 +1,6 @@
 import * as React from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { SaveIconButton } from '@/components/shared/SaveIconButton'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -10,8 +9,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { toast } from '@/components/ui/sonner'
+import { toast } from '@/components/ui/toast'
 import { ErrorState } from '@/components/shared/ErrorState'
+import { InfoHint, type Hint } from '@/components/shared/InfoHint'
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton'
 import { api, ApiError } from '@/lib/api'
 import { formatEuro } from '@/lib/format'
@@ -23,10 +23,16 @@ import {
   isoWeeksInYear,
   recentIsoWeeks,
   dateToIsoWeek,
+  type IsoWeek,
 } from '@/pages/finance/isoWeek'
 import { formatCount, formatPercent, safeRatio, toNumber } from '@/pages/finance/utils'
 
 const TREND_WEEKS = 9
+const IN_PROGRESS_HINT: Hint = {
+  text:
+    'This week is still running (Brussels time): the figures cover sales and costs so far only.',
+  example: 'On Wednesday the week shows Monday to Wednesday sales, not the full week.',
+}
 const YEAR_OPTIONS = [2024, 2025, 2026, 2027, 2028, 2029, 2030]
 
 /** Blank editable form state. */
@@ -91,13 +97,16 @@ export function WeeklyView() {
     })),
   })
 
-  const trendData: TrendPoint[] = trendWeeks.map((iso, index) => {
-    const data = trendQueries[index]?.data
-    const turnover = toNumber(data?.turnover_ex_vat)
+  // A running week has only part of its sales and costs, so charting it would read as a dip.
+  const trendWeekResults = trendWeeks.map((iso, index) => ({ iso, pnl: trendQueries[index]?.data }))
+  const completedTrendWeeks = trendWeekResults.filter((result) => !result.pnl?.in_progress)
+  const inProgressWeek = trendWeekResults.find((result) => result.pnl?.in_progress)?.iso ?? null
+  const trendData: TrendPoint[] = completedTrendWeeks.map(({ iso, pnl }) => {
+    const turnover = toNumber(pnl?.turnover_ex_vat)
     return {
       label: `W${iso.week}`,
       turnover,
-      marginPct: turnover ? safeRatio(toNumber(data?.net_margin), turnover) : null,
+      marginPct: turnover ? safeRatio(toNumber(pnl?.net_margin), turnover) : null,
     }
   })
   const trendLoading = trendQueries.some((query) => query.isLoading)
@@ -180,6 +189,11 @@ export function WeeklyView() {
             Week start <span className="font-medium text-foreground">{pnl.week_start}</span>
           </span>
         ) : null}
+        {pnl?.in_progress ? (
+          <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs font-medium text-foreground">
+            In progress: partial week <InfoHint {...IN_PROGRESS_HINT} />
+          </span>
+        ) : null}
       </div>
 
       {weeklyQuery.isError ? (
@@ -194,7 +208,7 @@ export function WeeklyView() {
               hero
               label="Sales turnover (ex VAT)"
               value={formatEuro(pnl.turnover_ex_vat)}
-              caption="(Sales + Credit − Refund) ÷ 1.06"
+              caption="(Sales + Credit − Refund) ÷ 1.06 · Husky sales events, Mon-Sun Brussels time"
             />
             <KpiTile
               label="Fridge food cost"
@@ -227,8 +241,8 @@ export function WeeklyView() {
 
           {/* Trend chart */}
           <SectionCard
-            title={`Sales turnover & net margin - last ${TREND_WEEKS} weeks`}
-            description="Turnover ex VAT (blue, € left axis) and net margin % (green, right axis). Weeks with no recorded activity show no margin point. Rendered with d3."
+            title={`Sales turnover & net margin - last ${completedTrendWeeks.length} completed weeks`}
+            description={trendDescription(inProgressWeek)}
           >
             {trendLoading ? (
               <LoadingSkeleton rows={3} columns={2} />
@@ -251,16 +265,18 @@ export function WeeklyView() {
               title="Week entry - manual inputs"
               description="White fields are typed in; the KPI tiles above recalculate on the backend after saving."
               actions={
-                <Button onClick={handleSave} disabled={saveMutation.isPending}>
-                  <Save className="mr-1.5 h-4 w-4" />
-                  {saveMutation.isPending ? 'Saving…' : `Save week ${week}`}
-                </Button>
+                <SaveIconButton
+                  label={`Save week ${week}`}
+                  onClick={handleSave}
+                  isSaving={saveMutation.isPending}
+                />
               }
             >
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <FormField label="Business lunch CA (€)" hint="Catering turnover">
                   <Input
                     type="number"
+                    min={0}
                     inputMode="decimal"
                     value={form.catering_turnover}
                     onChange={(event) => setField('catering_turnover', event.target.value)}
@@ -269,6 +285,7 @@ export function WeeklyView() {
                 <FormField label="Business lunch food cost (€)">
                   <Input
                     type="number"
+                    min={0}
                     inputMode="decimal"
                     value={form.catering_food_cost}
                     onChange={(event) => setField('catering_food_cost', event.target.value)}
@@ -277,6 +294,7 @@ export function WeeklyView() {
                 <FormField label="TGTG CA (€)" hint="Too Good To Go">
                   <Input
                     type="number"
+                    min={0}
                     inputMode="decimal"
                     value={form.tgtg_turnover}
                     onChange={(event) => setField('tgtg_turnover', event.target.value)}
@@ -285,6 +303,7 @@ export function WeeklyView() {
                 <FormField label="Logistics cost (€)">
                   <Input
                     type="number"
+                    min={0}
                     inputMode="decimal"
                     value={form.logistics_cost}
                     onChange={(event) => setField('logistics_cost', event.target.value)}
@@ -293,6 +312,8 @@ export function WeeklyView() {
                 <FormField label="# of drops">
                   <Input
                     type="number"
+                    min={0}
+                    step={1}
                     value={form.drops_count}
                     onChange={(event) => setField('drops_count', event.target.value)}
                   />
@@ -300,6 +321,8 @@ export function WeeklyView() {
                 <FormField label="Unsold items">
                   <Input
                     type="number"
+                    min={0}
+                    step={1}
                     value={form.unsold_items}
                     onChange={(event) => setField('unsold_items', event.target.value)}
                   />
@@ -308,6 +331,8 @@ export function WeeklyView() {
 
                   <Input
                     type="number"
+                    min={0}
+                    step={1}
                     value={form.num_fridges}
                     onChange={(event) => setField('num_fridges', event.target.value)}
                   />
@@ -331,6 +356,14 @@ export function WeeklyView() {
       )}
     </div>
   )
+}
+
+const TREND_DESCRIPTION =
+  'Turnover ex VAT (blue, € left axis) and net margin % (green, right axis). Weeks with no recorded activity show no margin point. Weeks run Monday to Sunday, Brussels time. Rendered with d3.'
+
+function trendDescription(inProgressWeek: IsoWeek | null): string {
+  if (!inProgressWeek) return TREND_DESCRIPTION
+  return `${TREND_DESCRIPTION} W${inProgressWeek.week} is still in progress and is left out.`
 }
 
 function FormField({

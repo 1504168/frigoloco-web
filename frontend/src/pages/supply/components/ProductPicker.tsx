@@ -19,15 +19,22 @@ export interface ProductPickerProps {
   placeholder?: string
   /** Product ids already chosen elsewhere, greyed out to avoid duplicates. */
   disabledIds?: Set<number>
+  /** Limits results to this supplier's active products and lists them before any typing. */
+  supplierId?: number
+  disabled?: boolean
   className?: string
 }
 
 const SEARCH_LIMIT = 10
+const SUPPLIER_PRODUCTS_LIMIT = 100
+const ACTIVE_STATUS = 'active'
 
 export function ProductPicker({
   onSelect,
   placeholder = 'Search product code or name…',
   disabledIds,
+  supplierId,
+  disabled = false,
   className,
 }: ProductPickerProps) {
   const [input, setInput] = React.useState('')
@@ -45,14 +52,23 @@ export function ProductPicker({
     return () => document.removeEventListener('mousedown', onClick)
   }, [])
 
+  const isSupplierScoped = supplierId !== undefined
+  const showResults = open && !disabled && (isSupplierScoped || search.length > 0)
+
   const productsQuery = useQuery({
-    queryKey: ['supply', 'product-search', search],
+    queryKey: ['supply', 'product-search', search, supplierId],
     queryFn: ({ signal }) =>
       api.get<Page<ProductLite>>('/api/v1/products', {
-        params: { search: search || undefined, limit: SEARCH_LIMIT, offset: 0 },
+        params: {
+          search: search || undefined,
+          supplier_id: supplierId,
+          status: isSupplierScoped ? ACTIVE_STATUS : undefined,
+          limit: isSupplierScoped ? SUPPLIER_PRODUCTS_LIMIT : SEARCH_LIMIT,
+          offset: 0,
+        },
         signal,
       }),
-    enabled: open && search.length > 0,
+    enabled: showResults,
   })
 
   const items = productsQuery.data?.items ?? []
@@ -74,9 +90,10 @@ export function ProductPicker({
         }}
         onFocus={() => setOpen(true)}
         placeholder={placeholder}
+        disabled={disabled}
         className="pl-8"
       />
-      {open && search.length > 0 ? (
+      {showResults ? (
         <div className="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md">
           {productsQuery.isLoading ? (
             <div className="px-3 py-2 text-sm text-muted-foreground">Searching…</div>

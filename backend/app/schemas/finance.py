@@ -40,6 +40,8 @@ class WeeklyPnlRead(BaseModel):
     year: int
     iso_week: int
     week_start: datetime.date
+    # True while the Brussels-time week is still running: its figures are partial.
+    in_progress: bool
     inputs: WeeklyInputsRead
     # Computed KPIs (R10).
     gross_sales: MoneyStr
@@ -59,9 +61,14 @@ class WeeklyPnlRead(BaseModel):
 class MonthlyAnalysisRow(BaseModel):
     key_id: int | None
     key_name: str
+    # Fridge dimension: the fridge's client ("No client" when unassigned).
+    client_name: str | None = None
+    # Client dimension: number of active fridges of the client.
+    fridge_count: int | None = None
     food_margin: MoneyStr
     rfid_fee: MoneyStr | None = None
-    sales: MoneyStr | None = None
+    sales: MoneyStr | None = None  # incl. VAT
+    sales_ex_vat: MoneyStr | None = None
     pos_fee: MoneyStr | None = None
     fee_share: MoneyStr | None = None
     service_additionals: MoneyStr | None = None
@@ -94,8 +101,30 @@ class FridgeReportRead(BaseModel):
     # Summary KPIs.
     added_qty: int  # total added qty across all products
     food_cost: MoneyStr
-    revenue: MoneyStr
-    margin: MoneyStr  # food margin in euros
+    revenue: MoneyStr  # incl. VAT
+    revenue_ex_vat: MoneyStr
+    margin: MoneyStr  # revenue_ex_vat - food_cost
     margin_pct: RateStr | None = None  # food margin as a 0..1 fraction of ex-VAT revenue
     # Per-product breakdown.
     rows: list[FridgeReportRow] = []
+
+
+class AllFridgesReportRow(BaseModel):
+    """One fridge's report KPIs; the totals row has no fridge_id."""
+
+    fridge_id: int | None
+    fridge_name: str
+    client_name: str | None
+    added_qty: int
+    food_cost: MoneyStr
+    revenue: MoneyStr  # incl. VAT
+    revenue_ex_vat: MoneyStr
+    margin: MoneyStr
+    margin_pct: RateStr | None
+
+
+class AllFridgesReportRead(BaseModel):
+    date_from: datetime.date
+    date_to: datetime.date
+    rows: list[AllFridgesReportRow]
+    totals: AllFridgesReportRow

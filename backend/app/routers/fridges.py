@@ -1,4 +1,4 @@
-"""Fridge CRUD plus per-weekday delivery configuration."""
+"""Fridge CRUD plus per-weekday delivery configuration and interventions."""
 
 from __future__ import annotations
 
@@ -9,12 +9,14 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.husky.sync import effective_status_clause
-from app.models.master import Fridge, FridgeDeliveryConfig
+from app.models.master import Fridge, FridgeDeliveryConfig, FridgeIntervention, User
 from app.services.delivery_config_service import compute_days_to_fill
 from app.schemas.masters import (
     DeliveryConfigItem,
     DeliveryConfigReplace,
     FridgeCreate,
+    FridgeInterventionCreate,
+    FridgeInterventionRead,
     FridgeRead,
     FridgeUpdate,
     Page,
@@ -23,6 +25,7 @@ from app.schemas.masters import (
     make_router,
     pagination,
 )
+from app.security import get_current_user
 
 router = make_router(prefix="/api/v1/fridges", tags=["fridges"])
 
@@ -174,6 +177,42 @@ def replace_delivery_config(
         )
     session.commit()
     return get_delivery_config(fridge_id, session)
+
+
+@router.get("/{fridge_id}/interventions", response_model=list[FridgeInterventionRead])
+def list_fridge_interventions(
+    fridge_id: int, session: Session = Depends(get_db)
+) -> list[FridgeInterventionRead]:
+    _get_or_404(fridge_id, session)
+    rows = session.execute(
+        select(FridgeIntervention)
+        .where(FridgeIntervention.fridge_id == fridge_id)
+        .order_by(FridgeIntervention.occurred_at.desc())
+    ).scalars()
+    return [FridgeInterventionRead.model_validate(row) for row in rows]
+
+
+@router.post(
+    "/{fridge_id}/interventions",
+    response_model=FridgeInterventionRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_fridge_intervention(
+    fridge_id: int,
+    body: FridgeInterventionCreate,
+    session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> FridgeInterventionRead:
+    _get_or_404(fridge_id, session)
+    intervention = FridgeIntervention(
+        fridge_id=fridge_id,
+        created_by=current_user.id,
+        **body.model_dump(),
+    )
+    session.add(intervention)
+    session.commit()
+    session.refresh(intervention)
+    return FridgeInterventionRead.model_validate(intervention)
 
 
 def _delivery_weekdays_by_fridge(

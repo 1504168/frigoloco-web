@@ -21,7 +21,7 @@ wire these into the schema layer so no router or service re-implements them.
 
 from __future__ import annotations
 
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Annotated
 
 from pydantic import BeforeValidator, PlainSerializer
@@ -36,7 +36,12 @@ def euros_to_cents(value: Decimal | int | float | str) -> int:
     Accepts anything ``Decimal(str(...))`` can parse - decimal strings such as
     ``"12.34"`` (the client wire format), ints, floats and ``Decimal``.
     """
-    return int((Decimal(str(value)) * _CENTS).quantize(_WHOLE, rounding=ROUND_HALF_UP))
+    try:
+        euros = Decimal(str(value))
+    except InvalidOperation as exc:
+        # ValueError makes pydantic answer 422 instead of an unhandled 500.
+        raise ValueError(f"not a euro amount: {value!r}") from exc
+    return int((euros * _CENTS).quantize(_WHOLE, rounding=ROUND_HALF_UP))
 
 
 def to_cents(value: Decimal | int) -> int:

@@ -9,12 +9,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { StatusChip } from '@/components/shared/StatusChip'
-import { toast } from '@/components/ui/sonner'
+import { toast } from '@/components/ui/toast'
 import { api, ApiError } from '@/lib/api'
-import { formatDateTime } from '@/lib/format'
+import { formatDateTime12Hour } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useHuskySync, useLatestSyncRun } from './hooks'
-import type { EffectiveStatus, LocalStatus, StatusFilter, SyncFeed } from './types'
+import type { EffectiveStatus, LocalStatus, StatusFilter, SyncFeed, SyncRun } from './types'
 
 /** Human-facing caption explaining the override semantics (D5 contract). */
 export const SYNC_OVERRIDE_CAPTION =
@@ -29,26 +29,26 @@ interface HuskySyncControlProps {
   itemLabel: string
 }
 
-/** "Sync from Husky" button with a live last-synced stamp beneath it. */
+/** Icon-only "refresh from Husky" button; its tooltip carries the last-synced stamp. */
 export function HuskySyncControl({ feed, endpoint, invalidateKeys, itemLabel }: HuskySyncControlProps) {
   const { trigger, isSyncing } = useHuskySync({ feed, endpoint, invalidateKeys, itemLabel })
   const latestRun = useLatestSyncRun(endpoint)
-  const run = latestRun.data
+  const tooltip = isSyncing
+    ? 'Syncing from Husky…'
+    : `Refresh ${itemLabel}s from Husky\n${lastSyncedText(latestRun.isLoading, latestRun.data)}`
 
   return (
-    <div className="flex items-center gap-2">
-      <Button variant="outline" onClick={trigger} disabled={isSyncing}>
-        <RefreshCw className={cn('h-4 w-4', isSyncing && 'animate-spin')} />
-        {isSyncing ? 'Syncing…' : 'from Husky'}
-      </Button>
-      <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-        {latestRun.isLoading
-          ? 'Loading…'
-          : run
-            ? `Last synced ${formatDateTime(run.finished_at ?? run.started_at)} · ${run.status}`
-            : 'Never synced'}
-      </span>
-    </div>
+    <Button
+      variant="outline"
+      size="icon"
+      className="shrink-0"
+      onClick={trigger}
+      disabled={isSyncing}
+      title={tooltip}
+      aria-label={`Refresh ${itemLabel}s from Husky`}
+    >
+      <RefreshCw className={cn('h-4 w-4', isSyncing && 'animate-spin')} />
+    </Button>
   )
 }
 
@@ -143,4 +143,10 @@ export function StatusFilterSelect({ value, onChange, className }: StatusFilterS
       </SelectContent>
     </Select>
   )
+}
+
+function lastSyncedText(isLoading: boolean, run: SyncRun | null | undefined): string {
+  if (isLoading) return 'Loading last sync…'
+  if (!run) return 'Never synced'
+  return `Last synced ${formatDateTime12Hour(run.finished_at ?? run.started_at)} · ${run.status}`
 }

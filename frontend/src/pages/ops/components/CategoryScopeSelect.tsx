@@ -5,7 +5,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useCategories } from '@/pages/ops/lib/reference'
+import {
+  HistoricCategoriesItem,
+  TOGGLE_HISTORIC_VALUE,
+  useCategoryOptions,
+} from '@/components/filters/categoryOptions'
 
 const ALL = '__all__'
 
@@ -21,24 +25,35 @@ export interface CategoryScopeSelectProps {
  * category or the whole grid at once.
  */
 export function CategoryScopeSelect({ value, onChange }: CategoryScopeSelectProps) {
-  const categoriesQuery = useCategories()
-  const ordered = categoriesQuery.data?.ordered ?? []
+  const categoryOptions = useCategoryOptions(value)
+
+  function handleValueChange(next: string) {
+    if (next === TOGGLE_HISTORIC_VALUE) {
+      categoryOptions.toggleShowHistoric()
+      return
+    }
+    onChange(next === ALL ? null : Number(next))
+  }
 
   return (
     <Select
       value={value === null ? ALL : String(value)}
-      onValueChange={(next) => onChange(next === ALL ? null : Number(next))}
+      onValueChange={handleValueChange}
     >
-      <SelectTrigger className="h-9 w-[13rem]">
+      <SelectTrigger className="h-9 w-40">
         <SelectValue placeholder="All categories" />
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={ALL}>All categories</SelectItem>
-        {ordered.map((category) => (
+        {categoryOptions.visibleCategories.map((category) => (
           <SelectItem key={category.id} value={String(category.id)}>
             {category.name}
           </SelectItem>
         ))}
+        <HistoricCategoriesItem
+          historicCount={categoryOptions.historicCount}
+          showHistoric={categoryOptions.showHistoric}
+        />
       </SelectContent>
     </Select>
   )

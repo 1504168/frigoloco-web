@@ -2,25 +2,35 @@
 
 from __future__ import annotations
 
-from fastapi import Depends, Query, status
+from fastapi import Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models.enums import DispatchStatus
+from app.models.master import User
 from app.schemas.dispatches import (
     ConfirmRequest,
     ConfirmResult,
-    DispatchCloneRequest,
     DispatchCreate,
     DispatchLinesReplace,
     DispatchMatrix,
     DispatchRead,
     DispatchSaveRequest,
+    StockFitOut,
+    StockFitRequest,
+    WarmDishLineOut,
+    WeekComparisonOut,
     WithdrawalItem,
     WithdrawalListOut,
 )
 from app.schemas.masters import Page, PaginationParams, api_error, make_router, pagination
-from app.services import dispatch_service
+from app.security import get_current_user
+from app.services import (
+    dispatch_export_service,
+    dispatch_overview_service,
+    dispatch_service,
+    stock_fit_service,
+)
 from app.services.dispatch_service import LineInput
 
 router = make_router(prefix="/api/v1/dispatches", tags=["dispatches"])
@@ -146,25 +156,6 @@ def get_withdrawal_list(
     )
 
 
-@router.post("/clone", response_model=DispatchRead)
-def clone_dispatch(
-    body: DispatchCloneRequest, session: Session = Depends(get_db)
-) -> DispatchRead:
-    """Clone a saved dispatch day's planned lines onto another day (no stock effect)."""
-    dispatch = dispatch_service.clone_dispatch(
-        source_year=body.source_year,
-        source_week=body.source_week,
-        source_day_name=body.source_day_name,
-        target_year=body.target_year,
-        target_week=body.target_week,
-        target_day_name=body.target_day_name,
-        overwrite=body.overwrite,
-        user_id=None,
-        session=session,
-    )
-    return DispatchRead.model_validate(dispatch)
-
-
 @router.post("/create-individual", response_model=ConfirmResult)
 def create_individual_dispatch(
     year: int = Query(..., ge=2020, le=2100),
@@ -172,17 +163,73 @@ def create_individual_dispatch(
     day_name: str = Query(...),
     force: bool = Query(default=False),
     session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> ConfirmResult:
     """Create the individual dispatch for the key: flip to dispatched, snapshot
     prices, write the negative stock movements (the ONLY stock-writing path)."""
     dispatch, movements = dispatch_service.create_individual_by_key(
-        year=year, week=week, day_name=day_name, force=force, user_id=None, session=session
+        year=year,
+        week=week,
+        day_name=day_name,
+        force=force,
+        user_id=current_user.id,
+        session=session,
     )
     return ConfirmResult(
         dispatch_id=dispatch.id,
         status=dispatch.status,
         movements_created=movements,
     )
+
+
+@router.post("/fit-to-stock", response_model=StockFitOut)
+def fit_dispatch_to_stock(
+    body: StockFitRequest,
+    session: Session = Depends(get_db),
+) -> StockFitOut:
+    """Cut planned lines to the warehouse stock (preview only, nothing is saved)."""
+    fit_lines = [
+        stock_fit_service.StockFitLine(
+            fridge_id=line.fridge_id,
+            product_id=line.product_id,
+            qty=line.qty,
+        )
+        for line in body.lines
+    ]
+    stock_fit = stock_fit_service.fit_lines_to_warehouse_stock(
+        fit_lines,
+        session,
+        include_orders_due_by=body.include_orders_due_by,
+    )
+    return StockFitOut.model_validate(stock_fit)
+
+
+@router.get("/warm-distribution", response_model=list[WarmDishLineOut])
+def get_warm_dish_distribution(
+    year: int = Query(..., ge=2020, le=2100),
+    week: int = Query(..., ge=1, le=53),
+    include_planned: bool = Query(default=False),
+    session: Session = Depends(get_db),
+) -> list[WarmDishLineOut]:
+    """Warm dish units per day, fridge and product of an ISO week (dispatched only by default)."""
+    warm_dish_lines = dispatch_overview_service.list_warm_dish_lines(
+        year=year,
+        week=week,
+        include_planned=include_planned,
+        session=session,
+    )
+    return [WarmDishLineOut.model_validate(line) for line in warm_dish_lines]
+
+
+@router.get("/week-comparison", response_model=WeekComparisonOut)
+def get_week_comparison(
+    year: int = Query(..., ge=2020, le=2100),
+    week: int = Query(..., ge=1, le=53),
+    session: Session = Depends(get_db),
+) -> WeekComparisonOut:
+    """Units per category of a week next to the previous week and the same week last year."""
+    comparison = dispatch_overview_service.compare_week(year=year, week=week, session=session)
+    return WeekComparisonOut.model_validate(comparison)
 
 
 @router.get("/{dispatch_id}", response_model=DispatchRead)
@@ -196,6 +243,18 @@ def get_dispatch(dispatch_id: int, session: Session = Depends(get_db)) -> Dispat
 def get_matrix(dispatch_id: int, session: Session = Depends(get_db)) -> DispatchMatrix:
     return DispatchMatrix.model_validate(
         dispatch_service.get_matrix(dispatch_id, session)
+    )
+
+
+@router.get("/{dispatch_id}/export.xlsx")
+def export_dispatch_xlsx(dispatch_id: int, session: Session = Depends(get_db)) -> Response:
+    """Download the dispatch day as a printable Excel file (summary + one pick list per fridge)."""
+    dispatch = dispatch_service.get_dispatch(dispatch_id, session)
+    document = dispatch_export_service.build_dispatch_xlsx(dispatch, session)
+    return Response(
+        content=document.content,
+        media_type=document.media_type,
+        headers={"Content-Disposition": f'attachment; filename="{document.filename}"'},
     )
 
 
@@ -243,10 +302,11 @@ def confirm_dispatch(
     dispatch_id: int,
     body: ConfirmRequest | None = None,
     session: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> ConfirmResult:
     force = body.force if body is not None else False
     dispatch, movements = dispatch_service.confirm_dispatch(
-        dispatch_id=dispatch_id, force=force, user_id=None, session=session
+        dispatch_id=dispatch_id, force=force, user_id=current_user.id, session=session
     )
     return ConfirmResult(
         dispatch_id=dispatch.id,

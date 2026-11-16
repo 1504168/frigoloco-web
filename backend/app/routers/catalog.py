@@ -43,7 +43,7 @@ def list_category_options(
         stmt = stmt.where(
             exists().where(Product.category_id == Category.id).where(active_clause)
         )
-    stmt = stmt.order_by(Category.display_order)
+    stmt = stmt.order_by(Category.display_order, Category.name)
     return [
         CategoryOption.model_validate(row)
         for row in session.execute(stmt).scalars().all()

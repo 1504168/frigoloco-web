@@ -10,6 +10,18 @@ from __future__ import annotations
 
 from sqlalchemy import Connection, text
 
+from app.models.enums import UserRole
+from app.models.master import User
+
+TEST_ADMIN_USER = User(
+    id=0,
+    email="test-admin@frigoloco.test",
+    full_name="Test Admin",
+    password_hash="",
+    role=UserRole.admin,
+    is_active=True,
+)
+
 
 def ensure_dispatches_week_start(connection: Connection) -> None:
     """Add ``dispatches.week_start`` when migration 0011 is not yet applied.
@@ -25,4 +37,28 @@ def ensure_dispatches_week_start(connection: Connection) -> None:
             "GENERATED ALWAYS AS "
             "(delivery_date - (EXTRACT(ISODOW FROM delivery_date)::int - 1)) STORED"
         )
+    )
+
+
+def ensure_test_admin_user(connection: Connection) -> None:
+    """Insert the conftest test admin so audit_log / created_by FKs to users resolve.
+
+    Routers now pass the authenticated user's id into stock movements and audit
+    rows; the test admin is not a real users row, so it is added (id kept via
+    OVERRIDING SYSTEM VALUE) inside the rolled-back outer transaction.
+    """
+    connection.execute(
+        text(
+            "INSERT INTO users (id, email, full_name, password_hash, role) "
+            "OVERRIDING SYSTEM VALUE "
+            "VALUES (:id, :email, :full_name, :password_hash, :role) "
+            "ON CONFLICT (id) DO NOTHING"
+        ),
+        {
+            "id": TEST_ADMIN_USER.id,
+            "email": TEST_ADMIN_USER.email,
+            "full_name": TEST_ADMIN_USER.full_name,
+            "password_hash": TEST_ADMIN_USER.password_hash,
+            "role": TEST_ADMIN_USER.role.value,
+        },
     )

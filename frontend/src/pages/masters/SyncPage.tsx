@@ -20,7 +20,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { api, type Page } from '@/lib/api'
-import { EMPTY_PLACEHOLDER, formatDateTime } from '@/lib/format'
+import { EMPTY_PLACEHOLDER, formatDateTime12Hour } from '@/lib/format'
 import type { SyncRun } from '@/pages/masters/sync/types'
 
 const PAGE_LIMIT = 50
@@ -73,7 +73,7 @@ export function SyncPage() {
   const anyRunning = runs.some(isRunning)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <div className="flex items-center justify-end">
         <Select value={endpoint} onValueChange={setEndpoint}>
           <SelectTrigger className="w-48">
@@ -102,7 +102,7 @@ export function SyncPage() {
       ) : runs.length === 0 ? (
         <EmptyState title="No sync runs" description="Trigger a sync from the Products or Fridges page." />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+        <div className="overflow-x-auto overflow-y-hidden rounded-xl border border-border bg-card">
           <Table>
             <TableHeader>
               <TableRow>
@@ -130,9 +130,9 @@ export function SyncPage() {
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{run.records_fetched}</TableCell>
                   <TableCell className="text-right tabular-nums">{run.records_upserted}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{formatDateTime(run.started_at)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{formatDateTime12Hour(run.started_at)}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {run.finished_at ? formatDateTime(run.finished_at) : EMPTY_PLACEHOLDER}
+                    {run.finished_at ? formatDateTime12Hour(run.finished_at) : EMPTY_PLACEHOLDER}
                   </TableCell>
                 </TableRow>
               ))}

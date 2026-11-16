@@ -22,10 +22,12 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.husky.sync import (
+    HUSKY_NOT_CONFIGURED_MESSAGE,
     JobOutcome,
     TRAILING_EVENT_WINDOW,
     clamp_report_to,
     create_sync_run,
+    is_husky_configured,
     snapshot_stock,
     sync_all,
     sync_catalogue,
@@ -104,6 +106,9 @@ def trigger_sync(
     background_tasks: BackgroundTasks,
 ) -> SyncTriggerResponse:
     """Schedule a sync of ``feed`` and return its ``sync_run`` id immediately."""
+    # Checked before the sync_run row exists, so a missing setup leaves no failed run behind.
+    if not is_husky_configured():
+        raise api_error(503, "husky_not_configured", HUSKY_NOT_CONFIGURED_MESSAGE)
     plan = _plan_for_feed(feed)
     run_id = create_sync_run(plan.job, plan.endpoint, plan.window_from, plan.window_to)
     background_tasks.add_task(_run_background, plan, run_id)

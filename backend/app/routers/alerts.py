@@ -15,9 +15,12 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models.enums import AlertType
+from app.models.master import User
 from app.models.operations import Alert
 from app.schemas.alerts_settings import AlertRead
 from app.schemas.orders import Page
+from app.security import get_current_user
+from app.services.alerts_service import build_alert_reads
 from app.services.orders_service import (
     PageParams,
     envelope,
@@ -25,6 +28,8 @@ from app.services.orders_service import (
     not_found,
     write_audit,
 )
+
+ACKNOWLEDGED_STATUS = "acknowledged"
 
 router = APIRouter(prefix="/api/v1/alerts", tags=["alerts"])
 
@@ -40,7 +45,7 @@ def list_alerts(
 ) -> Page[AlertRead]:
     conditions = []
     if acknowledged is True:
-        conditions.append(Alert.status == "acknowledged")
+        conditions.append(Alert.status == ACKNOWLEDGED_STATUS)
     elif acknowledged is False:
         conditions.append(Alert.status == "open")
     if status is not None:
@@ -63,7 +68,7 @@ def list_alerts(
         .all()
     )
     return Page(
-        items=[AlertRead.model_validate(a) for a in rows],
+        items=build_alert_reads(list(rows), db),
         total=total,
         limit=page.limit,
         offset=page.offset,
@@ -75,22 +80,28 @@ def list_alerts(
 def acknowledge_alert(
     alert_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> AlertRead:
     alert = db.get(Alert, alert_id)
     if alert is None:
         raise not_found("alert", alert_id)
+    # A repeat ack keeps the first acknowledger and time.
+    if alert.status == ACKNOWLEDGED_STATUS:
+        return build_alert_reads([alert], db)[0]
 
     before = {"status": alert.status}
-    alert.status = "acknowledged"
+    alert.status = ACKNOWLEDGED_STATUS
     alert.acknowledged_at = datetime.datetime.now(datetime.timezone.utc)
+    alert.acknowledged_by = current_user.id
     write_audit(
         db,
         action="acknowledge",
         entity="alert",
         entity_id=alert.id,
         before=before,
-        after={"status": "acknowledged"},
+        after={"status": ACKNOWLEDGED_STATUS},
+        user_id=current_user.id,
     )
     db.commit()
     db.refresh(alert)
-    return AlertRead.model_validate(alert)
+    return build_alert_reads([alert], db)[0]

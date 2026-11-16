@@ -19,7 +19,7 @@ cron.jobs.<name>  ->  app.husky (client/normalize/archive)  ->  app.{config,mode
 | `python -m cron.jobs.snapshot_stock` | every 15 min | `fridge_stock` (latest-only, mark-and-swept) | `(fridge_id, product_code)` |
 | `python -m cron.jobs.catalogue_sync` | daily 02:00 | `products` / `fridges` / `clients` / `fridge_product_prices` | `code` / `husky_id` / name / `(fridge_id, product_id)` |
 | `python -m cron.jobs.reviews_sync` | daily 02:15 (trailing 14d) | `product_reviews` | synthesized `husky_ref` |
-| `python -m cron.jobs.recompute_scores` | daily 02:30 | `product_scores` | `(product_id, period_end)` |
+| `python -m cron.jobs.recompute_scores` | daily 02:30 (90, 180 and 365 day windows) | `product_scores` | `(product_id, period_end, window_days)` |
 | `python -m cron.jobs.backfill` | CLI only | (delegates) | via `sync_run` |
 
 Every job: archives the raw payload **before** transform, writes a `sync_run`

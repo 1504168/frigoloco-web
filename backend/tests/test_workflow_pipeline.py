@@ -17,15 +17,19 @@ Pipeline covered:
 from __future__ import annotations
 
 import datetime
+import io
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import engine, get_db
 from app.main import app
+from app.services import forecast_service
+from tests import ensure_test_admin_user
 
 PREFIX = "/api/v1"
 TAG = "ZZWF-"
@@ -35,10 +39,17 @@ DELIVERY_DATE = datetime.date.fromisocalendar(YEAR, WEEK, 3)  # 2027-01-13
 DELIVERY_WEEKDAY = DELIVERY_DATE.isoweekday()
 
 
+@pytest.fixture(autouse=True)
+def today_is_delivery_day(monkeypatch):
+    """Recent-sales windows end at today: pin today so they end at the delivery date."""
+    monkeypatch.setattr(forecast_service, "_local_today", lambda: DELIVERY_DATE)
+
+
 @pytest.fixture()
 def ctx():
     connection = engine.connect()
     outer = connection.begin()
+    ensure_test_admin_user(connection)
     session = Session(
         bind=connection,
         join_transaction_mode="create_savepoint",
@@ -232,7 +243,11 @@ def test_full_workflow_pipeline_2027_w2(ctx):
     assert normal_cell["forecast_qty"] == "3.00"
 
     # 2) save forecast (persist keyed); overwrite-confirm. Scoped to this fridge.
-    save_body = {"year": YEAR, "week": WEEK, "day_name": DAY_NAME, "fridge_ids": [fridge_id]}
+    screen_cells = [
+        {key: result[key] for key in ("fridge_id", "category_id", "forecast_qty")}
+        for result in body["results"]
+    ]
+    save_body = {"run_id": body["run_id"], "cells": screen_cells}
     saved = client.post(f"{PREFIX}/forecasts/save", json=save_body)
     assert saved.status_code == 200, saved.text
     assert saved.json()["is_saved"] is True
@@ -255,7 +270,7 @@ def test_full_workflow_pipeline_2027_w2(ctx):
         params={"year": YEAR, "week": WEEK, "day_name": DAY_NAME},
     )
     assert imp.status_code == 200, imp.text
-    assert len(imp.json()["cells"]) >= 1  # forecast allocated across category products
+    assert len(imp.json()["grid"]["cells"]) >= 1  # forecast split over the products
 
     # 5) edit + save menu with an explicit, deterministic grid.
     menu_save = {
@@ -346,109 +361,6 @@ def test_full_workflow_pipeline_2027_w2(ctx):
     assert po_line["qty_ordered"] == 6
 
 
-def test_forecast_residual_stock_deduction(ctx):
-    """Forecast deducts in-fridge units still good through the coverage window,
-    and ignores units expiring before the next delivery (slide 5)."""
-    client, session = ctx.client, ctx.session
-    cat = _normal_category_id(session)
-    supplier_id = _create_supplier(client, f"{TAG}ResSup")
-    code = f"{TAG}RSP"
-    product_id = _create_product(client, code=code, category_id=cat, supplier_id=supplier_id)
-    fridge_id = _create_fridge(client, f"{TAG}resFr")
-
-    # Two deliveries 3 days apart -> days_to_fill = 3 -> coverage window ends
-    # 3 days after the delivery date.
-    second_weekday = ((DELIVERY_WEEKDAY + 3 - 1) % 7) + 1
-    client.put(
-        f"{PREFIX}/fridges/{fridge_id}/delivery-config",
-        json={
-            "items": [
-                {"weekday": DELIVERY_WEEKDAY, "min_daily_qty": 0},
-                {"weekday": second_weekday, "min_daily_qty": 0},
-            ]
-        },
-    )
-    # 21 sales / 21 days -> avg 1/day * days_to_fill 3 = base forecast 3.00.
-    _seed_sales(session, fridge_id=fridge_id, product_id=product_id, days=21)
-
-    window_end = DELIVERY_DATE + datetime.timedelta(days=3)  # next delivery
-    good = datetime.datetime(2027, 2, 1, 12, tzinfo=datetime.timezone.utc)  # after window
-    expiring = datetime.datetime(
-        window_end.year, window_end.month, window_end.day, 12, tzinfo=datetime.timezone.utc
-    ) - datetime.timedelta(days=2)  # before window_end
-    session.execute(
-        text(
-            "INSERT INTO fridge_stock "
-            "(fridge_id, product_code, product_id, units, expiry_dates, taken_at) "
-            "VALUES (:fid, :code, :pid, :units, :expiry, now())"
-        ),
-        {
-            "fid": fridge_id,
-            "code": code,
-            "pid": product_id,
-            "units": 3,
-            "expiry": [good, good, expiring],  # 2 good, 1 expiring
-        },
-    )
-    session.flush()
-
-    run = client.post(
-        f"{PREFIX}/forecasts/run",
-        json={"delivery_date": DELIVERY_DATE.isoformat(), "fridge_ids": [fridge_id]},
-    )
-    assert run.status_code == 200, run.text
-    body = run.json()
-    assert body["params"]["residual_deduction"] is True
-    cell = next(
-        r for r in body["results"] if r["fridge_id"] == fridge_id and r["category_id"] == cat
-    )
-    # base 3.00 minus the 2 units still good through the window = 1.00.
-    assert cell["forecast_qty"] == "1.00"
-
-
-def test_forecast_residual_never_goes_negative(ctx):
-    """Residual larger than the raw forecast clamps net-to-deliver at zero."""
-    client, session = ctx.client, ctx.session
-    cat = _normal_category_id(session)
-    supplier_id = _create_supplier(client, f"{TAG}Res0Sup")
-    code = f"{TAG}RZP"
-    product_id = _create_product(client, code=code, category_id=cat, supplier_id=supplier_id)
-    fridge_id = _create_fridge(client, f"{TAG}res0Fr")
-
-    second_weekday = ((DELIVERY_WEEKDAY + 3 - 1) % 7) + 1
-    client.put(
-        f"{PREFIX}/fridges/{fridge_id}/delivery-config",
-        json={
-            "items": [
-                {"weekday": DELIVERY_WEEKDAY, "min_daily_qty": 0},
-                {"weekday": second_weekday, "min_daily_qty": 0},
-            ]
-        },
-    )
-    _seed_sales(session, fridge_id=fridge_id, product_id=product_id, days=21)  # base 3.00
-
-    good = datetime.datetime(2027, 3, 1, 12, tzinfo=datetime.timezone.utc)
-    session.execute(
-        text(
-            "INSERT INTO fridge_stock "
-            "(fridge_id, product_code, product_id, units, expiry_dates, taken_at) "
-            "VALUES (:fid, :code, :pid, :units, :expiry, now())"
-        ),
-        {"fid": fridge_id, "code": code, "pid": product_id, "units": 10, "expiry": [good] * 10},
-    )
-    session.flush()
-
-    run = client.post(
-        f"{PREFIX}/forecasts/run",
-        json={"delivery_date": DELIVERY_DATE.isoformat(), "fridge_ids": [fridge_id]},
-    )
-    assert run.status_code == 200, run.text
-    cell = next(
-        r for r in run.json()["results"] if r["fridge_id"] == fridge_id and r["category_id"] == cat
-    )
-    assert cell["forecast_qty"] == "0.00"  # 3.00 - 10 clamped to zero
-
-
 def test_dispatch_withdrawal_list(ctx):
     """Withdrawal list surfaces in-fridge units expiring before the next delivery."""
     client, session = ctx.client, ctx.session
@@ -501,11 +413,11 @@ def test_dispatch_withdrawal_list(ctx):
     assert mine[0]["units_expiring"] == 1  # only the one expiring unit is pulled
 
 
-def test_forecast_save_requires_delivery_config(ctx):
-    """save with no fridge delivery config for the weekday -> 409 no_delivery_config."""
+def test_forecast_run_requires_delivery_config(ctx):
+    """run with no fridge delivery config for the weekday -> 409 no_delivery_config."""
     resp = ctx.client.post(
-        f"{PREFIX}/forecasts/save",
-        json={"year": YEAR, "week": WEEK, "day_name": DAY_NAME, "fridge_ids": [-1]},
+        f"{PREFIX}/forecasts/run",
+        json={"delivery_date": DELIVERY_DATE.isoformat(), "fridge_ids": [-1]},
     )
     assert resp.status_code == 409
     assert resp.json()["error"]["code"] == "no_delivery_config"
@@ -683,54 +595,77 @@ def test_category_scoped_dispatch_save_and_import(ctx):
     assert bad.status_code == 422 and bad.json()["error"]["code"] == "validation_error"
 
 
-def test_clone_dispatch_day(ctx):
-    """Cloning copies a saved day's planned lines onto another day (no stock effect)."""
+def test_clone_endpoint_removed(ctx):
+    resp = ctx.client.post(f"{PREFIX}/dispatches/clone", json={})
+    assert resp.status_code in (404, 405)
+
+
+def test_create_individual_refuses_unsaved_key(ctx):
+    resp = ctx.client.post(
+        f"{PREFIX}/dispatches/create-individual",
+        params={"year": YEAR, "week": WEEK, "day_name": "Sunday"},
+    )
+    assert resp.status_code == 404 and resp.json()["error"]["code"] == "not_found"
+
+
+def test_dispatch_export_xlsx_rows_and_snapshot_total(ctx):
+    """Export keys rows by fridge and product; dispatching snapshots the cost total."""
     client, session = ctx.client, ctx.session
     cat = _normal_category_id(session)
-    supplier_id = _create_supplier(client, f"{TAG}CloneSup")
-    product_id = _create_product(client, code=f"{TAG}CLP", category_id=cat, supplier_id=supplier_id)
-    fridge_id = _create_fridge(client, f"{TAG}cloneFr")
-
-    src = {"year": YEAR, "week": WEEK, "day_name": "Wednesday"}
-    tgt = {"year": YEAR, "week": WEEK, "day_name": "Thursday"}
-
-    # Save a planned dispatch on the source day.
-    saved = client.post(
-        f"{PREFIX}/dispatches/save",
-        json={**src, "lines": [{"fridge_id": fridge_id, "product_id": product_id, "qty": 7}]},
-    )
+    supplier_id = _create_supplier(client, f"{TAG}ExportSup")
+    product_a = _create_product(client, code=f"{TAG}EXA", category_id=cat, supplier_id=supplier_id)
+    product_b = _create_product(client, code=f"{TAG}EXB", category_id=cat, supplier_id=supplier_id)
+    fridge_one = _create_fridge(client, f"{TAG}exFr1")
+    fridge_two = _create_fridge(client, f"{TAG}exFr2")
+    base = {"year": YEAR, "week": WEEK, "day_name": DAY_NAME}
+    planned_lines = [
+        {"fridge_id": fridge_one, "product_id": product_a, "qty": 3},
+        {"fridge_id": fridge_one, "product_id": product_b, "qty": 5},
+        {"fridge_id": fridge_two, "product_id": product_b, "qty": 2},
+    ]
+    saved = client.post(f"{PREFIX}/dispatches/save", json={**base, "lines": planned_lines})
     assert saved.status_code == 200, saved.text
+    dispatch_id = saved.json()["id"]
 
-    clone_body = {
-        "source_year": YEAR,
-        "source_week": WEEK,
-        "source_day_name": "Wednesday",
-        "target_year": YEAR,
-        "target_week": WEEK,
-        "target_day_name": "Thursday",
+    export = client.get(f"{PREFIX}/dispatches/{dispatch_id}/export.xlsx")
+    assert export.status_code == 200, export.text
+    assert "attachment" in export.headers["content-disposition"]
+    workbook = load_workbook(io.BytesIO(export.content))
+
+    line_rows = list(workbook["Dispatch lines"].iter_rows(values_only=True))
+    header = line_rows[0]
+    fridge_col = header.index("Fridge")
+    code_col = header.index("Product code")
+    qty_col = header.index("Qty")
+    cost_col = header.index("Line cost (EUR)")
+    exported_qty = {
+        (row[fridge_col], row[code_col]): (row[qty_col], row[cost_col]) for row in line_rows[1:]
     }
-    cloned = client.post(f"{PREFIX}/dispatches/clone", json=clone_body)
-    assert cloned.status_code == 200, cloned.text
-    assert cloned.json()["status"] == "saved"
+    assert exported_qty == {
+        (f"{TAG}{TAG}exFr1", f"{TAG}EXA"): (3, 3.0),
+        (f"{TAG}{TAG}exFr1", f"{TAG}EXB"): (5, 5.0),
+        (f"{TAG}{TAG}exFr2", f"{TAG}EXB"): (2, 2.0),
+    }
 
-    # Target now carries the same line.
-    tgt_id = client.get(f"{PREFIX}/dispatches/saved", params=tgt).json()["id"]
-    matrix = client.get(f"{PREFIX}/dispatches/{tgt_id}/matrix").json()["cells"]
-    assert {c["product_id"]: c["qty"] for c in matrix} == {product_id: 7}
+    grid_rows = list(workbook["Fridge x Product"].iter_rows(values_only=True))
+    grid_header = grid_rows[0]
+    product_b_col = grid_header.index(f"{TAG}{TAG}EXB ({TAG}EXB)")
+    grid_qty_b = {row[0]: row[product_b_col] for row in grid_rows[1:]}
+    assert grid_qty_b == {f"{TAG}{TAG}exFr1": 5, f"{TAG}{TAG}exFr2": 2}
 
-    # Re-cloning onto an existing saved target needs overwrite.
-    dup = client.post(f"{PREFIX}/dispatches/clone", json=clone_body)
-    assert dup.status_code == 409 and dup.json()["error"]["code"] == "exists"
+    planned_matrix = client.get(f"{PREFIX}/dispatches/{dispatch_id}/matrix").json()
+    assert planned_matrix["dispatched_cost_total"] is None
 
-    ow = client.post(f"{PREFIX}/dispatches/clone", json={**clone_body, "overwrite": True})
-    assert ow.status_code == 200, ow.text
-
-    # Cloning from a day with no saved dispatch is a 404.
-    empty = client.post(
-        f"{PREFIX}/dispatches/clone",
-        json={**clone_body, "source_day_name": "Friday"},
-    )
-    assert empty.status_code == 404 and empty.json()["error"]["code"] == "not_found"
+    for product_id in (product_a, product_b):
+        opening = client.post(
+            f"{PREFIX}/stock/opening-stock",
+            json={"product_id": product_id, "qty": 10, "reason": f"{TAG}export test"},
+        )
+        assert opening.status_code == 201, opening.text
+    created = client.post(f"{PREFIX}/dispatches/create-individual", params=base)
+    assert created.status_code == 200, created.text
+    dispatched_matrix = client.get(f"{PREFIX}/dispatches/{dispatch_id}/matrix").json()
+    assert dispatched_matrix["dispatched_cost_total"] == "10.00"  # 10 units x 1.00
 
 
 def test_po_delivery_date_filter(ctx):

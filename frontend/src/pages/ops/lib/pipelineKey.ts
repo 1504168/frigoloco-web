@@ -5,8 +5,10 @@
  * URL-search-param binding that keeps the three pages in sync as the operator
  * navigates between them.
  */
+
 import * as React from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { localIsoDate } from '@/lib/dates'
 
 /** Ordered ISO day names; index + 1 is the ISO weekday (Monday = 1 … Sunday = 7). */
 export const DAY_NAMES = [
@@ -37,6 +39,11 @@ export function dayNumber(dayName: DayName): number {
 /** Zero-padded ISO week label, e.g. "2027 · W02". */
 export function weekKeyLabel(key: WeekDayKey): string {
   return `${key.year} · W${String(key.week).padStart(2, '0')} · ${key.dayName}`
+}
+
+/** URL search string that opens a pipeline page on `key`, e.g. "?year=2026&week=42&day=Thursday". */
+export function weekDayKeySearch(key: WeekDayKey): string {
+  return `?year=${key.year}&week=${key.week}&day=${key.dayName}`
 }
 
 /**
@@ -74,7 +81,7 @@ export function currentWeekDayKey(reference: Date = new Date()): WeekDayKey {
 
 /** True when the key's delivery date is strictly before today (needs force to dispatch). */
 export function keyIsPast(key: WeekDayKey): boolean {
-  return deliveryDateFromKey(key) < new Date().toISOString().slice(0, 10)
+  return deliveryDateFromKey(key) < localIsoDate()
 }
 
 const STORAGE_KEY = 'ops.weekDayKey'
